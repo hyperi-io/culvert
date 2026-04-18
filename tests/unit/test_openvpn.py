@@ -1,0 +1,162 @@
+#  Project:      hyperi-vpn
+#  File:         test_openvpn.py
+#  Purpose:      Tests for OpenVPN config generation module
+#  Language:     Python
+#
+#  License:      FSL-1.1-ALv2
+#  Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+from dataclasses import dataclass
+
+from lib.openvpn import (
+    _apply_common_options,
+    _strip_timestamps,
+    generate_config,
+)
+
+
+class TestGenerateConfig:
+    """Tests for template-based config generation."""
+
+    def test_substitutes_variables(self, tmp_path):
+        """Variables are replaced in template."""
+        template = tmp_path / "tmpl.conf"
+        template.write_text("port ${PORT}\nnetwork ${NETWORK}\n")
+        output = tmp_path / "out.conf"
+
+        generate_config(template, output, {"PORT": "1194", "NETWORK": "10.0.0.0"})
+
+        content = output.read_text()
+        assert "port 1194" in content
+        assert "network 10.0.0.0" in content
+
+    def test_missing_template_does_not_create_output(self, tmp_path):
+        """If template doesn't exist, output is not created."""
+        output = tmp_path / "out.conf"
+        generate_config(tmp_path / "nonexistent.conf", output, {})
+        assert not output.exists()
+
+    def test_integer_variables_converted(self, tmp_path):
+        """Integer values are stringified."""
+        template = tmp_path / "tmpl.conf"
+        template.write_text("mtu ${MTU}\n")
+        output = tmp_path / "out.conf"
+
+        generate_config(template, output, {"MTU": 1500})
+
+        assert "mtu 1500" in output.read_text()
+
+    def test_unmatched_variables_kept(self, tmp_path):
+        """Variables not in the dict stay as-is."""
+        template = tmp_path / "tmpl.conf"
+        template.write_text("${KNOWN} ${UNKNOWN}\n")
+        output = tmp_path / "out.conf"
+
+        generate_config(template, output, {"KNOWN": "yes"})
+
+        content = output.read_text()
+        assert "yes" in content
+        assert "${UNKNOWN}" in content
+
+    def test_empty_variables_dict(self, tmp_path):
+        """Empty variables dict produces exact template copy."""
+        template = tmp_path / "tmpl.conf"
+        template.write_text("static content\n")
+        output = tmp_path / "out.conf"
+
+        generate_config(template, output, {})
+        assert output.read_text() == "static content\n"
+
+
+class TestApplyCommonOptions:
+    """Tests for DNS, routes, full tunnel config injection."""
+
+    @dataclass
+    class FakeCfg:
+        dns_domain: str = ""
+        push_routes: str = ""
+        full_tunnel: bool = False
+
+    def test_no_options_no_change(self):
+        """No options set leaves content unchanged."""
+        cfg = self.FakeCfg()
+        content = _apply_common_options("base\n", cfg)
+        assert content == "base\n"
+
+    def test_dns_domain_pushed(self):
+        """DNS domain adds dhcp-option push."""
+        cfg = self.FakeCfg(dns_domain="example.com")
+        content = _apply_common_options("", cfg)
+        assert 'push "dhcp-option DOMAIN example.com"' in content
+
+    def test_push_routes_added(self):
+        """CIDR routes are converted to push route directives."""
+        cfg = self.FakeCfg(push_routes="10.0.0.0/24,172.16.0.0/16")
+        content = _apply_common_options("", cfg)
+        assert 'push "route 10.0.0.0 255.255.255.0"' in content
+        assert 'push "route 172.16.0.0 255.255.0.0"' in content
+
+    def test_full_tunnel_adds_redirect(self):
+        """Full tunnel adds redirect-gateway directive."""
+        cfg = self.FakeCfg(full_tunnel=True)
+        content = _apply_common_options("", cfg)
+        assert 'push "redirect-gateway def1 bypass-dhcp"' in content
+
+    def test_all_options_combined(self):
+        """All options work together."""
+        cfg = self.FakeCfg(
+            dns_domain="corp.io",
+            push_routes="10.0.0.0/8",
+            full_tunnel=True,
+        )
+        content = _apply_common_options("base\n", cfg)
+        assert "dhcp-option DOMAIN corp.io" in content
+        assert 'push "route 10.0.0.0 255.0.0.0"' in content
+        assert "redirect-gateway def1 bypass-dhcp" in content
+
+    def test_push_routes_without_cidr_skipped(self):
+        """Routes without / separator are skipped."""
+        cfg = self.FakeCfg(push_routes="invalid,10.0.0.0/24")
+        content = _apply_common_options("", cfg)
+        assert "invalid" not in content
+        assert "10.0.0.0" in content
+
+    def test_multiple_routes_comma_separated(self):
+        """Multiple comma-separated routes all added."""
+        cfg = self.FakeCfg(push_routes="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
+        content = _apply_common_options("", cfg)
+        lines_with_route = [line for line in content.split("\n") if "push" in line]
+        assert len(lines_with_route) == 3
+
+
+class TestStripTimestamps:
+    """Tests for config comparison timestamp stripping."""
+
+    def test_strips_date_comments(self):
+        """Lines with dates in comments are removed."""
+        content = (
+            "# Generated: 2026-04-01\n"
+            "remote vpn.example.com 1194\n"
+            "# DFE VPN v2.0.0\n"
+            "proto udp\n"
+        )
+        result = _strip_timestamps(content)
+        assert "Generated" not in result
+        assert "DFE VPN" not in result
+        assert "remote vpn.example.com 1194" in result
+        assert "proto udp" in result
+
+    def test_preserves_non_date_comments(self):
+        """Regular comments without dates are kept."""
+        content = "# This is a normal comment\nline2\n"
+        result = _strip_timestamps(content)
+        assert "normal comment" in result
+
+    def test_empty_content(self):
+        """Empty content returns empty string."""
+        assert _strip_timestamps("") == ""
+
+    def test_no_timestamps_unchanged(self):
+        """Content without timestamps is unchanged."""
+        content = "remote vpn.example.com\nproto udp\n"
+        assert _strip_timestamps(content) == content

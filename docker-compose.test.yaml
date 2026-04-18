@@ -1,0 +1,52 @@
+# HyperI VPN Test Client
+# Use this to test VPN connectivity without affecting host network
+#
+# Usage:
+#   docker-compose -f docker-compose.yaml -f docker-compose.test.yaml up -d
+#   docker-compose exec test-client openvpn --config /etc/openvpn/client.ovpn
+#
+# Or standalone test against existing server:
+#   docker-compose -f docker-compose.test.yaml run --rm test-client
+
+services:
+  test-client:
+    image: ubuntu:24.04
+    container_name: openvpn-test-client
+
+    cap_add:
+      - NET_ADMIN
+
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    volumes:
+      # Mount client configs from server
+      - openvpn-clients:/etc/openvpn/clients:ro
+      # Or mount local test config
+      - ./test:/etc/openvpn/test:ro
+
+    environment:
+      - TZ=${TZ:-Australia/Sydney}
+
+    command: >
+      bash -c "
+        apt-get update && apt-get install -y openvpn curl iputils-ping dnsutils &&
+        echo 'Test client ready. Run: openvpn --config /etc/openvpn/clients/<name>.ovpn' &&
+        tail -f /dev/null
+      "
+
+    # Don't auto-start - use 'docker-compose run' or exec manually
+    profiles:
+      - test
+
+    networks:
+      - vpn-test
+
+networks:
+  vpn-test:
+    name: openvpn-test-network
+    driver: bridge
+
+volumes:
+  openvpn-clients:
+    external: true

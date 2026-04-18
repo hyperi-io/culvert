@@ -1,0 +1,77 @@
+services:
+  vpn-server:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: hyperi-vpn:dev
+    container_name: e2e-vpn-server
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    entrypoint: /e2e-init.sh
+    command: ["server"]
+    volumes:
+      - ./server-init.sh:/e2e-init.sh:ro
+      - vpn-clients:/etc/vpn/clients
+    environment:
+      # Entrypoint reads HYPERI_VPN_* via hyperi-pylib
+      HYPERI_VPN_PROTOCOL: both
+      HYPERI_VPN_SERVER_CN: vpn-server
+      HYPERI_VPN_PUSH_ROUTES: "172.30.0.0/24"
+      HYPERI_VPN_FULL_TUNNEL: "false"
+      HYPERI_VPN_WG_DPI_BYPASS_ENABLED: "true"
+      # generate-client.py now uses HYPERI_VPN_* via lib.config (no legacy vars needed)
+    networks:
+      e2e-internal:
+        ipv4_address: 172.30.0.10
+      e2e-external:
+        ipv4_address: 172.30.1.10
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      start_period: 60s
+      retries: 12
+
+  target:
+    image: nginx:alpine
+    container_name: e2e-target
+    volumes:
+      - ./nginx-target.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      e2e-internal:
+        ipv4_address: 172.30.0.20
+
+  vpn-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: e2e-vpn-client
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    volumes:
+      - vpn-clients:/etc/vpn/clients:ro
+    depends_on:
+      vpn-server:
+        condition: service_healthy
+    networks:
+      e2e-external:
+        ipv4_address: 172.30.1.20
+
+networks:
+  e2e-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  e2e-external:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.1.0/24
+
+volumes:
+  vpn-clients:

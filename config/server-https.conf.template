@@ -1,0 +1,148 @@
+# HyperI VPN Server Configuration - HTTPS Tunnel (via stunnel)
+# OpenVPN 2.6.15+ with CNSA 2.0 Security Settings
+#
+# This is a TEMPLATE file - variables are substituted by envsubst at runtime.
+# Do not use this file directly - use the generated server-https.conf instead.
+#
+# Architecture: Client -> stunnel(TLS:443) -> OpenVPN(TCP:1195)
+# stunnel terminates TLS on port 443 and forwards to this OpenVPN instance
+# This makes traffic indistinguishable from regular HTTPS to DPI
+# Shares PKI with the primary UDP instance
+
+#===============================================================================
+# Server Mode and Network
+#===============================================================================
+mode server
+tls-server
+topology subnet
+
+# VPN subnet for clients - DIFFERENT pool from UDP instance
+server ${OPENVPN_HTTPS_NETWORK} ${OPENVPN_HTTPS_NETMASK}
+
+# Listen on internal port - stunnel handles external port 443
+# stunnel forwards TLS-unwrapped traffic to this port
+proto tcp
+port ${OPENVPN_HTTPS_INTERNAL_PORT}
+
+# Use tun1 to avoid conflict with UDP instance (tun0)
+dev tun1
+dev-type tun
+
+#===============================================================================
+# CNSA 2.0 Cryptography
+#===============================================================================
+# TLS 1.3 only (CNSA 2.0 requirement)
+tls-version-min 1.3
+
+# AEAD ciphers for data channel
+data-ciphers AES-256-GCM:CHACHA20-POLY1305
+data-ciphers-fallback AES-256-GCM
+
+# HMAC for control channel authentication - SHA384 (CNSA 2.0)
+auth SHA384
+
+# Key exchange - ECDH with P-384 (CNSA 2.0) or X25519 (modern alternative)
+tls-groups secp384r1:X25519
+
+# tls-crypt-v2 for metadata protection and DoS mitigation
+tls-crypt-v2 /etc/vpn/pki/tc.key
+
+#===============================================================================
+# PKI Paths (shared with UDP instance)
+#===============================================================================
+ca /etc/vpn/pki/ca.crt
+cert /etc/vpn/pki/issued/server.crt
+key /etc/vpn/pki/private/server.key
+dh none
+crl-verify /etc/vpn/pki/crl.pem
+
+#===============================================================================
+# TCP-Specific Performance Settings
+#===============================================================================
+# Buffer tuning for TCP
+sndbuf ${OPENVPN_SNDBUF}
+rcvbuf ${OPENVPN_RCVBUF}
+push "sndbuf ${OPENVPN_SNDBUF}"
+push "rcvbuf ${OPENVPN_RCVBUF}"
+
+# Note: fast-io is UDP-only, not used here
+
+# MTU settings - smaller for TCP to account for TCP overhead
+tun-mtu ${OPENVPN_TUN_MTU}
+tun-mtu-max 1600
+mssfix ${OPENVPN_MSSFIX}
+
+# TCP-nodelay reduces latency for interactive sessions
+tcp-nodelay
+
+# Keepalive (TCP connections need more aggressive timeout)
+keepalive ${OPENVPN_KEEPALIVE_PING} ${OPENVPN_KEEPALIVE_TIMEOUT}
+
+# Push persistence settings to clients
+push "persist-key"
+push "persist-tun"
+
+# Allow multiple clients with same CN
+duplicate-cn
+
+#===============================================================================
+# Client Configuration
+#===============================================================================
+# DNS servers
+push "dhcp-option DNS ${OPENVPN_DNS1}"
+push "dhcp-option DNS ${OPENVPN_DNS2}"
+
+# Block DNS leaks on Windows
+push "block-outside-dns"
+
+# Client-specific config directory (shared with UDP)
+client-config-dir /etc/vpn/server/ccd
+
+#===============================================================================
+# Security Hardening
+#===============================================================================
+# Drop privileges after initialization
+user nobody
+group nogroup
+
+# Persist keys and tun across restarts
+persist-key
+persist-tun
+
+# Limit concurrent clients per instance
+max-clients ${OPENVPN_MAX_CLIENTS}
+
+# Verify client certificate has correct key usage
+remote-cert-tls client
+
+# Disable compression (VORACLE attack vulnerability)
+allow-compression no
+
+# Allow running external scripts
+script-security 2
+
+# Client connect/disconnect scripts (optional - commented out as not implemented)
+# client-connect /etc/vpn/scripts/client-connect.sh
+# client-disconnect /etc/vpn/scripts/client-disconnect.sh
+
+#===============================================================================
+# Connection Stability
+#===============================================================================
+# TCP doesn't use explicit-exit-notify (UDP only feature)
+
+# Renegotiate data channel key periodically
+reneg-sec ${OPENVPN_RENEG_SEC}
+
+#===============================================================================
+# Logging
+#===============================================================================
+status /var/log/vpn/status-https.log 10
+log-append /var/log/vpn/openvpn-https.log
+verb ${OPENVPN_VERB}
+mute ${OPENVPN_MUTE}
+
+#===============================================================================
+# Management Interface
+#===============================================================================
+# Different port from UDP instance (7505)
+management 127.0.0.1 7506

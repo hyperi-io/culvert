@@ -1,0 +1,57 @@
+#  Project:      hyperi-vpn
+#  File:         pyproject.toml
+#  Purpose:      Project metadata, ruff and pytest configuration
+#  Language:     TOML
+#
+#  License:      FSL-1.1-ALv2
+#  Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+[project]
+name = "hyperi-vpn"
+version = "0.0.0"
+description = "HyperI VPN — OpenVPN + WireGuard with DPI bypass, OIDC SSO, and external PKI"
+requires-python = ">=3.12"
+license = {text = "FSL-1.1-ALv2"}
+
+dependencies = [
+    "hyperi-pylib[metrics,secrets]>=2.25,<3",
+]
+
+[project.optional-dependencies]
+secrets-vault = ["hyperi-pylib[secrets-vault]"]
+secrets-aws = ["hyperi-pylib[secrets-aws]"]
+secrets-gcp = ["hyperi-pylib[secrets-gcp]"]
+secrets-azure = ["hyperi-pylib[secrets-azure]"]
+otel = ["hyperi-pylib[opentelemetry]"]
+dev = [
+    "ruff",
+    "pytest",
+]
+
+# hyperi-vpn is distributed as a container image, not a Python package.
+# Declare no packages so setuptools doesn't auto-discover config/, profiles/
+# and fail the build. A minimal wheel is still built for pipeline parity.
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+force-single-line = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "e2e: end-to-end tests requiring Docker (deselect with -m 'not e2e')",
+]
+filterwarnings = ["ignore::DeprecationWarning"]

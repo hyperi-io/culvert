@@ -1,0 +1,12 @@
+# DFE deployment profile — HyperI's DFE (Defensive Functional Edge) defaults.
+# Load with: HYPERI_VPN_PROFILE=dfe (or full path)
+#
+# This profile pins the values used by HyperI's DFE product line. Third-party
+# deployers should create their own profile, not use this one.
+org_name: DFE
+server_cn: vpn.hyperi.io
+ca_cn: "DFE VPN CA"
+stunnel_cert: /etc/vpn/oauth2-tls/hyperi-wildcard-fullchain.pem
+stunnel_key: /etc/vpn/oauth2-tls/hyperi-wildcard.key
+push_routes: "10.66.0.0/16,10.42.0.0/16"
+dns_domain: devex.hyperi.io

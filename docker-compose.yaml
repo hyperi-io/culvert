@@ -1,0 +1,264 @@
+# HyperI VPN Server
+# Enterprise-grade OpenVPN 2.6.15+ with DCO, CNSA 2.0 security, and OIDC SSO
+#
+# Authentication:
+#   - Certificate + OIDC hybrid authentication
+#   - Device identity via client certificate
+#   - User identity via OIDC (openvpn-auth-oauth2)
+#   - Group-based access control via your IdP (configure groups in IdP + OIDC claim)
+#
+# Deployment Modes:
+#   Single-node:  docker compose up -d
+#   Scale-out:    docker compose -f docker-compose.yaml -f docker-compose.shared.yaml up -d
+#
+# DCO (Data Channel Offload) Note:
+#   DCO moves encryption to kernel space for massive performance gains.
+#   The container accesses the HOST's DCO kernel module - ensure host VM has:
+#   - Linux kernel 6.x+ (Ubuntu 24.04 has 6.8)
+#   - openvpn-dco-dkms package installed on host
+#   - 'modprobe ovpn-dco-v2' run on host
+#
+# Usage:
+#   docker compose up -d                                # Start server
+#   docker compose logs -f                              # View logs
+#   docker compose down                                 # Stop server
+#   docker compose exec openvpn generate-client derek   # Generate client config (creates BOTH split + full)
+#   docker compose exec openvpn revoke-client derek     # Revoke client
+
+services:
+  openvpn:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Private registry authentication for base images (optional)
+      # Set REGISTRY_URL, REGISTRY_USERNAME, REGISTRY_PASSWORD in .env
+      # Example: REGISTRY_URL=registry.example.com/library
+      args:
+        - REGISTRY_URL=${REGISTRY_URL:-}
+        - REGISTRY_USERNAME=${REGISTRY_USERNAME:-}
+        - REGISTRY_PASSWORD=${REGISTRY_PASSWORD:-}
+    # Use private registry image if REGISTRY_URL is set, otherwise local build
+    image: ${REGISTRY_URL:+${REGISTRY_URL}/}hyperi-vpn:${IMAGE_TAG:-latest}
+    container_name: ${CONTAINER_NAME:-hyperi-vpn}
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+    # Required for DCO and VPN functionality
+    # NET_ADMIN: Network configuration, iptables, tun device
+    # SYS_MODULE: Load/access kernel modules (DCO)
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+
+    # Device access for VPN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    # Sysctls for network performance optimization
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+
+    # DNS servers for container (required for OAuth2 OIDC discovery)
+    # Uses internal DNS first, falls back to Cloudflare
+    dns:
+      - ${HYPERI_VPN_DNS1:-1.0.0.1}
+      - ${HYPERI_VPN_DNS2:-1.1.1.1}
+
+    ports:
+      # UDP - Primary OpenVPN (best performance with DCO)
+      - "${HYPERI_VPN_UDP_PORT:-1194}:${HYPERI_VPN_UDP_PORT:-1194}/udp"
+      # HTTPS - DPI bypass via port 443
+      - "${HYPERI_VPN_HTTPS_PORT:-443}:${HYPERI_VPN_HTTPS_PORT:-443}/tcp"
+      # TCP - Proxy fallback for corporate firewalls
+      - "${HYPERI_VPN_TCP_PORT:-1194}:${HYPERI_VPN_TCP_PORT:-1194}/tcp"
+      # WireGuard - UDP primary
+      - "${WIREGUARD_PORT:-51820}:${WIREGUARD_PORT:-51820}/udp"
+      # WireGuard - DPI bypass via wstunnel (TCP WebSocket)
+      - "${WIREGUARD_DPI_BYPASS_PORT:-4443}:${WIREGUARD_DPI_BYPASS_PORT:-4443}/tcp"
+      # Health check endpoint
+      - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}/tcp"
+      # OAuth2 callback servers (one per OpenVPN listener)
+      # Each listener needs its own OAuth2 instance with unique redirect URL
+      - "${OAUTH2_UDP_PORT:-9000}:${OAUTH2_UDP_PORT:-9000}/tcp"     # OAuth2 for UDP listener
+      - "${OAUTH2_HTTPS_PORT:-9001}:${OAUTH2_HTTPS_PORT:-9001}/tcp" # OAuth2 for HTTPS listener
+      - "${OAUTH2_TCP_PORT:-9002}:${OAUTH2_TCP_PORT:-9002}/tcp"     # OAuth2 for TCP listener
+      # Prometheus metrics (optional - enable with METRICS_ENABLED=true)
+      - "${METRICS_PORT:-9176}:${METRICS_PORT:-9176}/tcp"
+      # Client config download server (optional - enable with CLIENT_DOWNLOAD_ENABLED=true)
+      - "${CLIENT_DOWNLOAD_PORT:-8443}:${CLIENT_DOWNLOAD_PORT:-8443}/tcp"
+
+    volumes:
+      # PKI - certificates and keys (MANDATORY - persistent on host filesystem)
+      # These MUST be bind mounts to survive container recreation
+      - ${HYPERI_VPN_PKI_PATH:-./pki}:/etc/openvpn/pki
+      # Client configs output (persistent on host filesystem)
+      - ${HYPERI_VPN_CLIENTS_PATH:-./clients}:/etc/openvpn/clients
+      # Client-specific configs (ccd) - mount from host for customization
+      - ./config/ccd:/etc/openvpn/server/ccd:ro
+      # Logs (persistent)
+      - ${HYPERI_VPN_LOGS_PATH:-./logs}:/var/log/openvpn
+      # OAuth2 TLS certificates (required when OAUTH2_ENABLED=true)
+      # Mount wildcard or server-specific certificate for HTTPS callback endpoint
+      - ${OAUTH2_TLS_CERT_PATH:-/opt/openvpn/certs}:/etc/openvpn/oauth2-tls:ro
+
+    environment:
+      # Server identity - MUST match DNS/certificate
+      - HYPERI_VPN_SERVER_CN=${HYPERI_VPN_SERVER_CN:-vpn.example.com}
+
+      # Multi-listener configuration (all enabled by default)
+      # UDP - Primary (best performance)
+      - HYPERI_VPN_UDP_ENABLED=${HYPERI_VPN_UDP_ENABLED:-true}
+      - HYPERI_VPN_UDP_PORT=${HYPERI_VPN_UDP_PORT:-1194}
+      - HYPERI_VPN_UDP_NETWORK=${HYPERI_VPN_UDP_NETWORK:-192.168.100.0}
+      - HYPERI_VPN_UDP_NETMASK=${HYPERI_VPN_UDP_NETMASK:-255.255.255.0}
+      # HTTPS - DPI bypass via port 443
+      - HYPERI_VPN_HTTPS_ENABLED=${HYPERI_VPN_HTTPS_ENABLED:-true}
+      - HYPERI_VPN_HTTPS_PORT=${HYPERI_VPN_HTTPS_PORT:-443}
+      - HYPERI_VPN_HTTPS_NETWORK=${HYPERI_VPN_HTTPS_NETWORK:-192.168.101.0}
+      - HYPERI_VPN_HTTPS_NETMASK=${HYPERI_VPN_HTTPS_NETMASK:-255.255.255.0}
+      # TCP - Proxy fallback
+      - HYPERI_VPN_TCP_ENABLED=${HYPERI_VPN_TCP_ENABLED:-true}
+      - HYPERI_VPN_TCP_PORT=${HYPERI_VPN_TCP_PORT:-1194}
+      - HYPERI_VPN_TCP_NETWORK=${HYPERI_VPN_TCP_NETWORK:-192.168.102.0}
+      - HYPERI_VPN_TCP_NETMASK=${HYPERI_VPN_TCP_NETMASK:-255.255.255.0}
+
+      # DNS servers pushed to clients
+      - HYPERI_VPN_DNS1=${HYPERI_VPN_DNS1:-1.1.1.1}
+      - HYPERI_VPN_DNS2=${HYPERI_VPN_DNS2:-1.0.0.1}
+
+      # Routing
+      - HYPERI_VPN_FULL_TUNNEL=${HYPERI_VPN_FULL_TUNNEL:-false}
+      - HYPERI_VPN_PUSH_ROUTES=${HYPERI_VPN_PUSH_ROUTES:-}
+
+      # WireGuard (set WIREGUARD_ENABLED=true to activate)
+      # - WIREGUARD_ENABLED=${WIREGUARD_ENABLED:-false}
+      # - WIREGUARD_NETWORK=${WIREGUARD_NETWORK:-192.168.200.0/24}
+      # - WIREGUARD_PORT=${WIREGUARD_PORT:-51820}
+      # - WIREGUARD_MTU=${WIREGUARD_MTU:-1420}
+      # - WIREGUARD_PERSISTENT_KEEPALIVE=${WIREGUARD_PERSISTENT_KEEPALIVE:-25}
+      # - WIREGUARD_DPI_BYPASS_ENABLED=${WIREGUARD_DPI_BYPASS_ENABLED:-false}
+      # - WIREGUARD_DPI_BYPASS_PORT=${WIREGUARD_DPI_BYPASS_PORT:-4443}
+
+      # Network profile: "default" (fast internet) or "wireless" (4G/mobile optimized)
+      - HYPERI_VPN_NETWORK_PROFILE=${HYPERI_VPN_NETWORK_PROFILE:-default}
+
+      # Performance tuning (optional - profile sets sensible defaults)
+      - HYPERI_VPN_SNDBUF=${HYPERI_VPN_SNDBUF:-}
+      - HYPERI_VPN_RCVBUF=${HYPERI_VPN_RCVBUF:-}
+      - HYPERI_VPN_TUN_MTU=${HYPERI_VPN_TUN_MTU:-}
+      - HYPERI_VPN_MSSFIX=${HYPERI_VPN_MSSFIX:-}
+      - HYPERI_VPN_KEEPALIVE_PING=${HYPERI_VPN_KEEPALIVE_PING:-}
+      - HYPERI_VPN_KEEPALIVE_TIMEOUT=${HYPERI_VPN_KEEPALIVE_TIMEOUT:-}
+      - HYPERI_VPN_MAX_CLIENTS=${HYPERI_VPN_MAX_CLIENTS:-auto}
+      - HYPERI_VPN_RENEG_SEC=${HYPERI_VPN_RENEG_SEC:-}
+      - HYPERI_VPN_LOG_MODE=${HYPERI_VPN_LOG_MODE:-file}
+      - HYPERI_VPN_VERB=${HYPERI_VPN_VERB:-}
+      - HYPERI_VPN_MUTE=${HYPERI_VPN_MUTE:-}
+
+      # Prometheus metrics (B4DCATs/openvpn_exporter)
+      - METRICS_ENABLED=${METRICS_ENABLED:-false}
+      - METRICS_PORT=${METRICS_PORT:-9176}
+      - METRICS_ALLOWED_IPS=${METRICS_ALLOWED_IPS:-}
+
+      # Client config download server
+      - CLIENT_DOWNLOAD_ENABLED=${CLIENT_DOWNLOAD_ENABLED:-false}
+      - CLIENT_DOWNLOAD_PORT=${CLIENT_DOWNLOAD_PORT:-8443}
+
+      # PKI settings (CNSA 2.0 compliant defaults)
+      - HYPERI_VPN_CA_CN=${HYPERI_VPN_CA_CN:-HyperI VPN CA}
+      - HYPERI_VPN_KEY_TYPE=${HYPERI_VPN_KEY_TYPE:-ec}
+      - HYPERI_VPN_KEY_SIZE=${HYPERI_VPN_KEY_SIZE:-secp384r1}
+
+      # OIDC SSO (works with Entra ID, Okta, Keycloak, Google, Auth0, etc.)
+      - OAUTH2_ENABLED=${OAUTH2_ENABLED:-false}
+      - OAUTH2_ISSUER=${OAUTH2_ISSUER:-}
+      - OAUTH2_CLIENT_ID=${OAUTH2_CLIENT_ID:-}
+      - OAUTH2_CLIENT_SECRET=${OAUTH2_CLIENT_SECRET:-}
+      - OAUTH2_REDIRECT_URL=${OAUTH2_REDIRECT_URL:-}
+      - OAUTH2_VALIDATE_GROUPS=${OAUTH2_VALIDATE_GROUPS:-}
+      # Per-listener OAuth2 enable/disable (defaults to OAUTH2_ENABLED)
+      - OAUTH2_UDP_ENABLED=${OAUTH2_UDP_ENABLED:-}
+      - OAUTH2_HTTPS_ENABLED=${OAUTH2_HTTPS_ENABLED:-}
+      - OAUTH2_TCP_ENABLED=${OAUTH2_TCP_ENABLED:-}
+      # Per-listener OAuth2 callback ports (defaults: 9000=UDP, 9001=HTTPS, 9002=TCP)
+      - OAUTH2_UDP_PORT=${OAUTH2_UDP_PORT:-9000}
+      - OAUTH2_HTTPS_PORT=${OAUTH2_HTTPS_PORT:-9001}
+      - OAUTH2_TCP_PORT=${OAUTH2_TCP_PORT:-9002}
+      - OAUTH2_HTTP_SECRET=${OAUTH2_HTTP_SECRET:-}
+      - OAUTH2_SCOPES=${OAUTH2_SCOPES:-openid,profile,email,offline_access}
+      # OAuth2 TLS (REQUIRED when OAUTH2_ENABLED=true - Entra ID requires HTTPS)
+      # Paths inside container (mount certs via OAUTH2_TLS_CERT_PATH volume)
+      - OAUTH2_TLS_CERT=${OAUTH2_TLS_CERT:-/etc/openvpn/oauth2-tls/hyperi-wildcard.crt}
+      - OAUTH2_TLS_KEY=${OAUTH2_TLS_KEY:-/etc/openvpn/oauth2-tls/hyperi-wildcard.key}
+      # stunnel TLS (for HTTPS tunnel - uses same certs as OAuth2 by default)
+      # Note: Use fullchain (leaf + intermediate CA) for proper certificate verification
+      - STUNNEL_CERT_PATH=${STUNNEL_CERT_PATH:-/etc/openvpn/oauth2-tls/hyperi-wildcard-fullchain.pem}
+      - STUNNEL_KEY_PATH=${STUNNEL_KEY_PATH:-/etc/openvpn/oauth2-tls/hyperi-wildcard.key}
+      # OAuth2 Branding (optional)
+      # Custom HTML template and assets for OAuth login page
+      - OAUTH2_TEMPLATE=${OAUTH2_TEMPLATE:-}
+      - OAUTH2_ASSETS_PATH=${OAUTH2_ASSETS_PATH:-}
+
+      # Timezone
+      - TZ=${TZ:-Australia/Sydney}
+
+    healthcheck:
+      test: ["CMD", "pgrep", "-x", "openvpn"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  #=============================================================================
+  # Watchtower - Automatic Docker Container Updates
+  #=============================================================================
+  # Monitors containers and updates them when new images are available.
+  # Schedule: Daily at 04:00 (after 03:00 VM security updates)
+  # Only updates containers with com.centurylinklabs.watchtower.enable=true label
+  #
+  # Behavior:
+  #   - Pulls new image if available
+  #   - Stops container gracefully
+  #   - Recreates with same config
+  #   - Removes old image
+  #
+  # Disable: Set WATCHTOWER_ENABLED=false in .env
+  watchtower:
+    # Note: containrrr/watchtower was archived Dec 2025 and broken with Docker 29+
+    # Using maintained fork: https://github.com/nickfedor/watchtower
+    image: nickfedor/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    profiles:
+      - watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Schedule: 04:00 daily (cron format: sec min hour day month weekday)
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      # Only update containers with enable label (opt-in)
+      - WATCHTOWER_LABEL_ENABLE=true
+      # Remove old images after update
+      - WATCHTOWER_CLEANUP=true
+      # Timezone
+      - TZ=${TZ:-Australia/Sydney}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+# NOTE: PKI, clients, and logs now use bind mounts (host directories) by default
+# This ensures persistence across container recreation and volume removal
+# Set HYPERI_VPN_PKI_PATH, HYPERI_VPN_CLIENTS_PATH, HYPERI_VPN_LOGS_PATH in .env to customize paths
+#
+# Watchtower: Enable with `docker compose --profile watchtower up -d`
+# Or add COMPOSE_PROFILES=watchtower to .env for always-on

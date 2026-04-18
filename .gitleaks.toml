@@ -1,0 +1,17 @@
+# gitleaks configuration
+# Documentation: https://github.com/gitleaks/gitleaks
+#
+# This extends the default ruleset. Only the allowlist below is customised —
+# all default detection rules still apply.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow known-safe fake PEM markers in integration test fixtures"
+
+# Integration tests use fake PEM-framed test payloads (the content between the
+# markers is literally 'TEST_*_FOR_HYPERI_VPN_INTEGRATION', not a real key).
+# These are constants compared against values read back from OpenBao.
+paths = [
+    '''tests/integration/test_openbao_pki\.py''',
+]

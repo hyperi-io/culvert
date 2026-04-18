@@ -1,0 +1,19 @@
+# Project:      hyperi-vpn
+# File:         .github/workflows/ci.yml
+# Purpose:      CI pipeline — delegates to hyperi-ci reusable workflow
+# License:      FSL-1.1-ALv2
+# Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    uses: hyperi-io/hyperi-ci/.github/workflows/python-ci.yml@main
+    secrets: inherit

@@ -1,0 +1,43 @@
+# PKI - NEVER commit private keys
+pki/
+*.key
+*.p12
+*.pfx
+
+# Client configurations (contain embedded private keys)
+clients/
+*.ovpn
+
+# Test configurations
+test/*.ovpn
+
+# Logs
+logs/
+*.log
+
+# Runtime
+*.pid
+
+# Docker volumes backup
+backup/
+
+# Environment files with secrets
+.env
+.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.pyc
+
+# AI agent working files (not committed)
+docs/superpowers/
+docs/refactor/
+.claude/
+.mcp.json
+CLAUDE.md
+CLAUDE.local.md
+STATE.md
+
+# Generated envsubst output (never commit)
+config/*.conf

@@ -1,0 +1,17 @@
+FROM ubuntu:24.04
+
+ARG WSTUNNEL_VERSION="10.5.2"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openvpn stunnel4 wireguard-tools curl iproute2 iputils-ping \
+    ca-certificates resolvconf \
+    && rm -rf /var/lib/apt/lists/*
+
+# wstunnel client for WireGuard DPI bypass testing
+RUN ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL \
+       "https://github.com/erebe/wstunnel/releases/download/v${WSTUNNEL_VERSION}/wstunnel_${WSTUNNEL_VERSION}_linux_${ARCH}.tar.gz" \
+       | tar xz -C /usr/local/bin/ wstunnel \
+    && chmod +x /usr/local/bin/wstunnel
+
+CMD ["sleep", "infinity"]
