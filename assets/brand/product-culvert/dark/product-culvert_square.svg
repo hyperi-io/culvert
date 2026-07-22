@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- License: Apache-2.0 / Copyright (c) 2026 HYPERI PTY LIMITED -->
+<!-- Culvert product icon - dark theme (white ink #FFFFFF, for dark surfaces). -->
+<svg xmlns="http://www.w3.org/2000/svg" id="Layer_1" version="1.1" viewBox="0 0 1080 1080" width="1080" height="1080"><defs><clipPath id="culvert-portal"><rect x="420" y="410" width="240" height="360"/></clipPath></defs><g id="hyperi-ink" fill="#FFFFFF">
+  <path id="culvert-headwall" d="M330,320 H750 V470 L940,770 H660 V410 H420 V770 H140 L330,470 Z"/>
+  <g id="culvert-depth" clip-path="url(#culvert-portal)" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-opacity="0.5" stroke-linecap="butt" stroke-linejoin="miter">
+    <rect x="475" y="455" width="130" height="260" fill="#FFFFFF" fill-opacity="0.14"/>
+    <path d="M420,410 L475,455 M660,410 L605,455 M420,770 L475,715 M660,770 L605,715"/>
+  </g>
+</g></svg>

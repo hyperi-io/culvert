@@ -1,0 +1,105 @@
+# Project:      culvert
+# File:         .github/workflows/dependency-check.yml
+# Purpose:      Check for vendored dependency updates and open a PR
+# License:      BUSL-1.1
+# Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+name: Dependency Check
+
+on:
+  schedule:
+    # Run weekly on Monday at 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-openvpn-auth-oauth2:
+    name: Check openvpn-auth-oauth2
+    runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Get current version from Dockerfile
+        id: current
+        run: |
+          CURRENT=$(grep 'ARG OPENVPN_AUTH_OAUTH2_VERSION=' Dockerfile | cut -d'"' -f2)
+          echo "version=${CURRENT}" >> $GITHUB_OUTPUT
+          echo "Current version: ${CURRENT}"
+
+      - name: Get latest release from GitHub
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST=$(gh api repos/jkroepke/openvpn-auth-oauth2/releases/latest --jq '.tag_name' | sed 's/^v//')
+          echo "version=${LATEST}" >> $GITHUB_OUTPUT
+          echo "Latest version: ${LATEST}"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          if [ "${{ steps.current.outputs.version }}" != "${{ steps.latest.outputs.version }}" ]; then
+            echo "update_available=true" >> $GITHUB_OUTPUT
+            echo "New version available: ${{ steps.latest.outputs.version }}"
+          else
+            echo "update_available=false" >> $GITHUB_OUTPUT
+            echo "Already on latest version"
+          fi
+
+      - name: Generate GitHub App Token
+        if: steps.compare.outputs.update_available == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Create update PR
+        if: steps.compare.outputs.update_available == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.latest.outputs.version }}
+          CURRENT: ${{ steps.current.outputs.version }}
+        run: |
+          # Create branch
+          BRANCH="deps/openvpn-auth-oauth2-${VERSION}"
+          git checkout -b "${BRANCH}"
+
+          # Update Dockerfile
+          sed -i "s/ARG OPENVPN_AUTH_OAUTH2_VERSION=\"${CURRENT}\"/ARG OPENVPN_AUTH_OAUTH2_VERSION=\"${VERSION}\"/" Dockerfile
+
+          # Commit and push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: update openvpn-auth-oauth2 to ${VERSION}"
+          git push origin "${BRANCH}"
+
+          # Create PR
+          gh pr create \
+            --title "feat: update openvpn-auth-oauth2 to ${VERSION}" \
+            --body "$(cat <<EOF
+          ## Summary
+
+          Automated dependency update for openvpn-auth-oauth2.
+
+          - **Current version:** ${CURRENT}
+          - **New version:** ${VERSION}
+          - **Release notes:** https://github.com/jkroepke/openvpn-auth-oauth2/releases/tag/v${VERSION}
+
+          ## Test Plan
+
+          - [ ] Review release notes for breaking changes
+          - [ ] CI build passes
+          - [ ] Test VPN connection with OAuth2
+          EOF
+          )" \
+            --base main
+
+          echo "Created PR for version ${VERSION}"

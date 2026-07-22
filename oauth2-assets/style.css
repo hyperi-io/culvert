@@ -1,0 +1,139 @@
+/* Culvert - OAuth2 Login Page Branding
+ * This overrides the default openvpn-auth-oauth2 styling
+ * Part of Culvert
+ */
+
+:root {
+    /* Brand Colors */
+    --hs-primary: #1a73e8;
+    --hs-primary-dark: #1557b0;
+    --hs-secondary: #34a853;
+    --hs-background: #f8f9fa;
+    --hs-text: #202124;
+    --hs-text-muted: #5f6368;
+    --hs-success: #34a853;
+    --hs-error: #ea4335;
+}
+
+/* Page Layout */
+body {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    font-family: 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+}
+
+/* Main Container */
+main {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Card Style */
+article, section {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    padding: 2rem;
+    text-align: center;
+}
+
+/* Logo Area */
+header {
+    margin-bottom: 1.5rem;
+}
+
+header::before {
+    content: '';
+    display: block;
+    width: 200px;
+    height: 60px;
+    margin: 0 auto 1rem;
+    background: url('/assets/logo.svg') center/contain no-repeat;
+}
+
+/* Headings */
+h1, h2 {
+    color: var(--hs-text);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+h1 {
+    font-size: 1.5rem;
+}
+
+/* Status Messages */
+p {
+    color: var(--hs-text-muted);
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+/* Success State */
+.success, [data-status="success"] {
+    border-left: 4px solid var(--hs-success);
+}
+
+.success h1, .success h2 {
+    color: var(--hs-success);
+}
+
+/* Error State */
+.error, [data-status="error"] {
+    border-left: 4px solid var(--hs-error);
+}
+
+.error h1, .error h2 {
+    color: var(--hs-error);
+}
+
+/* Footer */
+footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e0e0e0;
+    font-size: 0.8rem;
+    color: var(--hs-text-muted);
+}
+
+footer::after {
+    content: 'Culvert';
+    display: block;
+    margin-top: 0.5rem;
+    font-weight: 500;
+    color: var(--hs-primary);
+}
+
+/* Buttons */
+button, .button, input[type="submit"] {
+    background: var(--hs-primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+button:hover, .button:hover, input[type="submit"]:hover {
+    background: var(--hs-primary-dark);
+}
+
+/* Links */
+a {
+    color: var(--hs-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Loading Spinner (if present) */
+.loading, .spinner {
+    border-color: var(--hs-primary);
+    border-top-color: transparent;
+}

@@ -1,0 +1,69 @@
+#  Project:      culvert
+#  License:      BUSL-1.1
+#  Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+language: python
+
+quality:
+  enabled: true
+  ignore:
+    - tool: semgrep
+      ids:
+        - dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
+        - dockerfile.security.missing-user.missing-user
+      reason: >-
+        VPN server container: the entrypoint must create TUN devices, program
+        iptables NAT, and bind privileged ports, which needs root/NET_ADMIN at
+        startup. OpenVPN itself drops to nobody after init; a Dockerfile USER
+        would break interface setup.
+  python:
+    ruff: blocking
+    bandit: blocking
+    # ty (Astral type checker): scripts/ shipped code is clean; tests/ still
+    # has a few dynamic-pattern diagnostics, so kept non-blocking for now.
+    # Promote to `blocking` once tests/ typing is addressed.
+    ty: warn
+    # vulture: hyperi-ci points it at a hardcoded src/ dir; this project
+    # uses a flat scripts/ + tests/ layout, so the tool errors before it
+    # scans. Same upstream limitation as the coverage note above.
+    vulture: warn
+
+test:
+  enabled: true
+  coverage: false
+  # Coverage disabled: hyperi-ci hardcodes --cov=src; this project uses a
+  # flat scripts/ + tests/ layout. Re-enable when hyperi-ci supports a
+  # configurable coverage source, or when we restructure to src/ layout.
+  use_tiers: true
+  tiers:
+    unit:
+      enabled: true
+      fail_fast: true
+    integration:
+      enabled: false
+    e2e:
+      enabled: false
+      # E2E tests need Docker + TUN devices and a running dual-container stack.
+      # Run locally with: pytest tests/e2e/ -m e2e -v
+
+# Top-level container section gates whether the Container job runs in CI
+# (python-ci.yml reads container.enabled) and selects build mode.
+# `custom` = use the repo's own Dockerfile (template mode would auto-generate
+# a Python-project Dockerfile, which doesn't fit a VPN server container).
+container:
+  enabled: true
+  mode: custom
+
+publish:
+  enabled: true
+  target: oss
+  channel: release
+  container:
+    enabled: true
+    # hyperi-ci's bundled defaults.yaml sets registry: ghcr (bare string),
+    # which resolves to docker.io/ghcr/ at push time. Override explicitly.
+    registry: ghcr.io/hyperi-io
+    dockerfile: Dockerfile
+    platforms:
+      - linux/amd64
+      - linux/arm64

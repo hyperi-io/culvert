@@ -1,0 +1,20 @@
+apiVersion: v2
+name: culvert
+description: OpenVPN + WireGuard VPN server with DPI bypass, OIDC SSO, and external PKI
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+# icon: set to the hosted raw URL once the public repo is live, e.g.
+#   https://raw.githubusercontent.com/hyperi-io/culvert/main/assets/brand/product-culvert/light/product-culvert_square_400w.png
+# Source (repo-relative): assets/brand/product-culvert/light/product-culvert_square_400w.png
+
+keywords:
+  - vpn
+  - openvpn
+  - wireguard
+  - hyperi
+
+maintainers:
+  - name: HyperI
+    url: https://github.com/hyperi-io

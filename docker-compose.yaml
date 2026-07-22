@@ -1,0 +1,276 @@
+# Culvert Server
+# OpenVPN 2.7+ with DCO and WireGuard in one image - TLS camouflage,
+# OIDC SSO, external PKI
+# Drop-in 'just works' docker or k8s scale deploy
+#
+# Authentication:
+#   - Certificate + OIDC hybrid authentication
+#   - Device identity via client certificate
+#   - User identity via OIDC (openvpn-auth-oauth2)
+#   - Group-based access control via your IdP (configure groups in IdP + OIDC claim)
+#
+# Deployment Modes:
+#   Single-node:  docker compose up -d
+#   Scale-out:    docker compose -f docker-compose.yaml -f docker-compose.shared.yaml up -d
+#
+# DCO (Data Channel Offload) Note:
+#   DCO moves encryption to kernel space for massive performance gains.
+#   The container accesses the HOST's DCO kernel module - ensure host VM has:
+#   - Linux kernel 6.x+ (Ubuntu 24.04 has 6.8)
+#   - openvpn-dco-dkms package installed on host
+#   - 'modprobe ovpn-dco-v2' run on host
+#
+# Usage:
+#   docker compose up -d                                # Start server
+#   docker compose logs -f                              # View logs
+#   docker compose down                                 # Stop server
+#   docker compose exec openvpn generate-client derek   # Generate client config (creates BOTH split + full)
+#   docker compose exec openvpn revoke-client derek     # Revoke client
+
+services:
+  openvpn:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Private registry authentication for base images (optional)
+      # Set REGISTRY_URL, REGISTRY_USERNAME, REGISTRY_PASSWORD in .env
+      # Example: REGISTRY_URL=registry.example.com/library
+      args:
+        - REGISTRY_URL=${REGISTRY_URL:-}
+        - REGISTRY_USERNAME=${REGISTRY_USERNAME:-}
+        - REGISTRY_PASSWORD=${REGISTRY_PASSWORD:-}
+    # Use private registry image if REGISTRY_URL is set, otherwise local build
+    image: ${REGISTRY_URL:+${REGISTRY_URL}/}culvert:${IMAGE_TAG:-latest}
+    container_name: ${CONTAINER_NAME:-culvert}
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+    # Required for DCO and VPN functionality
+    # NET_ADMIN: Network configuration, iptables, tun device
+    # SYS_MODULE: Load/access kernel modules (DCO)
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+
+    # Device access for VPN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    # Sysctls for network performance optimization
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+
+    # DNS servers for container (required for OAuth2 OIDC discovery)
+    # Uses internal DNS first, falls back to Cloudflare
+    dns:
+      - ${CULVERT_DNS1:-1.0.0.1}
+      - ${CULVERT_DNS2:-1.1.1.1}
+
+    # Default publishes the simplest working server: OpenVPN UDP + the health
+    # endpoint. Every other listener is a deliberate opt-in - uncomment its
+    # port mapping AND set its CULVERT_*_ENABLED (or CULVERT_PROTOCOL) knob.
+    ports:
+      # UDP - Primary OpenVPN (best performance with DCO)
+      - "${CULVERT_UDP_PORT:-1194}:${CULVERT_UDP_PORT:-1194}/udp"
+      # Observability - health probes + Prometheus /metrics on one port
+      # (bind is CULVERT_METRICS_ADDR; keep the port here in sync with it)
+      - "9090:9090/tcp"
+      # TCP - Proxy fallback for corporate firewalls (CULVERT_TCP_ENABLED=true)
+      # - "${CULVERT_TCP_PORT:-1194}:${CULVERT_TCP_PORT:-1194}/tcp"
+      # HTTPS - DPI bypass via port 443 (CULVERT_HTTPS_ENABLED=true)
+      # - "${CULVERT_HTTPS_PORT:-443}:${CULVERT_HTTPS_PORT:-443}/tcp"
+      # WireGuard - UDP primary (CULVERT_PROTOCOL=wireguard or both)
+      # - "${CULVERT_WG_PORT:-51820}:${CULVERT_WG_PORT:-51820}/udp"
+      # WireGuard - DPI bypass via wstunnel (CULVERT_WG_DPI_BYPASS_ENABLED=true)
+      # - "${CULVERT_WG_DPI_BYPASS_PORT:-4443}:${CULVERT_WG_DPI_BYPASS_PORT:-4443}/tcp"
+      # OAuth2 callback servers, one per enabled OpenVPN listener
+      # (CULVERT_OAUTH2_ENABLED=true; each listener needs its own instance)
+      # - "${CULVERT_OAUTH2_UDP_PORT:-9000}:${CULVERT_OAUTH2_UDP_PORT:-9000}/tcp"
+      # - "${CULVERT_OAUTH2_HTTPS_PORT:-9001}:${CULVERT_OAUTH2_HTTPS_PORT:-9001}/tcp"
+      # - "${CULVERT_OAUTH2_TCP_PORT:-9002}:${CULVERT_OAUTH2_TCP_PORT:-9002}/tcp"
+      # Client config download server (CULVERT_CLIENT_DOWNLOAD_ENABLED=true)
+      # - "${CULVERT_CLIENT_DOWNLOAD_PORT:-8443}:${CULVERT_CLIENT_DOWNLOAD_PORT:-8443}/tcp"
+
+    volumes:
+      # PKI - certificates and keys (MANDATORY - persistent on host filesystem)
+      # These MUST be bind mounts to survive container recreation
+      - ${CULVERT_PKI_PATH:-./pki}:/etc/openvpn/pki
+      # Client configs output (persistent on host filesystem)
+      - ${CULVERT_CLIENTS_PATH:-./clients}:/etc/openvpn/clients
+      # Client-specific configs (ccd) - mount from host for customization
+      - ./config/ccd:/etc/openvpn/server/ccd:ro
+      # Logs (persistent)
+      - ${CULVERT_LOGS_PATH:-./logs}:/var/log/openvpn
+      # OAuth2 TLS certificates (required when CULVERT_OAUTH2_ENABLED=true)
+      # Mount wildcard or server-specific certificate for HTTPS callback endpoint
+      - ${OAUTH2_TLS_CERT_PATH:-/opt/openvpn/certs}:/etc/openvpn/oauth2-tls:ro
+
+    environment:
+      # Server identity - MUST match DNS/certificate
+      - CULVERT_SERVER_CN=${CULVERT_SERVER_CN:-vpn.example.com}
+
+      # Listener configuration. Default is the simplest working server:
+      # OpenVPN UDP only. TCP and HTTPS (DPI bypass) are deliberate opt-ins.
+      # UDP - Primary (best performance)
+      - CULVERT_UDP_ENABLED=${CULVERT_UDP_ENABLED:-true}
+      - CULVERT_UDP_PORT=${CULVERT_UDP_PORT:-1194}
+      - CULVERT_UDP_NETWORK=${CULVERT_UDP_NETWORK:-192.168.100.0}
+      - CULVERT_UDP_NETMASK=${CULVERT_UDP_NETMASK:-255.255.255.0}
+      # HTTPS - DPI bypass via port 443 (opt-in)
+      - CULVERT_HTTPS_ENABLED=${CULVERT_HTTPS_ENABLED:-false}
+      - CULVERT_HTTPS_PORT=${CULVERT_HTTPS_PORT:-443}
+      - CULVERT_HTTPS_NETWORK=${CULVERT_HTTPS_NETWORK:-192.168.101.0}
+      - CULVERT_HTTPS_NETMASK=${CULVERT_HTTPS_NETMASK:-255.255.255.0}
+      # TCP - Proxy fallback (opt-in)
+      - CULVERT_TCP_ENABLED=${CULVERT_TCP_ENABLED:-false}
+      - CULVERT_TCP_PORT=${CULVERT_TCP_PORT:-1194}
+      - CULVERT_TCP_NETWORK=${CULVERT_TCP_NETWORK:-192.168.102.0}
+      - CULVERT_TCP_NETMASK=${CULVERT_TCP_NETMASK:-255.255.255.0}
+
+      # DNS servers pushed to clients
+      - CULVERT_DNS1=${CULVERT_DNS1:-1.1.1.1}
+      - CULVERT_DNS2=${CULVERT_DNS2:-1.0.0.1}
+
+      # Routing
+      - CULVERT_FULL_TUNNEL=${CULVERT_FULL_TUNNEL:-false}
+      - CULVERT_PUSH_ROUTES=${CULVERT_PUSH_ROUTES:-}
+
+      # WireGuard (opt-in: set CULVERT_PROTOCOL=wireguard, or both to run it
+      # alongside OpenVPN, then uncomment the knobs you need)
+      # - CULVERT_PROTOCOL=${CULVERT_PROTOCOL:-openvpn}
+      # - CULVERT_WG_NETWORK=${CULVERT_WG_NETWORK:-192.168.200.0/24}
+      # - CULVERT_WG_PORT=${CULVERT_WG_PORT:-51820}
+      # - CULVERT_WG_MTU=${CULVERT_WG_MTU:-1420}
+      # - CULVERT_WG_PERSISTENT_KEEPALIVE=${CULVERT_WG_PERSISTENT_KEEPALIVE:-25}
+      # WireGuard DPI bypass via wstunnel (a further opt-in on top of WireGuard)
+      # - CULVERT_WG_DPI_BYPASS_ENABLED=${CULVERT_WG_DPI_BYPASS_ENABLED:-false}
+      # - CULVERT_WG_DPI_BYPASS_PORT=${CULVERT_WG_DPI_BYPASS_PORT:-4443}
+
+      # Network profile: "default" (fast internet) or "wireless" (4G/mobile optimized)
+      - CULVERT_NETWORK_PROFILE=${CULVERT_NETWORK_PROFILE:-default}
+
+      # Performance tuning (optional - profile sets sensible defaults)
+      - CULVERT_SNDBUF=${CULVERT_SNDBUF:-}
+      - CULVERT_RCVBUF=${CULVERT_RCVBUF:-}
+      - CULVERT_TUN_MTU=${CULVERT_TUN_MTU:-}
+      - CULVERT_MSSFIX=${CULVERT_MSSFIX:-}
+      - CULVERT_KEEPALIVE_PING=${CULVERT_KEEPALIVE_PING:-}
+      - CULVERT_KEEPALIVE_TIMEOUT=${CULVERT_KEEPALIVE_TIMEOUT:-}
+      - CULVERT_MAX_CLIENTS=${CULVERT_MAX_CLIENTS:-auto}
+      - CULVERT_RENEG_SEC=${CULVERT_RENEG_SEC:-}
+      - CULVERT_LOG_MODE=${CULVERT_LOG_MODE:-file}
+      - CULVERT_VERB=${CULVERT_VERB:-}
+      - CULVERT_MUTE=${CULVERT_MUTE:-}
+
+      # Observability listener: always serves health probes; /metrics is
+      # served when CULVERT_METRICS_ENABLED=true
+      - CULVERT_METRICS_ENABLED=${CULVERT_METRICS_ENABLED:-false}
+      - CULVERT_METRICS_ADDR=${CULVERT_METRICS_ADDR:-0.0.0.0:9090}
+
+      # Client config download server (REQUIRES a bearer token when enabled:
+      # the served configs embed client private keys, so it fails closed)
+      - CULVERT_CLIENT_DOWNLOAD_ENABLED=${CULVERT_CLIENT_DOWNLOAD_ENABLED:-false}
+      - CULVERT_CLIENT_DOWNLOAD_PORT=${CULVERT_CLIENT_DOWNLOAD_PORT:-8443}
+      - CULVERT_CLIENT_DOWNLOAD_TOKEN=${CULVERT_CLIENT_DOWNLOAD_TOKEN:-}
+
+      # PKI settings (CNSA 2.0 compliant defaults)
+      - CULVERT_CA_CN=${CULVERT_CA_CN:-Culvert CA}
+      - CULVERT_KEY_TYPE=${CULVERT_KEY_TYPE:-ec}
+      - CULVERT_KEY_SIZE=${CULVERT_KEY_SIZE:-secp384r1}
+
+      # OIDC SSO, opt-in (works with Entra ID, Okta, Keycloak, Google, Auth0, etc.)
+      - CULVERT_OAUTH2_ENABLED=${CULVERT_OAUTH2_ENABLED:-false}
+      - CULVERT_OAUTH2_ISSUER=${CULVERT_OAUTH2_ISSUER:-}
+      - CULVERT_OAUTH2_CLIENT_ID=${CULVERT_OAUTH2_CLIENT_ID:-}
+      - CULVERT_OAUTH2_CLIENT_SECRET=${CULVERT_OAUTH2_CLIENT_SECRET:-}
+      - CULVERT_OAUTH2_VALIDATE_GROUPS=${CULVERT_OAUTH2_VALIDATE_GROUPS:-}
+      # Per-listener OAuth2 enable/disable (defaults to CULVERT_OAUTH2_ENABLED)
+      - CULVERT_OAUTH2_UDP_ENABLED=${CULVERT_OAUTH2_UDP_ENABLED:-}
+      - CULVERT_OAUTH2_HTTPS_ENABLED=${CULVERT_OAUTH2_HTTPS_ENABLED:-}
+      - CULVERT_OAUTH2_TCP_ENABLED=${CULVERT_OAUTH2_TCP_ENABLED:-}
+      # Per-listener OAuth2 callback ports (defaults: 9000=UDP, 9001=HTTPS, 9002=TCP)
+      - CULVERT_OAUTH2_UDP_PORT=${CULVERT_OAUTH2_UDP_PORT:-9000}
+      - CULVERT_OAUTH2_HTTPS_PORT=${CULVERT_OAUTH2_HTTPS_PORT:-9001}
+      - CULVERT_OAUTH2_TCP_PORT=${CULVERT_OAUTH2_TCP_PORT:-9002}
+      - CULVERT_OAUTH2_HTTP_SECRET=${CULVERT_OAUTH2_HTTP_SECRET:-}
+      # Default scopes match the code default. Add offline_access for IdPs
+      # that issue refresh tokens through it (e.g. Entra ID); some IdPs
+      # reject unknown scopes, so it is not the default.
+      - CULVERT_OAUTH2_SCOPES=${CULVERT_OAUTH2_SCOPES:-openid,profile,email}
+      # OAuth2 TLS (REQUIRED when CULVERT_OAUTH2_ENABLED=true - most IdPs
+      # require HTTPS redirect URIs). Paths inside the container; mount certs
+      # via the OAUTH2_TLS_CERT_PATH volume above.
+      - CULVERT_OAUTH2_TLS_CERT=${CULVERT_OAUTH2_TLS_CERT:-/etc/openvpn/oauth2-tls/fullchain.pem}
+      - CULVERT_OAUTH2_TLS_KEY=${CULVERT_OAUTH2_TLS_KEY:-/etc/openvpn/oauth2-tls/privkey.pem}
+      # stunnel TLS (for the opt-in HTTPS tunnel - same certs as OAuth2 by default)
+      # Note: Use fullchain (leaf + intermediate CA) for proper certificate verification
+      - CULVERT_STUNNEL_CERT=${CULVERT_STUNNEL_CERT:-/etc/openvpn/oauth2-tls/fullchain.pem}
+      - CULVERT_STUNNEL_KEY=${CULVERT_STUNNEL_KEY:-/etc/openvpn/oauth2-tls/privkey.pem}
+      # OAuth2 Branding (optional)
+      # Custom HTML template and assets for OAuth login page. The assets
+      # fallback repeats the code default because an empty-but-set env var
+      # would override it with "" and drop the baked-in branding.
+      - CULVERT_OAUTH2_TEMPLATE=${CULVERT_OAUTH2_TEMPLATE:-}
+      - CULVERT_OAUTH2_ASSETS_PATH=${CULVERT_OAUTH2_ASSETS_PATH:-/etc/openvpn-auth-oauth2/assets}
+
+      # Timezone
+      - TZ=${TZ:-Australia/Sydney}
+
+    # No healthcheck override: the image's protocol-aware HEALTHCHECK
+    # (entrypoint healthcheck -> /health/live) covers OpenVPN, WireGuard,
+    # and both. A pgrep for openvpn would report a WireGuard-only server
+    # unhealthy forever.
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  #=============================================================================
+  # Watchtower - Automatic Docker Container Updates
+  #=============================================================================
+  # Monitors containers and updates them when new images are available.
+  # Schedule: Daily at 04:00 (after 03:00 VM security updates)
+  # Only updates containers with com.centurylinklabs.watchtower.enable=true label
+  #
+  # Behavior:
+  #   - Pulls new image if available
+  #   - Stops container gracefully
+  #   - Recreates with same config
+  #   - Removes old image
+  #
+  # Disable: Set WATCHTOWER_ENABLED=false in .env
+  watchtower:
+    # Note: containrrr/watchtower was archived Dec 2025 and broken with Docker 29+
+    # Using maintained fork: https://github.com/nickfedor/watchtower
+    image: nickfedor/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    profiles:
+      - watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Schedule: 04:00 daily (cron format: sec min hour day month weekday)
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      # Only update containers with enable label (opt-in)
+      - WATCHTOWER_LABEL_ENABLE=true
+      # Remove old images after update
+      - WATCHTOWER_CLEANUP=true
+      # Timezone
+      - TZ=${TZ:-Australia/Sydney}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+# NOTE: PKI, clients, and logs now use bind mounts (host directories) by default
+# This ensures persistence across container recreation and volume removal
+# Set CULVERT_PKI_PATH, CULVERT_CLIENTS_PATH, CULVERT_LOGS_PATH in .env to customize paths
+#
+# Watchtower: Enable with `docker compose --profile watchtower up -d`
+# Or add COMPOSE_PROFILES=watchtower to .env for always-on

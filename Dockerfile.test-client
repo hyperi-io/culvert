@@ -1,0 +1,53 @@
+#  Project:      culvert
+#  File:         Dockerfile.test-client
+#  Purpose:      Minimal VPN test client container image
+#  Language:     Dockerfile
+#
+#  License:      Apache-2.0
+#  Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+# Culvert Test Client
+# Minimal client for testing VPN connectivity
+#
+# Build: docker build -f Dockerfile.test-client -t culvert-client .
+# Run:   docker run --rm -it --cap-add NET_ADMIN --device /dev/net/tun \
+#          -v ./clients:/etc/openvpn/clients:ro \
+#          culvert-client /etc/openvpn/clients/alice-split.ovpn
+#
+# Per ANSIBLE-DESIGN.md principle #3: Default to Latest Versions
+# Base image: Override with --build-arg UBUNTU_VERSION=xx.xx
+# Default: 24.04 LTS (pinned for stability, override for testing newer)
+
+ARG UBUNTU_VERSION=24.04
+FROM ubuntu:${UBUNTU_VERSION}
+
+LABEL maintainer="HyperI <opensource@hyperi.io>"
+LABEL description="OpenVPN test client for connectivity validation"
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install OpenVPN client from official repository
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        lsb-release \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://swupdate.openvpn.net/repos/repo-public.gpg | gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/openvpn.gpg] https://build.openvpn.net/debian/openvpn/stable $(lsb_release -cs) main" > /etc/apt/sources.list.d/openvpn.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        openvpn \
+        iproute2 \
+        iputils-ping \
+        dnsutils \
+        curl \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /etc/openvpn
+
+COPY scripts/test-client-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

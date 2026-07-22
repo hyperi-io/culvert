@@ -1,0 +1,26 @@
+# Hadolint configuration
+# https://github.com/hadolint/hadolint
+
+# Ignore specific rules
+ignored:
+  # DL3006: Always tag the version of an image explicitly
+  # We use BASE_IMAGE build arg for registry flexibility
+  - DL3006
+  # DL3008: Pin versions in apt-get install
+  # We use openvpn from official repo which provides latest stable
+  - DL3008
+  # DL4006: Set SHELL option -o pipefail
+  # Not needed - our pipe usage handles errors appropriately
+  - DL4006
+  # SC2028: echo may not expand escape sequences
+  # Intentional - we want literal \n in config file content
+  - SC2028
+  # DL3002: Last USER should not be root
+  # Deliberate: the VPN server needs root for tun device creation, iptables
+  # NAT/forwarding, and wg-quick. OpenVPN drops to 'nobody' via its own config
+  # after setup; WireGuard/stunnel/wstunnel run in the same privileged netns.
+  - DL3002
+
+trustedRegistries:
+  - docker.io
+  - ghcr.io

@@ -1,0 +1,39 @@
+culvert
+Copyright 2026 HYPERI PTY LIMITED
+
+This product includes software developed at HYPERI PTY LIMITED
+(https://hyperi.io/).
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------
+Third-party components bundled in the container image
+--------------------------------------------------------------------------
+
+The culvert source repository is Apache-2.0. The published container image
+additionally installs and distributes the following third-party software
+under its own licences:
+
+OpenVPN
+  https://openvpn.net/ -- GPL-2.0 with OpenSSL linking exception.
+  Installed from the official OpenVPN APT repository.
+
+openvpn-auth-oauth2
+  https://github.com/jkroepke/openvpn-auth-oauth2 -- MIT License.
+  Copyright (c) Jan-Otto Kroepke. Installed from upstream GitHub releases.
+
+wstunnel
+  https://github.com/erebe/wstunnel -- BSD-3-Clause License.
+  Copyright (c) Romain Gerard. Installed from upstream GitHub releases.
+
+stunnel
+  https://www.stunnel.org/ -- GPL-2.0-or-later with OpenSSL linking
+  exception. Installed from Ubuntu APT repositories.
+
+Easy-RSA
+  https://github.com/OpenVPN/easy-rsa -- GPL-2.0. Installed from Ubuntu
+  APT repositories.
+
+WireGuard tools (wireguard-tools)
+  https://www.wireguard.com/ -- GPL-2.0. Installed from Ubuntu APT
+  repositories.

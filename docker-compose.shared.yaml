@@ -1,0 +1,59 @@
+# Culvert - Shared Storage Override
+# Use this for scale-out deployments with multiple containers behind a load balancer
+#
+# Usage:
+#   docker compose -f docker-compose.yaml -f docker-compose.shared.yaml up -d
+#
+# Or set COMPOSE_FILE in .env:
+#   COMPOSE_FILE=docker-compose.yaml:docker-compose.shared.yaml
+#
+# Required: Set SHARED_STORAGE_PATH in .env to your shared mount point
+#   - NFS:       SHARED_STORAGE_PATH=/mnt/nfs/openvpn
+#   - S3 (s3fs): SHARED_STORAGE_PATH=/mnt/s3/openvpn
+#   - EFS:       SHARED_STORAGE_PATH=/mnt/efs/openvpn
+#   - GlusterFS: SHARED_STORAGE_PATH=/mnt/gluster/openvpn
+#
+# Directory structure (auto-created by entrypoint):
+#   ${SHARED_STORAGE_PATH}/
+#   ├── pki/          # CA, server cert, client certs, CRL, tls-crypt-v2 key
+#   ├── clients/      # Generated .ovpn files (split + full for each client)
+#   └── ccd/          # Client-specific configs (optional)
+#
+# What MUST be shared (for scale-out to work):
+#   - pki/ca.crt           - Certificate Authority (same CA for all clients)
+#   - pki/issued/          - All issued certificates
+#   - pki/private/         - Private keys (server + clients)
+#   - pki/crl.pem          - Certificate Revocation List (revocations work everywhere)
+#   - pki/tc.key           - tls-crypt-v2 server key
+#   - clients/             - Generated .ovpn files (accessible from any node)
+#
+# What CAN remain local:
+#   - Logs (per-container debugging)
+#   - Runtime state (management socket, pid files)
+
+services:
+  openvpn:
+    # Remove container_name for scale-out (allows multiple instances)
+    container_name: ""
+
+    volumes:
+      # Override Docker volumes with shared storage bind mounts
+      # PKI - MUST be shared (CA, certs, CRL, tls-crypt-v2 key)
+      - ${SHARED_STORAGE_PATH}/pki:/etc/openvpn/pki
+
+      # Client configs - SHOULD be shared (access .ovpn from any node)
+      - ${SHARED_STORAGE_PATH}/clients:/etc/openvpn/clients
+
+      # CCD - optional shared (client-specific overrides)
+      - ${SHARED_STORAGE_PATH}/ccd:/etc/openvpn/server/ccd:ro
+
+      # Logs - keep local per container (or share for central aggregation)
+      # Option 1: Local logs (default - for per-container debugging)
+      - openvpn-logs:/var/log/openvpn
+      # Option 2: Shared logs (uncomment for central log aggregation)
+      # - ${SHARED_STORAGE_PATH}/logs:/var/log/openvpn
+
+# Keep local volume for logs (shared storage override doesn't affect logs by default)
+volumes:
+  openvpn-logs:
+    name: openvpn-logs-${HOSTNAME:-local}

@@ -1,0 +1,12 @@
+# Example deployment profile -- copy and edit for your site.
+# Load with: CULVERT_PROFILE=example (or a full path).
+#
+# Profiles set site-specific defaults; explicit CULVERT_* env vars
+# always override profile values.
+org_name: Example Org
+server_cn: vpn.example.com
+ca_cn: "Example Org VPN CA"
+stunnel_cert: /etc/vpn/oauth2-tls/fullchain.pem
+stunnel_key: /etc/vpn/oauth2-tls/privkey.key
+push_routes: "10.0.0.0/24,10.0.1.0/24"
+dns_domain: internal.example.com

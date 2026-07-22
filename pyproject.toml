@@ -1,0 +1,69 @@
+#  Project:      culvert
+#  File:         pyproject.toml
+#  Purpose:      Project metadata, ruff and pytest configuration
+#  Language:     TOML
+#
+#  License:      Apache-2.0
+#  Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+[project]
+name = "culvert"
+version = "0.0.0"
+description = "Culvert — OpenVPN + WireGuard with DPI bypass, OIDC SSO, and external PKI"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+
+# Granular secrets extras on purpose: culvert's backends are file (core,
+# no extra), openbao (secrets-vault) and aws (secrets-aws). The blanket
+# [secrets] extra would drag in ansible-vault + GCP + Azure (~180MB) that
+# no culvert backend uses.
+dependencies = [
+    "scalo[metrics,secrets-vault,secrets-aws]>=2.29.10,<3",
+]
+
+[project.optional-dependencies]
+secrets-vault = ["scalo[secrets-vault]"]
+secrets-aws = ["scalo[secrets-aws]"]
+secrets-gcp = ["scalo[secrets-gcp]"]
+secrets-azure = ["scalo[secrets-azure]"]
+otel = ["scalo[opentelemetry]"]
+dev = [
+    "ruff",
+    "pytest",
+    # Deployment-contract generators (Helm chart, compose fragment). Pulls in
+    # pydantic. Dev/CI-only: culvert's runtime never imports scalo.deployment.
+    "scalo[deployment]",
+]
+
+# culvert is distributed as a container image, not a Python package.
+# Declare no packages so setuptools doesn't auto-discover config/, profiles/
+# and fail the build. A minimal wheel is still built for pipeline parity.
+[tool.setuptools]
+packages = []
+
+[tool.ty.environment]
+# scripts/ is injected onto sys.path by tests/conftest.py at runtime; tell ty
+# so it can resolve the `lib.*` and entrypoint imports under tests/.
+extra-paths = ["scripts"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+force-single-line = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "e2e: end-to-end tests requiring Docker (deselect with -m 'not e2e')",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
