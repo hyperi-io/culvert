@@ -1,7 +1,7 @@
 # Project:      culvert
 # File:         .github/workflows/dependency-check.yml
 # Purpose:      Check for vendored dependency updates and open a PR
-# License:      BUSL-1.1
+# License:      Apache-2.0
 # Copyright:    (c) 2026 HYPERI PTY LIMITED
 
 name: Dependency Check
