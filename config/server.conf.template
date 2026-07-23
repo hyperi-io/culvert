@@ -143,4 +143,8 @@ mute ${OPENVPN_MUTE}
 #===============================================================================
 # Management Interface
 #===============================================================================
-management 127.0.0.1 7505
+# Root-only unix socket (dir is 0700): the management API is
+# unauthenticated, so it must not be a localhost TCP port any
+# in-container process can reach. OAuth2 mode replaces this line with a
+# password-protected socket.
+management /run/vpn/management-udp.sock unix

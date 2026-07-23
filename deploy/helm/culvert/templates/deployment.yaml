@@ -66,6 +66,12 @@ spec:
               value: {{ $v | quote }}
             {{- end }}
           {{- end }}
+          # culvert VPN overlay: SENSITIVE CULVERT_* from a pre-created Secret.
+          {{- if .Values.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.existingSecret }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

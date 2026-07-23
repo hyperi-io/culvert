@@ -40,13 +40,19 @@ def _get_settings():
     profile = os.environ.get("CULVERT_PROFILE", "").strip()
     if profile:
         if "/" in profile or profile.endswith(".yaml"):
-            path = profile
+            path = Path(profile)
         else:
-            path = f"/etc/vpn/profiles/{profile}.yaml"
-        if not Path(path).exists():
+            path = Path(f"/etc/vpn/profiles/{profile}.yaml")
+        # Resolve to absolute: get_config() rebases a RELATIVE path onto
+        # its own config_dir and silently skips it if missing, so a bare
+        # relative CULVERT_PROFILE would pass the check below yet never
+        # load. Resolving here keeps the existence check and the loader
+        # looking at the same file.
+        path = path.expanduser().resolve()
+        if not path.exists():
             logger.error(f"CULVERT_PROFILE not found: {path}")
             sys.exit(1)
-        additional.append(path)
+        additional.append(str(path))
     return get_config(
         env_prefix="CULVERT",
         additional_files=additional,
@@ -116,6 +122,14 @@ def validate_cidr_routes(value: str, name: str) -> None:
             raise ValidationError(f"{name} contains invalid CIDR: '{route}'")
 
 
+def _subnet_or_none(network: str, netmask: str) -> str | None:
+    """CIDR string for a network/netmask pair, or None if malformed."""
+    try:
+        return str(ipaddress.IPv4Network(f"{network}/{netmask}", strict=False))
+    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
+        return None
+
+
 @dataclass
 class Config:
     """Container configuration populated from scalo settings.
@@ -151,23 +165,31 @@ class Config:
     # Protocol selection
     protocol: str = "openvpn"
 
+    # Tunnel addressing lives in 10.8.0.0/22 - the hub-VPN convention
+    # (OpenVPN's reference config, angristan, wg-easy all use 10.8.x),
+    # one /24 per listener. Deliberately NOT the 100.64.0.0/10 CGNAT
+    # range: carrier WANs (Starlink, 4G/5G) and Tailscale both occupy
+    # it and break the tunnel transport underneath. The edge-fleet
+    # preset opts back into CGNAT slices where the operator controls
+    # both ends. Cascade-overridable.
+
     # UDP Listener
     udp_enabled: bool = True
     udp_port: int = 1194
-    udp_network: str = "192.168.100.0"
+    udp_network: str = "10.8.0.0"
     udp_netmask: str = "255.255.255.0"
 
     # TCP Listener (opt-in)
     tcp_enabled: bool = False
     tcp_port: int = 1194
-    tcp_network: str = "192.168.102.0"
+    tcp_network: str = "10.8.1.0"
     tcp_netmask: str = "255.255.255.0"
 
     # HTTPS Listener (via stunnel, opt-in)
     https_enabled: bool = False
     https_port: int = 443
     https_internal_port: int = 1195
-    https_network: str = "192.168.101.0"
+    https_network: str = "10.8.2.0"
     https_netmask: str = "255.255.255.0"
 
     # stunnel TLS (required when HTTPS listener enabled)
@@ -182,6 +204,16 @@ class Config:
     # Routing
     full_tunnel: bool = False
     push_routes: str = ""
+
+    # Routing control (opt-in FORWARD filtering). When enabled:
+    # clients cannot reach each other (client_isolation, overridable),
+    # nothing outside may initiate into the tunnels except
+    # downstream_admin_cidrs, and if allowed_destinations is set clients
+    # may only initiate to those CIDRs.
+    routing_control_enabled: bool = False
+    client_isolation: bool = True
+    allowed_destinations: str = ""
+    downstream_admin_cidrs: str = ""
 
     # Network Profile
     network_profile: str = "default"
@@ -224,7 +256,7 @@ class Config:
 
     # WireGuard
     wg_port: int = 51820
-    wg_network: str = "192.168.200.0/24"
+    wg_network: str = "10.8.3.0/24"
     wg_mtu: int = 1420
     wg_persistent_keepalive: int = 25
     wg_dpi_bypass_enabled: bool = False
@@ -434,18 +466,18 @@ class Config:
             # UDP
             udp_enabled=_settings_bool(s, "udp_enabled", True),
             udp_port=_settings_int(s, "udp_port", 1194),
-            udp_network=s.get("udp_network", "192.168.100.0"),
+            udp_network=s.get("udp_network", "10.8.0.0"),
             udp_netmask=s.get("udp_netmask", "255.255.255.0"),
             # TCP
             tcp_enabled=_settings_bool(s, "tcp_enabled", False),
             tcp_port=_settings_int(s, "tcp_port", 1194),
-            tcp_network=s.get("tcp_network", "192.168.102.0"),
+            tcp_network=s.get("tcp_network", "10.8.1.0"),
             tcp_netmask=s.get("tcp_netmask", "255.255.255.0"),
             # HTTPS
             https_enabled=_settings_bool(s, "https_enabled", False),
             https_port=_settings_int(s, "https_port", 443),
             https_internal_port=_settings_int(s, "https_internal_port", 1195),
-            https_network=s.get("https_network", "192.168.101.0"),
+            https_network=s.get("https_network", "10.8.2.0"),
             https_netmask=s.get("https_netmask", "255.255.255.0"),
             # stunnel
             stunnel_cert=s.get("stunnel_cert", ""),
@@ -457,6 +489,10 @@ class Config:
             # Routing
             full_tunnel=_settings_bool(s, "full_tunnel", False),
             push_routes=s.get("push_routes", ""),
+            routing_control_enabled=_settings_bool(s, "routing_control_enabled", False),
+            client_isolation=_settings_bool(s, "client_isolation", True),
+            allowed_destinations=s.get("allowed_destinations", ""),
+            downstream_admin_cidrs=s.get("downstream_admin_cidrs", ""),
             # Network profile + performance
             network_profile=network_profile,
             sndbuf=_settings_int(s, "sndbuf", 393216 if is_wireless else 0),
@@ -499,7 +535,7 @@ class Config:
             oauth2_tcp_port=_settings_int(s, "oauth2_tcp_port", 9002),
             # WireGuard
             wg_port=_settings_int(s, "wg_port", 51820),
-            wg_network=s.get("wg_network", "192.168.200.0/24"),
+            wg_network=s.get("wg_network", "10.8.3.0/24"),
             wg_mtu=_settings_int(s, "wg_mtu", 1420),
             wg_persistent_keepalive=_settings_int(s, "wg_persistent_keepalive", 25),
             wg_dpi_bypass_enabled=_settings_bool(s, "wg_dpi_bypass_enabled", False),
@@ -583,11 +619,41 @@ class Config:
             except ValidationError as e:
                 errors.append(str(e))
 
-        # Push routes
-        try:
-            validate_cidr_routes(self.push_routes, "CULVERT_PUSH_ROUTES")
-        except ValidationError as e:
-            errors.append(str(e))
+        # Network/netmask pairs must form a valid subnet - setup_network derives
+        # the NAT prefix from these, so a malformed netmask must fail here rather
+        # than crash iptables setup at runtime.
+        for name, network, netmask in [
+            ("CULVERT_UDP", self.udp_network, self.udp_netmask),
+            ("CULVERT_TCP", self.tcp_network, self.tcp_netmask),
+            ("CULVERT_HTTPS", self.https_network, self.https_netmask),
+        ]:
+            try:
+                ipaddress.IPv4Network(f"{network}/{netmask}", strict=False)
+            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
+                errors.append(
+                    f"{name}_NETWORK/{name}_NETMASK is not a valid subnet:"
+                    f" {network}/{netmask}"
+                )
+
+        # Push routes + routing-control CIDR lists
+        for name, value in [
+            ("CULVERT_PUSH_ROUTES", self.push_routes),
+            ("CULVERT_ALLOWED_DESTINATIONS", self.allowed_destinations),
+            ("CULVERT_DOWNSTREAM_ADMIN_CIDRS", self.downstream_admin_cidrs),
+        ]:
+            try:
+                validate_cidr_routes(value, name)
+            except ValidationError as e:
+                errors.append(str(e))
+
+        if not self.routing_control_enabled and (
+            self.allowed_destinations or self.downstream_admin_cidrs
+        ):
+            warnings.append(
+                "routing-control CIDRs are set but"
+                " CULVERT_ROUTING_CONTROL_ENABLED is false -"
+                " no FORWARD filtering will be applied"
+            )
 
         # PKI mode
         if self.pki_mode not in ("local", "external"):
@@ -707,42 +773,21 @@ class Config:
         # opted in at once, not just when protocol=both.
         overlap_subnets = []
         if self.protocol in ("openvpn", "both"):
+            candidates = []
             if self.udp_enabled:
-                overlap_subnets.append(
-                    (
-                        "OpenVPN-UDP",
-                        str(
-                            ipaddress.IPv4Network(
-                                f"{self.udp_network}/{self.udp_netmask}",
-                                strict=False,
-                            )
-                        ),
-                    )
-                )
+                candidates.append(("OpenVPN-UDP", self.udp_network, self.udp_netmask))
             if self.tcp_enabled:
-                overlap_subnets.append(
-                    (
-                        "OpenVPN-TCP",
-                        str(
-                            ipaddress.IPv4Network(
-                                f"{self.tcp_network}/{self.tcp_netmask}",
-                                strict=False,
-                            )
-                        ),
-                    )
-                )
+                candidates.append(("OpenVPN-TCP", self.tcp_network, self.tcp_netmask))
             if self.https_enabled:
-                overlap_subnets.append(
-                    (
-                        "OpenVPN-HTTPS",
-                        str(
-                            ipaddress.IPv4Network(
-                                f"{self.https_network}/{self.https_netmask}",
-                                strict=False,
-                            )
-                        ),
-                    )
+                candidates.append(
+                    ("OpenVPN-HTTPS", self.https_network, self.https_netmask)
                 )
+            for label, net, mask in candidates:
+                # Skip malformed netmasks - already reported above; can't
+                # overlap-check invalid input.
+                subnet = _subnet_or_none(net, mask)
+                if subnet is not None:
+                    overlap_subnets.append((label, subnet))
         if self.protocol in ("wireguard", "both"):
             overlap_subnets.append(("WireGuard", self.wg_network))
 

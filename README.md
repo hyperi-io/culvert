@@ -13,19 +13,21 @@ external PKI -- `docker run` it standalone or drop it into Kubernetes.
 - **OIDC SSO:** Works with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 and other OIDC providers (OpenVPN only; WireGuard uses key-based auth)
 - **External PKI:** File mounts, OpenBao (Vault-compatible), or AWS Secrets Manager; falls back to self-generated Easy-RSA CA
 - **Observability:** Prometheus `/metrics` + OpenTelemetry OTLP export
-- **K8s-ready:** `/health/live`, `/health/ready`, `/health/startup` probes; SIGTERM drain; cgroup-aware resource detection
+- **Crypto:** TLS 1.3 only, AES-256-GCM, SHA-384, P-384 PKI on the OpenVPN path - the CNSA 2.0 classical suite ([details and honest limits](#cryptography-and-cnsa-20))
+- **K8s-ready:** `/healthz` + `/readyz` probes (plus `/health/*` aliases); SIGTERM drain; cgroup-aware resource detection
 
-## What it replaces
+## Coming from another VPN server?
 
-One image, no management-plane stack, no per-user fees. If you run one
-of these today, Culvert covers the same ground:
+Culvert is one image with no management-plane stack and no per-user
+fees. If you already run one of these, here is what you gain by
+switching - and what you give up:
 
-| You use | What changes with Culvert |
-|---------|--------------------------|
-| [AWS Client VPN](https://aws.amazon.com/vpn/) | Flat cost of a node instead of ~USD 0.10/hr per subnet association plus USD 0.05/hr per connection (a 50-user, 4-subnet setup runs ~USD 850/month). Adds WireGuard, any-IdP OIDC, and TLS camouflage; AWS Client VPN is OpenVPN-only with a 50 Mbps per-connection baseline. You give up the managed control plane. |
+| If you use | What you gain with Culvert |
+|------------|----------------------------|
+| [AWS Client VPN](https://aws.amazon.com/vpn/) | Flat cost of a node instead of per-subnet-association plus per-connection charges. Adds WireGuard, any-IdP OIDC, and TLS camouflage; AWS Client VPN is OpenVPN-only with a 50 Mbps per-connection baseline. You give up the managed control plane. |
 | [kylemanna/docker-openvpn](https://github.com/kylemanna/docker-openvpn) | The most-pulled OpenVPN image (1.2B pulls) has been unmaintained since 2020 and ships OpenVPN 2.4. Culvert is the maintained successor shape: OpenVPN 2.7 with DCO, plus everything above. |
-| [angristan/openvpn-install](https://github.com/angristan/openvpn-install) | Same result without a host-mutating bash script - the server is an image, config is env vars, upgrades are a `docker pull`. |
-| [OpenVPN Access Server](https://openvpn.net/access-server/) | No per-connection licensing (free tier is 2 concurrent connections, then ~USD 7/connection/month). Culvert adds WireGuard and provider-neutral OIDC. |
+| [angristan/openvpn-install](https://github.com/angristan/openvpn-install) | Same result (plus the extras) without a host-mutating bash script - the server is an image, config is env vars, upgrades are a `docker pull`. |
+| [OpenVPN Access Server](https://openvpn.net/access-server/) | No per-connection licensing. Culvert adds WireGuard and provider-neutral OIDC. |
 | [wg-easy](https://github.com/wg-easy/wg-easy) | Keep the WireGuard simplicity, add OpenVPN for the clients that need it, per-connection OIDC SSO, external PKI, and DPI bypass. |
 
 If you want a managed mesh overlay (Tailscale, NetBird) this is a
@@ -51,8 +53,7 @@ graph TD
     WG --> WGP[WireGuard Interface<br/>wg0 via wg-quick]
     WG --> WST[wstunnel server<br/>DPI bypass port 4443]
 
-    EP --> HEALTH[Health Server<br/>/health/live<br/>/health/ready<br/>/health/startup]
-    EP --> METRICS[Observability :9090<br/>health probes + /metrics<br/>OTel push :4317/4318]
+    EP --> OBS[Observability :9090<br/>/healthz + /readyz<br/>/metrics when enabled<br/>OTel push :4317/4318]
 ```
 
 **Platforms:** `linux/amd64`, `linux/arm64`
@@ -67,7 +68,7 @@ docker run -d \
   --cap-add=NET_ADMIN \
   --device=/dev/net/tun \
   -p 1194:1194/udp \
-  -p 9090:9090/tcp \
+  -p 127.0.0.1:9090:9090/tcp \
   -e CULVERT_SERVER_CN=vpn.yourdomain.example \
   -v culvert-pki:/etc/vpn/pki \
   -v culvert-clients:/etc/vpn/clients \
@@ -94,6 +95,36 @@ docker exec -it <container> generate-client --name alice
 See [docs/VPN-CLIENT-SETUP.md](docs/VPN-CLIENT-SETUP.md) for the full
 client connection guide.
 
+## Use cases
+
+The quick start above is the tyre-kicker path. From there, culvert
+ships opinionated profiles for the shapes we actually run it in - each
+usable as-is with one `CULVERT_PROFILE=` switch, or as a base to tweak.
+Each has a full walkthrough (deploy, client, ops) under [docs/](docs/):
+
+- **Home / lab** ([docs/USE-CASE-HOME.md](docs/USE-CASE-HOME.md)) -
+  reach your home LAN or a throwaway VM. OpenVPN UDP, split tunnel,
+  local PKI. `CULVERT_PROFILE=home`.
+- **Corporate** ([docs/USE-CASE-CORPORATE.md](docs/USE-CASE-CORPORATE.md))
+  \- per-user certs plus OIDC SSO, group gating, TCP fallback, clean
+  offboarding. `CULVERT_PROFILE=corporate`.
+- **Travel / hostile networks**
+  ([docs/USE-CASE-TRAVEL.md](docs/USE-CASE-TRAVEL.md)) - the
+  HTTPS-camouflaged listeners so protocol blocking does not see a VPN.
+  `CULVERT_PROFILE=travel`.
+- **Kubernetes at scale**
+  ([docs/USE-CASE-K8S-SCALE.md](docs/USE-CASE-K8S-SCALE.md)) - the Helm
+  chart behind a load balancer: probes, drain, autoscaling, external
+  PKI, metrics.
+- **Edge fleet -> receiver**
+  ([docs/USE-CASE-EDGE-FLEET.md](docs/USE-CASE-EDGE-FLEET.md)) - an
+  appliance fleet streaming into a central receiver, with reverse
+  admin back down the tunnels and CGNAT addressing.
+  `CULVERT_PROFILE=edge-fleet`.
+
+Addressing (why the tunnels default to `10.8.0.0/22`, when to use the
+CGNAT range) is its own note: [docs/ADDRESSING.md](docs/ADDRESSING.md).
+
 ## Configuration
 
 All runtime configuration is via `CULVERT_*` environment variables,
@@ -111,17 +142,29 @@ Site-specific defaults ship as YAML files under `profiles/` and load
 opt-in via `CULVERT_PROFILE`. Explicit env vars always override
 profile values.
 
-| Profile | Description |
-|---------|-------------|
-| `example` | Reference template with placeholder site defaults |
+Culvert ships opinionated presets for the common shapes. Each is
+usable as-is once you set `CULVERT_SERVER_CN` (and the secrets a
+preset needs), or as a starting point to copy and tweak:
 
-Load a shipped profile:
+| Profile | Shape | Walkthrough |
+|---------|-------|-------------|
+| `home` | OpenVPN UDP, split tunnel, local PKI - reach your home LAN or a lab VM | [docs/USE-CASE-HOME.md](docs/USE-CASE-HOME.md) |
+| `corporate` | Per-user certs + OIDC SSO + group gating + TCP fallback | [docs/USE-CASE-CORPORATE.md](docs/USE-CASE-CORPORATE.md) |
+| `travel` | HTTPS-camouflaged OpenVPN + WireGuard for hostile networks | [docs/USE-CASE-TRAVEL.md](docs/USE-CASE-TRAVEL.md) |
+| `edge-fleet` | Appliance fleet -> central receiver, reverse admin, CGNAT addressing | [docs/USE-CASE-EDGE-FLEET.md](docs/USE-CASE-EDGE-FLEET.md) |
+| `example` | Reference template with placeholder site defaults | - |
+
+Load a shipped profile (they live at `/etc/vpn/profiles/` in the
+image, so the bare name works):
 
 ```bash
-CULVERT_PROFILE=/etc/vpn/profiles/example.yaml
+CULVERT_PROFILE=home
 ```
 
-Or write your own YAML file and point `CULVERT_PROFILE` at its path.
+A profile sets the CULVERT_* configuration; the deployment side
+(published ports, Helm values) is documented in each walkthrough. Or
+write your own YAML and point `CULVERT_PROFILE` at its path. Explicit
+env vars always override profile values.
 
 ### Site identity (`CULVERT_ORG_NAME`)
 
@@ -154,6 +197,43 @@ culvert supports three external PKI backends via
 
 Local PKI mode (self-generated Easy-RSA CA) is the default for quick
 starts and dev environments.
+
+## Cryptography and CNSA 2.0
+
+The OpenVPN path ships the CNSA 2.0 *classical* suite by default, and
+we are straight about where the limits are - no OSS VPN stack you can
+commonly deploy today is fully CNSA 2.0.
+
+What the defaults give you (OpenVPN, both plain and DPI-bypass
+listeners):
+
+- TLS 1.3 only (`tls-version-min 1.3`), no downgrade
+- Data channel AES-256-GCM (required for DCO), SHA-384 control-channel
+  auth
+- Key exchange P-384 (`secp384r1`) first, X25519 as a compatibility
+  fallback
+- PKI defaults to EC P-384 certificates (`CULVERT_KEY_TYPE=ec`,
+  `secp384r1`); RSA-4096 available
+- `tls-crypt-v2` wraps the TLS handshake in a pre-shared symmetric
+  layer (metadata protection and DoS mitigation)
+
+The honest limits:
+
+- **ChaCha20-Poly1305 and X25519 are accepted as secondary options**
+  for client compatibility. Strict deployments can pin
+  `data-ciphers AES-256-GCM` and `tls-groups secp384r1` via a custom
+  server config.
+- **WireGuard is outside CNSA by design.** Its suite is fixed
+  (Curve25519, ChaCha20-Poly1305, BLAKE2s) and not configurable -
+  that is a WireGuard protocol property, not a Culvert choice. Use the
+  OpenVPN path where CNSA alignment matters.
+- **No post-quantum key exchange yet.** CNSA 2.0's headline items
+  (ML-KEM-1024, ML-DSA-87) are not in mainline OpenVPN or the OpenSSL
+  shipped with Ubuntu 24.04, so no ML-KEM TLS groups are offered. The
+  `tls-crypt-v2` pre-shared wrap blunts harvest-now-decrypt-later
+  collection of handshake metadata, but session keys are still
+  classical ECDH. We will adopt hybrid PQ groups when
+  OpenVPN/OpenSSL ship them.
 
 ## Deployment
 

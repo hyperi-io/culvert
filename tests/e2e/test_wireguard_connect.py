@@ -17,6 +17,9 @@ from helpers import (
     wait_for_tunnel,
 )
 
+# The connectivity stack is shared across this module's tests.
+pytestmark = pytest.mark.usefixtures("compose_stack")
+
 _wg_available = None
 
 
@@ -39,9 +42,7 @@ class TestWireGuard:
     def test_connect_and_reach_target(self, wireguard_connection):
         """Client connects via WireGuard and reaches target."""
         ip = wait_for_tunnel("wg0", timeout=15)
-        assert ip.startswith("192.168.200."), (
-            f"Expected IP in 192.168.200.0/24, got {ip}"
-        )
+        assert ip.startswith("10.8.3."), f"Expected IP in 10.8.3.0/24, got {ip}"
 
         body = curl_target()
         assert body == TARGET_RESPONSE, f"Expected '{TARGET_RESPONSE}', got '{body}'"
@@ -69,9 +70,7 @@ class TestWireGuardDPIBypass:
     def test_connect_and_reach_target(self, wireguard_dpi_connection):
         """Client connects via WireGuard DPI bypass and reaches target."""
         ip = wait_for_tunnel("wg0", timeout=15)
-        assert ip.startswith("192.168.200."), (
-            f"Expected IP in 192.168.200.0/24, got {ip}"
-        )
+        assert ip.startswith("10.8.3."), f"Expected IP in 10.8.3.0/24, got {ip}"
 
         body = curl_target()
         assert body == TARGET_RESPONSE, f"Expected '{TARGET_RESPONSE}', got '{body}'"

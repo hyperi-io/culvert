@@ -1,0 +1,39 @@
+# Corporate profile -- per-user certificates plus human SSO against your
+# IdP, group gating, TCP fallback for hostile guest networks.
+# Load with: CULVERT_PROFILE=corporate
+#
+# This profile sets the SHAPE. The secrets it references
+# (CULVERT_OAUTH2_CLIENT_SECRET etc.) must come from the environment or
+# your secret store - never commit them into a profile. Explicit
+# CULVERT_* env vars always override these values.
+
+org_name: "Acme"
+protocol: openvpn
+
+# UDP primary + TCP fallback: hotel / guest / captive-portal networks
+# routinely drop UDP, so give clients a TCP 443-friendly path too.
+udp_enabled: true
+tcp_enabled: true
+
+# OIDC SSO. Every connection then needs BOTH a valid client certificate
+# AND a live IdP login. Works with any OIDC provider (Entra ID, Google
+# Workspace, Okta, Keycloak, Auth0) via discovery.
+#   Set these from the environment / secret store:
+#     CULVERT_OAUTH2_ISSUER, CULVERT_OAUTH2_CLIENT_ID,
+#     CULVERT_OAUTH2_CLIENT_SECRET
+#   Mount the TLS cert/key for the callback listener:
+#     CULVERT_OAUTH2_TLS_CERT, CULVERT_OAUTH2_TLS_KEY
+oauth2_enabled: true
+
+# Gate access on an IdP group claim (only members connect). Set to your
+# group name, or delete to allow any authenticated user.
+oauth2_validate_groups: "vpn-users"
+
+# Full tunnel is common for corporate compliance (all client traffic
+# inspected/routed via the VPN). Flip to false for split tunnel.
+full_tunnel: true
+
+# Local CA is fine to start; switch to external PKI (file mount,
+# OpenBao, or AWS Secrets Manager) when the company CA must sign the
+# server cert -- set CULVERT_PKI_MODE=external + CULVERT_SECRETS_*.
+pki_mode: local

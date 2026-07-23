@@ -66,11 +66,21 @@ def list_clients() -> list[str]:
     return sorted(clients)
 
 
-def revoke_client(client_name: str) -> None:
-    """Revoke a client certificate."""
+def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
+    """Revoke a client certificate.
+
+    Returns True when a certificate was revoked. With missing_ok (the
+    --protocol all path) a missing certificate is a skip, not an abort,
+    so a WireGuard-only client still gets its peer revoked.
+    """
     cert_path = PKI_DIR / "issued" / f"{client_name}.crt"
 
     if not cert_path.exists():
+        if missing_ok:
+            logger.warning(
+                f"No OpenVPN certificate for {client_name}, skipping OpenVPN revocation"
+            )
+            return False
         logger.error(f"Client certificate not found: {client_name}")
         logger.info("Available clients:")
         clients = list_clients()
@@ -144,6 +154,7 @@ def revoke_client(client_name: str) -> None:
     logger.info("")
     logger.info("Note: Connected clients will be disconnected when they next")
     logger.info("attempt to reconnect and the server verifies against the CRL.")
+    return True
 
 
 # ===============================================================================
@@ -151,8 +162,11 @@ def revoke_client(client_name: str) -> None:
 # ===============================================================================
 
 
-def revoke_wireguard_client(client_name: str) -> None:
-    """Revoke a WireGuard client by removing its peer and deallocating its IP."""
+def revoke_wireguard_client(client_name: str) -> bool:
+    """Revoke a WireGuard client by removing its peer and deallocating its IP.
+
+    Returns True when a peer was revoked, False when none existed.
+    """
     from lib import wireguard
 
     wg_dir = PKI_DIR / "wireguard"
@@ -164,7 +178,7 @@ def revoke_wireguard_client(client_name: str) -> None:
             f"WireGuard peer key not found: {client_name}",
             path=str(pub_key_path),
         )
-        return
+        return False
 
     public_key = pub_key_path.read_text().strip()
     logger.info(f"Revoking WireGuard peer: {client_name}")
@@ -223,6 +237,7 @@ def revoke_wireguard_client(client_name: str) -> None:
         f"WireGuard client {client_name} has been revoked",
         files_removed=removed + 1,
     )
+    return True
 
 
 # ===============================================================================
@@ -286,10 +301,18 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    if args.protocol in ("openvpn", "all"):
+    if args.protocol == "all":
+        ovpn_revoked = revoke_client(args.client_name, missing_ok=True)
+        wg_revoked = revoke_wireguard_client(args.client_name)
+        if not (ovpn_revoked or wg_revoked):
+            logger.error(
+                f"No OpenVPN certificate or WireGuard peer found: {args.client_name}"
+            )
+            sys.exit(1)
+    elif args.protocol == "openvpn":
         revoke_client(args.client_name)
-    if args.protocol in ("wireguard", "all"):
-        revoke_wireguard_client(args.client_name)
+    elif not revoke_wireguard_client(args.client_name):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

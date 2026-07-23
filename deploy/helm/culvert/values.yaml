@@ -80,9 +80,18 @@ tunDevice:
 
 # -- culvert VPN overlay: CULVERT_* environment. At minimum set
 # CULVERT_SERVER_CN to the DNS name clients dial. See .env.example for the full
-# catalogue of CULVERT_* knobs and their defaults.
+# catalogue of CULVERT_* knobs and their defaults. NON-SECRET values only --
+# these render as plaintext into the Deployment. Secrets go via existingSecret.
 env:
   CULVERT_SERVER_CN: vpn.example.com
+
+# -- culvert VPN overlay: name of a pre-created Secret to load as environment
+# (envFrom). This is where the SENSITIVE CULVERT_* values belong -- OIDC client
+# secret, client-download token, OpenBao token -- so they never land in a
+# ConfigMap or a plaintext env value. Create it yourself (External Secrets
+# Operator, sealed-secrets, or kubectl) with keys like CULVERT_OAUTH2_CLIENT_SECRET;
+# empty string disables the envFrom.
+existingSecret: ""
 
 # -- culvert VPN overlay: opt-in listener ports, beyond the always-on OpenVPN
 # UDP (1194/udp) and the observability port (9090/tcp). Uncomment the ones whose

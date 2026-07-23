@@ -144,5 +144,5 @@ mute ${OPENVPN_MUTE}
 #===============================================================================
 # Management Interface
 #===============================================================================
-# Different port from UDP instance (7505)
-management 127.0.0.1 7506
+# Root-only unix socket (dir is 0700) - see server.conf.template.
+management /run/vpn/management-https.sock unix

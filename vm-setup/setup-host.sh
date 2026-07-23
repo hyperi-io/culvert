@@ -114,7 +114,20 @@ install_dco_ubuntu_debian() {
         log_info "Adding OpenVPN official repository..."
         $PKG_INSTALL ca-certificates curl gnupg lsb-release
         mkdir -p /etc/apt/keyrings
-        curl -fsSL https://swupdate.openvpn.net/repos/repo-public.gpg | gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg
+        # Fetch over pinned TLS, verify the key fingerprint FAIL-CLOSED before
+        # trusting it (a bare curl | gpg --dearmor imports whatever the endpoint
+        # serves). Key 30EB F4E7 ... E158 C569 (Samuli Seppanen, exp 2030).
+        curl --proto '=https' --tlsv1.2 -fsSL --max-time 30 \
+            https://swupdate.openvpn.net/repos/repo-public.gpg -o /tmp/openvpn-repo.gpg
+        if ! gpg --show-keys --with-colons /tmp/openvpn-repo.gpg \
+             | awk -F: '$1=="fpr"{print $10}' \
+             | grep -qx 30EBF4E73CCE63EEE124DD278E6DA8B4E158C569; then
+            log_error "OpenVPN repo key fingerprint mismatch - refusing to trust it"
+            rm -f /tmp/openvpn-repo.gpg
+            exit 1
+        fi
+        gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg /tmp/openvpn-repo.gpg
+        rm -f /tmp/openvpn-repo.gpg
 
         # Get codename - handle both Ubuntu and Debian
         local codename
@@ -393,9 +406,12 @@ esac
 log_section "Checking Docker"
 
 install_docker_ubuntu_debian() {
+    # Distro packages only. Piping a remote script into a root shell is
+    # never acceptable (get.docker.com included). docker.io is current
+    # enough for running the culvert container.
     if ! command -v docker >/dev/null 2>&1; then
-        log_info "Installing Docker..."
-        curl -fsSL https://get.docker.com | sh
+        log_info "Installing Docker from the distro repository..."
+        $PKG_INSTALL docker.io
         systemctl enable docker
         systemctl start docker
         log_info "Docker installed: $(docker --version)"
@@ -403,10 +419,15 @@ install_docker_ubuntu_debian() {
         log_info "Docker already installed: $(docker --version)"
     fi
 
-    # Ensure docker-compose plugin is available
+    # Ensure the compose plugin is available (package name differs:
+    # ubuntu ships docker-compose-v2, debian docker-compose-plugin via
+    # backports, both fall back to docker-compose)
     if ! docker compose version >/dev/null 2>&1; then
         log_info "Installing Docker Compose plugin..."
-        $PKG_INSTALL docker-compose-plugin
+        $PKG_INSTALL docker-compose-v2 \
+            || $PKG_INSTALL docker-compose-plugin \
+            || $PKG_INSTALL docker-compose \
+            || log_warn "Install docker compose manually: https://docs.docker.com/compose/install/"
     fi
 }
 
@@ -421,14 +442,14 @@ install_docker_amazon_linux() {
         log_info "Docker already installed: $(docker --version)"
     fi
 
-    # Install docker-compose standalone if plugin not available
+    # Compose plugin: distro package first (Amazon Linux 2023 ships
+    # docker-compose-plugin). We do NOT pipe a remote installer into a
+    # shell, ever. If no package exists the LAST resort is a pinned,
+    # checksum-verified binary download - never an unverified fetch.
     if ! docker compose version >/dev/null 2>&1; then
-        log_info "Installing Docker Compose..."
-        COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-        curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        chmod +x /usr/local/bin/docker-compose
-        ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
-        log_info "Docker Compose installed: $(/usr/local/bin/docker-compose --version)"
+        log_info "Installing Docker Compose plugin from the distro..."
+        $PKG_INSTALL docker-compose-plugin \
+            || log_warn "No docker-compose-plugin package - install a pinned, checksum-verified compose binary manually: https://docs.docker.com/compose/install/"
     fi
 }
 

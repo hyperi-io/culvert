@@ -18,6 +18,7 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
 from scalo.logger import logger
 
 from lib.process import run, write_secret
@@ -29,9 +30,10 @@ def validate_oauth2_tls_cert(cert_path: str, server_cn: str) -> None:
         logger.error(f"OAuth2 TLS certificate not found: {cert_path}")
         sys.exit(1)
 
-    # Extract CN from certificate
+    # Extract CN from certificate (argv form: cert_path is
+    # operator-supplied and must not pass through a shell)
     result = run(
-        f"openssl x509 -in {cert_path} -noout -subject",
+        ["openssl", "x509", "-in", cert_path, "-noout", "-subject"],
         capture=True,
         check=False,
     )
@@ -43,7 +45,7 @@ def validate_oauth2_tls_cert(cert_path: str, server_cn: str) -> None:
 
     # Extract SANs
     result = run(
-        f"openssl x509 -in {cert_path} -noout -text",
+        ["openssl", "x509", "-in", cert_path, "-noout", "-text"],
         capture=True,
         check=False,
     )
@@ -87,7 +89,7 @@ def validate_oauth2_tls_cert(cert_path: str, server_cn: str) -> None:
 
     # Check expiry
     result = run(
-        f"openssl x509 -in {cert_path} -noout -checkend 0",
+        ["openssl", "x509", "-in", cert_path, "-noout", "-checkend", "0"],
         check=False,
         capture=True,
     )
@@ -97,7 +99,7 @@ def validate_oauth2_tls_cert(cert_path: str, server_cn: str) -> None:
 
     # Warn if expiring within 30 days
     result = run(
-        f"openssl x509 -in {cert_path} -noout -checkend 2592000",
+        ["openssl", "x509", "-in", cert_path, "-noout", "-checkend", "2592000"],
         check=False,
         capture=True,
     )
@@ -215,46 +217,47 @@ def _generate_oauth2_config(
     http_secret: str,
     mgmt_password: str,
 ) -> None:
-    """Generate OAuth2 config for a listener."""
-    scopes = [f"    - {s.strip()}" for s in cfg.oauth2_scopes.split(",")]
+    """Generate OAuth2 config for a listener.
 
-    validate_section = ""
+    Serialised with yaml.safe_dump: secrets and issuer URLs are
+    operator-supplied, so hand-rolled f-string YAML would break (or
+    inject keys) on quotes and newlines.
+    """
+    http_section: dict = {
+        "listen": f":{port}",
+        "secret": http_secret,
+        "baseurl": f"https://{cfg.server_cn}:{port}",
+        "tls": True,
+        "cert": cfg.oauth2_tls_cert,
+        "key": cfg.oauth2_tls_key,
+        "assets-path": cfg.oauth2_assets_path,
+    }
+    if cfg.oauth2_template:
+        http_section["template"] = cfg.oauth2_template
+
+    oauth2_section: dict = {
+        "issuer": cfg.oauth2_issuer,
+        "client": {
+            "id": cfg.oauth2_client_id,
+            "secret": cfg.oauth2_client_secret,
+        },
+        "scopes": [s.strip() for s in cfg.oauth2_scopes.split(",") if s.strip()],
+    }
     if cfg.oauth2_validate_groups:
-        groups = [f"      - {g.strip()}" for g in cfg.oauth2_validate_groups.split(",")]
-        validate_section = f"  validate:\n    groups:\n{chr(10).join(groups)}"
+        oauth2_section["validate"] = {
+            "groups": [
+                g.strip() for g in cfg.oauth2_validate_groups.split(",") if g.strip()
+            ]
+        }
 
-    template_line = (
-        f'  template: "{cfg.oauth2_template}"' if cfg.oauth2_template else ""
-    )
-
-    config = f"""http:
-  listen: ":{port}"
-  secret: "{http_secret}"
-  baseurl: "https://{cfg.server_cn}:{port}"
-  tls: true
-  cert: "{cfg.oauth2_tls_cert}"
-  key: "{cfg.oauth2_tls_key}"
-{template_line}
-  assets-path: "{cfg.oauth2_assets_path}"
-
-oauth2:
-  issuer: "{cfg.oauth2_issuer}"
-  client:
-    id: "{cfg.oauth2_client_id}"
-    secret: "{cfg.oauth2_client_secret}"
-  scopes:
-{chr(10).join(scopes)}
-{validate_section}
-
-openvpn:
-  addr: "unix://{socket}"
-  password: "{mgmt_password}"
-
-log:
-  level: info
-"""
+    config = {
+        "http": http_section,
+        "oauth2": oauth2_section,
+        "openvpn": {"addr": f"unix://{socket}", "password": mgmt_password},
+        "log": {"level": "info"},
+    }
     config_path = Path(f"/etc/openvpn-auth-oauth2/config-{name}.yaml")
-    write_secret(config_path, config)
+    write_secret(config_path, yaml.safe_dump(config, sort_keys=False))
     logger.info(f"  {name}: port {port} -> {socket}")
 
 

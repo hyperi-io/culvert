@@ -366,7 +366,8 @@ def setup_wireguard(cfg) -> None:
         post_down=cfg.wg_post_down,
     )
 
-    cfg.wg_conf.write_text(config_content)
+    # wg0.conf embeds the server private key - 0600 from creation.
+    write_secret(cfg.wg_conf, config_content)
     logger.info(f"WireGuard config written to {cfg.wg_conf}")
 
 

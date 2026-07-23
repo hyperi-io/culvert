@@ -1,17 +1,29 @@
 FROM ubuntu:24.04
 
-ARG WSTUNNEL_VERSION="10.5.2"
+# Match the production Dockerfile's wstunnel version + per-arch SHA256.
+ARG WSTUNNEL_VERSION="10.5.5"
+ARG WSTUNNEL_SHA256_AMD64="b20ffa02e945ec0c0d6b153ba69a290593f0957ed2892aee8f987f715ccd95d6"
+ARG WSTUNNEL_SHA256_ARM64="db85183da9732f26c110a08e3fffdfcfc4a44d544035d01eeefa708ed23874bb"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openvpn stunnel4 wireguard-tools curl iproute2 iputils-ping \
     ca-certificates resolvconf \
     && rm -rf /var/lib/apt/lists/*
 
-# wstunnel client for WireGuard DPI bypass testing
+# wstunnel client for WireGuard DPI bypass testing. Pinned + SHA256 verified
+# fail-closed - never pipe an unverified fetch into tar (mirror prod).
 RUN ARCH=$(dpkg --print-architecture) \
-    && curl -fsSL \
-       "https://github.com/erebe/wstunnel/releases/download/v${WSTUNNEL_VERSION}/wstunnel_${WSTUNNEL_VERSION}_linux_${ARCH}.tar.gz" \
-       | tar xz -C /usr/local/bin/ wstunnel \
+    && case "${ARCH}" in \
+         amd64) WSTUNNEL_SHA256="${WSTUNNEL_SHA256_AMD64}" ;; \
+         arm64) WSTUNNEL_SHA256="${WSTUNNEL_SHA256_ARM64}" ;; \
+         *) echo "Unsupported architecture: ${ARCH}" >&2 && exit 1 ;; \
+       esac \
+    && curl --proto '=https' --tlsv1.2 -fsSL --max-time 120 \
+         "https://github.com/erebe/wstunnel/releases/download/v${WSTUNNEL_VERSION}/wstunnel_${WSTUNNEL_VERSION}_linux_${ARCH}.tar.gz" \
+         -o /tmp/wstunnel.tar.gz \
+    && echo "${WSTUNNEL_SHA256}  /tmp/wstunnel.tar.gz" | sha256sum -c - \
+    && tar xz -f /tmp/wstunnel.tar.gz -C /usr/local/bin/ wstunnel \
+    && rm /tmp/wstunnel.tar.gz \
     && chmod +x /usr/local/bin/wstunnel
 
 CMD ["sleep", "infinity"]

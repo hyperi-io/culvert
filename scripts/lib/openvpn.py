@@ -21,7 +21,7 @@ from pathlib import Path
 from scalo.logger import logger
 
 from lib.network import cidr_to_netmask
-from lib.process import run
+from lib.process import run, write_secret
 
 
 def generate_config(template_path: Path, output_path: Path, variables: dict) -> None:
@@ -279,6 +279,11 @@ def start_server(cfg, proc_manager) -> None:
             daemon=True,
         )
 
+    # Listeners are all launched: flip started/ready only now, so the
+    # liveness pgrep check and /readyz cannot report a server that has
+    # not spawned its OpenVPN processes yet.
+    from lib.health import health
+
     # Start UDP listener (main process - we wait on this)
     if cfg.udp_enabled:
         proc_manager.start(
@@ -286,13 +291,17 @@ def start_server(cfg, proc_manager) -> None:
             ["openvpn", "--config", str(cfg.server_conf)],
             daemon=False,
         )
+        health.set_started()
+        health.set_ready()
         exit_code = proc_manager.wait_for_main("openvpn-udp")
         if exit_code != 0:
             logger.error(f"OpenVPN UDP exited with code {exit_code}")
-        proc_manager.shutdown()
+        proc_manager.shutdown(0 if exit_code == 0 else 1)
     else:
         # If UDP disabled, wait for signals
         logger.info("UDP disabled, running with HTTPS/TCP listeners only")
+        health.set_started()
+        health.set_ready()
         signal.pause()
 
 
@@ -313,7 +322,11 @@ def auto_generate_clients(cfg) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
-        generate_args = ["--output", str(temp_path)]
+        # Only generate for the enabled protocol(s) - the default "all"
+        # would drop WireGuard key state into the PKI dir on
+        # OpenVPN-only deployments.
+        proto_arg = "all" if cfg.protocol == "both" else cfg.protocol
+        generate_args = ["--output", str(temp_path), "--protocol", proto_arg]
         if cert_exists:
             generate_args.append("--config-only")
 
@@ -331,6 +344,8 @@ def auto_generate_clients(cfg) -> None:
                         "/usr/local/bin/generate-client",
                         "--output",
                         str(temp_path),
+                        "--protocol",
+                        proto_arg,
                     ],
                     check=False,
                     capture=True,
@@ -362,7 +377,8 @@ def auto_generate_clients(cfg) -> None:
 
         if any_changed:
             for temp_file in temp_path.glob("*.ovpn"):
-                (clients_dir / temp_file.name).write_text(temp_file.read_text())
+                # .ovpn embeds the client private key - 0600 from creation.
+                write_secret(clients_dir / temp_file.name, temp_file.read_text())
             logger.info(f"Client configs updated ({files_checked} files)")
         else:
             logger.info(f"Client configs unchanged ({files_checked} files checked)")

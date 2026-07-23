@@ -24,8 +24,8 @@
 #   docker compose up -d                                # Start server
 #   docker compose logs -f                              # View logs
 #   docker compose down                                 # Stop server
-#   docker compose exec openvpn generate-client derek   # Generate client config (creates BOTH split + full)
-#   docker compose exec openvpn revoke-client derek     # Revoke client
+#   docker compose exec openvpn generate-client --name derek  # Generate client config (all protocols/modes)
+#   docker compose exec openvpn revoke-client derek           # Revoke client
 
 services:
   openvpn:
@@ -75,8 +75,10 @@ services:
       # UDP - Primary OpenVPN (best performance with DCO)
       - "${CULVERT_UDP_PORT:-1194}:${CULVERT_UDP_PORT:-1194}/udp"
       # Observability - health probes + Prometheus /metrics on one port
-      # (bind is CULVERT_METRICS_ADDR; keep the port here in sync with it)
-      - "9090:9090/tcp"
+      # (bind is CULVERT_METRICS_ADDR; keep the port here in sync with it).
+      # Published on loopback only: /healthz + /metrics are unauthenticated.
+      # Scraping from another host? Change to "9090:9090/tcp" and firewall it.
+      - "127.0.0.1:9090:9090/tcp"
       # TCP - Proxy fallback for corporate firewalls (CULVERT_TCP_ENABLED=true)
       # - "${CULVERT_TCP_PORT:-1194}:${CULVERT_TCP_PORT:-1194}/tcp"
       # HTTPS - DPI bypass via port 443 (CULVERT_HTTPS_ENABLED=true)
@@ -116,17 +118,17 @@ services:
       # UDP - Primary (best performance)
       - CULVERT_UDP_ENABLED=${CULVERT_UDP_ENABLED:-true}
       - CULVERT_UDP_PORT=${CULVERT_UDP_PORT:-1194}
-      - CULVERT_UDP_NETWORK=${CULVERT_UDP_NETWORK:-192.168.100.0}
+      - CULVERT_UDP_NETWORK=${CULVERT_UDP_NETWORK:-10.8.0.0}
       - CULVERT_UDP_NETMASK=${CULVERT_UDP_NETMASK:-255.255.255.0}
       # HTTPS - DPI bypass via port 443 (opt-in)
       - CULVERT_HTTPS_ENABLED=${CULVERT_HTTPS_ENABLED:-false}
       - CULVERT_HTTPS_PORT=${CULVERT_HTTPS_PORT:-443}
-      - CULVERT_HTTPS_NETWORK=${CULVERT_HTTPS_NETWORK:-192.168.101.0}
+      - CULVERT_HTTPS_NETWORK=${CULVERT_HTTPS_NETWORK:-10.8.2.0}
       - CULVERT_HTTPS_NETMASK=${CULVERT_HTTPS_NETMASK:-255.255.255.0}
       # TCP - Proxy fallback (opt-in)
       - CULVERT_TCP_ENABLED=${CULVERT_TCP_ENABLED:-false}
       - CULVERT_TCP_PORT=${CULVERT_TCP_PORT:-1194}
-      - CULVERT_TCP_NETWORK=${CULVERT_TCP_NETWORK:-192.168.102.0}
+      - CULVERT_TCP_NETWORK=${CULVERT_TCP_NETWORK:-10.8.1.0}
       - CULVERT_TCP_NETMASK=${CULVERT_TCP_NETMASK:-255.255.255.0}
 
       # DNS servers pushed to clients
@@ -140,7 +142,7 @@ services:
       # WireGuard (opt-in: set CULVERT_PROTOCOL=wireguard, or both to run it
       # alongside OpenVPN, then uncomment the knobs you need)
       # - CULVERT_PROTOCOL=${CULVERT_PROTOCOL:-openvpn}
-      # - CULVERT_WG_NETWORK=${CULVERT_WG_NETWORK:-192.168.200.0/24}
+      # - CULVERT_WG_NETWORK=${CULVERT_WG_NETWORK:-10.8.3.0/24}
       # - CULVERT_WG_PORT=${CULVERT_WG_PORT:-51820}
       # - CULVERT_WG_MTU=${CULVERT_WG_MTU:-1420}
       # - CULVERT_WG_PERSISTENT_KEEPALIVE=${CULVERT_WG_PERSISTENT_KEEPALIVE:-25}
@@ -245,8 +247,10 @@ services:
   # Disable: Set WATCHTOWER_ENABLED=false in .env
   watchtower:
     # Note: containrrr/watchtower was archived Dec 2025 and broken with Docker 29+
-    # Using maintained fork: https://github.com/nickfedor/watchtower
-    image: nickfedor/watchtower:latest
+    # Using maintained fork (pinned): https://github.com/nickfedor/watchtower
+    # SECURITY: mounting docker.sock hands this container root-equivalent
+    # control of the HOST - keep this profile opt-in and the tag pinned.
+    image: nickfedor/watchtower:1.20.1
     container_name: watchtower
     restart: unless-stopped
     profiles:

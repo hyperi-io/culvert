@@ -484,6 +484,7 @@ name = "culvert"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "pyyaml" },
     { name = "scalo", extra = ["metrics", "secrets-aws", "secrets-vault"] },
 ]
 
@@ -512,6 +513,7 @@ secrets-vault = [
 [package.metadata]
 requires-dist = [
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pyyaml", specifier = ">=6,<7" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "scalo", extras = ["deployment"], marker = "extra == 'dev'" },
     { name = "scalo", extras = ["metrics", "secrets-vault", "secrets-aws"], specifier = ">=2.29.10,<3" },

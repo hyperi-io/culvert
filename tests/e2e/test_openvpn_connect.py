@@ -19,6 +19,9 @@ from helpers import (
     wait_for_tunnel,
 )
 
+# The connectivity stack is shared across this module's tests.
+pytestmark = pytest.mark.usefixtures("compose_stack")
+
 
 @pytest.mark.e2e
 class TestNoTunnel:
@@ -39,9 +42,7 @@ class TestOpenVPNUDP:
     def test_connect_and_reach_target(self, openvpn_udp_connection):
         """Client connects via UDP and reaches target through tunnel."""
         ip = wait_for_tunnel("tun0", timeout=30)
-        assert ip.startswith("192.168.100."), (
-            f"Expected IP in 192.168.100.0/24, got {ip}"
-        )
+        assert ip.startswith("10.8.0."), f"Expected IP in 10.8.0.0/24, got {ip}"
 
         body = curl_target()
         assert body == TARGET_RESPONSE, (
@@ -68,9 +69,7 @@ class TestOpenVPNTCP:
     def test_connect_and_reach_target(self, openvpn_tcp_connection):
         """Client connects via TCP and reaches target through tunnel."""
         ip = wait_for_tunnel("tun0", timeout=30)
-        assert ip.startswith("192.168.102."), (
-            f"Expected IP in 192.168.102.0/24, got {ip}"
-        )
+        assert ip.startswith("10.8.1."), f"Expected IP in 10.8.1.0/24, got {ip}"
 
         body = curl_target()
         assert body == TARGET_RESPONSE, (
@@ -97,9 +96,7 @@ class TestOpenVPNHTTPS:
     def test_connect_and_reach_target(self, openvpn_https_connection):
         """Client connects via HTTPS tunnel and reaches target."""
         ip = wait_for_tunnel("tun0", timeout=30)
-        assert ip.startswith("192.168.101."), (
-            f"Expected IP in 192.168.101.0/24, got {ip}"
-        )
+        assert ip.startswith("10.8.2."), f"Expected IP in 10.8.2.0/24, got {ip}"
 
         body = curl_target()
         assert body == TARGET_RESPONSE, (

@@ -53,6 +53,7 @@ def configure_stunnel(cfg) -> None:
     variables = {
         "STUNNEL_CERT_PATH": cfg.stunnel_cert,
         "STUNNEL_KEY_PATH": cfg.stunnel_key,
+        "OPENVPN_HTTPS_PORT": cfg.https_port,
         "OPENVPN_HTTPS_INTERNAL_PORT": cfg.https_internal_port,
     }
 

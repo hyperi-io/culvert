@@ -14,7 +14,6 @@
 #          -v ./clients:/etc/openvpn/clients:ro \
 #          culvert-client /etc/openvpn/clients/alice-split.ovpn
 #
-# Per ANSIBLE-DESIGN.md principle #3: Default to Latest Versions
 # Base image: Override with --build-arg UBUNTU_VERSION=xx.xx
 # Default: 24.04 LTS (pinned for stability, override for testing newer)
 
@@ -26,14 +25,21 @@ LABEL description="OpenVPN test client for connectivity validation"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install OpenVPN client from official repository
+# Install OpenVPN client from the official signed apt repo. Key fingerprint
+# verified fail-closed before use (see Dockerfile for the full receipt).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         gnupg \
         lsb-release \
     && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://swupdate.openvpn.net/repos/repo-public.gpg | gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg \
+    && curl --proto '=https' --tlsv1.2 -fsSL --max-time 30 \
+         https://swupdate.openvpn.net/repos/repo-public.gpg -o /tmp/openvpn-repo.gpg \
+    && gpg --show-keys --with-colons /tmp/openvpn-repo.gpg \
+       | awk -F: '$1=="fpr"{print $10}' \
+       | grep -qx 30EBF4E73CCE63EEE124DD278E6DA8B4E158C569 \
+    && gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg /tmp/openvpn-repo.gpg \
+    && rm /tmp/openvpn-repo.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/openvpn.gpg] https://build.openvpn.net/debian/openvpn/stable $(lsb_release -cs) main" > /etc/apt/sources.list.d/openvpn.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \

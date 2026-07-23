@@ -117,9 +117,18 @@ tunDevice:
 
 # -- culvert VPN overlay: CULVERT_* environment. At minimum set
 # CULVERT_SERVER_CN to the DNS name clients dial. See .env.example for the full
-# catalogue of CULVERT_* knobs and their defaults.
+# catalogue of CULVERT_* knobs and their defaults. NON-SECRET values only --
+# these render as plaintext into the Deployment. Secrets go via existingSecret.
 env:
   CULVERT_SERVER_CN: vpn.example.com
+
+# -- culvert VPN overlay: name of a pre-created Secret to load as environment
+# (envFrom). This is where the SENSITIVE CULVERT_* values belong -- OIDC client
+# secret, client-download token, OpenBao token -- so they never land in a
+# ConfigMap or a plaintext env value. Create it yourself (External Secrets
+# Operator, sealed-secrets, or kubectl) with keys like CULVERT_OAUTH2_CLIENT_SECRET;
+# empty string disables the envFrom.
+existingSecret: ""
 
 # -- culvert VPN overlay: opt-in listener ports, beyond the always-on OpenVPN
 # UDP (1194/udp) and the observability port (9090/tcp). Uncomment the ones whose
@@ -170,6 +179,11 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
     _replace_once(
         chart,
         "keywords:\n  - hyperi\n  - dfe\n",
+        "# icon: set to the hosted raw URL once the public repo is live, e.g.\n"
+        "#   https://raw.githubusercontent.com/hyperi-io/culvert/main/"
+        "assets/brand/product-culvert/light/product-culvert_square_400w.png\n"
+        "# Source (repo-relative): "
+        "assets/brand/product-culvert/light/product-culvert_square_400w.png\n\n"
         "keywords:\n  - vpn\n  - openvpn\n  - wireguard\n  - hyperi\n",
     )
 
@@ -251,6 +265,12 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "              value: {{ $v | quote }}\n"
         "            {{- end }}\n"
         "          {{- end }}\n"
+        "          # culvert VPN overlay: SENSITIVE CULVERT_* from a pre-created Secret.\n"
+        "          {{- if .Values.existingSecret }}\n"
+        "          envFrom:\n"
+        "            - secretRef:\n"
+        "                name: {{ .Values.existingSecret }}\n"
+        "          {{- end }}\n"
         "          livenessProbe:\n",
     )
 
@@ -304,6 +324,20 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "      name: {{ .name }}\n"
         "    {{- end }}\n"
         "  selector:\n",
+    )
+
+    # service.yaml: culvert VPN overlay. One Service carries the VPN port AND
+    # the unauthenticated observability port (9090), so a LoadBalancer would
+    # publish 9090 too. Let operators clamp the source ranges.
+    _replace_once(
+        service,
+        "spec:\n  type: {{ .Values.service.type }}\n",
+        "spec:\n  type: {{ .Values.service.type }}\n"
+        "  {{- with .Values.service.loadBalancerSourceRanges }}\n"
+        "  # culvert VPN overlay: restrict who can reach the LB (incl. :9090).\n"
+        "  loadBalancerSourceRanges:\n"
+        "    {{- toYaml . | nindent 4 }}\n"
+        "  {{- end }}\n",
     )
 
 

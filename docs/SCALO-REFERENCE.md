@@ -8,14 +8,18 @@ same version line). This documents the calls that exist in
 
 ## Installation
 
-In `pyproject.toml` (extras pulled per backend):
+In `pyproject.toml` (granular extras - one per backend culvert actually
+uses, not the blanket `[secrets]`):
 
 ```toml
-dependencies = ["scalo[metrics,secrets]>=2.29.10,<3"]
+dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.29.10,<3"]
 ```
 
-The container installs `scalo[metrics,secrets]` plus, optionally,
-`[opentelemetry]` (see `Dockerfile`).
+The container installs the full runtime tree (scalo + those extras +
+`[opentelemetry]`) from a hash-pinned lockfile: `pip install
+--require-hashes -r requirements-docker.txt`, where the lockfile is
+exported from `uv.lock` (see `Dockerfile`). Every dependency is verified
+against a SHA256 held in-repo, so the build fails closed on any drift.
 
 ## Config Cascade
 

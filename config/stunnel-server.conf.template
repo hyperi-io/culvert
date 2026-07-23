@@ -27,7 +27,7 @@ ciphersuites = TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
 
 # HTTPS tunnel service
 [openvpn-https]
-accept = 0.0.0.0:443
+accept = 0.0.0.0:${OPENVPN_HTTPS_PORT}
 connect = 127.0.0.1:${OPENVPN_HTTPS_INTERNAL_PORT}
 
 # Performance tuning

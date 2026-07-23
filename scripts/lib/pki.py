@@ -377,8 +377,11 @@ def start_crl_refresh(cfg, proc_manager, interval_hours: int = 24) -> None:
                 break
             logger.info("Auto-refreshing CRL...")
             try:
+                # easyrsa is not on PATH; run it from its install dir like
+                # every other call site, pointing EASYRSA_PKI at our dir.
                 result = run(
-                    f"cd {cfg.pki_dir} && EASYRSA_PKI={cfg.pki_dir} easyrsa gen-crl",
+                    f"cd /usr/share/easy-rsa"
+                    f" && EASYRSA_PKI={cfg.pki_dir} ./easyrsa gen-crl",
                     check=False,
                     capture=True,
                 )

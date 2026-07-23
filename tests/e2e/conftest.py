@@ -31,9 +31,14 @@ def _compose_cmd(*args: str) -> list[str]:
     ]
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def compose_stack():
-    """Start the compose stack, generate client configs, yield, then tear down."""
+    """Start the compose stack, generate client configs, yield, then tear down.
+
+    Not autouse: the connectivity test modules opt in via a module-level
+    ``pytestmark = pytest.mark.usefixtures("compose_stack")`` so that other
+    e2e modules (e.g. routing control) can run their own stack in isolation.
+    """
     # Build and start
     subprocess.run(
         _compose_cmd("up", "--build", "--wait", "-d"),

@@ -525,7 +525,7 @@ Use split tunnel for normal work; use full tunnel for maximum security.
 ## Security Notes
 
 - Keep `.ovpn` and `.conf` files secure — they contain your VPN credentials or keys
-- OpenVPN uses TLS 1.3 with AES-256-GCM encryption (CNSA 2.0 compliant)
+- OpenVPN uses TLS 1.3 with AES-256-GCM encryption (the CNSA 2.0 classical suite)
 - tls-crypt-v2 provides metadata protection and DoS mitigation
 - HTTPS tunnel adds an additional layer of TLS 1.3 encryption
 - WireGuard uses ChaCha20-Poly1305 encryption with Curve25519 key exchange

@@ -1,0 +1,53 @@
+# Starter values for the edge-fleet use case: an appliance fleet
+# streaming into a central receiver, with reverse admin back down the
+# tunnels. See docs/USE-CASE-EDGE-FLEET.md.
+#
+#   helm install culvert deploy/helm/culvert -n vpn \
+#     -f deploy/helm/culvert/values-edge-fleet.yaml \
+#     --set env.CULVERT_SERVER_CN=vpn.example.com
+#
+# Namespace must permit the VPN pod (NET_ADMIN, /dev/net/tun,
+# net.ipv4.ip_forward) - see values-k8s-scale.yaml.
+#
+# Traffic model:
+#   outbound (data):  appliance -> culvert -> receiver
+#   inbound  (admin): admin/repos -> culvert (back down tunnel) -> appliance
+
+# Connection-based LB, same requirement as the k8s-scale case: one flow
+# stays pinned to one pod.
+service:
+  type: LoadBalancer
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "4"
+    memory: 2Gi
+
+# The edge-fleet preset drives the routing behaviour. This mirrors the
+# profiles/edge-fleet.yaml preset via env so the chart is self-contained.
+# Set the CIDRs to your real networks (example values shown):
+#   ALLOWED_DESTINATIONS  - what appliances may reach (the receiver)
+#   DOWNSTREAM_ADMIN_CIDRS - who may reach back down to appliances
+# CGNAT tunnel addressing (100.64/10) because the operator controls both
+# ends - do NOT use for laptops on carrier/Starlink links.
+env:
+  CULVERT_PROFILE: edge-fleet
+  CULVERT_LOG_MODE: stdout
+  CULVERT_UDP_NETWORK: "100.64.0.0"
+  CULVERT_ROUTING_CONTROL_ENABLED: "true"
+  CULVERT_CLIENT_ISOLATION: "true"
+  CULVERT_ALLOWED_DESTINATIONS: "10.20.0.0/16"
+  CULVERT_PUSH_ROUTES: "10.20.0.0/16"
+  CULVERT_DOWNSTREAM_ADMIN_CIDRS: "10.10.0.0/16"
+
+# Fleet CA / secrets from an out-of-band Secret (see docs). Never inline.
+existingSecret: ""

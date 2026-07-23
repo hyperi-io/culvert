@@ -1,0 +1,32 @@
+# Travel profile -- for networks that block or throttle VPNs. Runs the
+# listeners that look like ordinary HTTPS so protocol blocking does not
+# see a VPN. Load with: CULVERT_PROFILE=travel
+#
+# These are deliberate opt-ins with a real cost (extra listeners, a TLS
+# cert). Use them when you need them, not by default. Explicit CULVERT_*
+# env vars always override these values.
+
+protocol: both
+
+# OpenVPN inside TLS on 443 (stunnel) - to on-path inspection this is a
+# TLS session on the HTTPS port with a valid certificate.
+udp_enabled: true
+https_enabled: true
+https_port: 443
+
+# WireGuard over WebSocket/TLS on 4443 (wstunnel) - the same camouflage
+# for the WireGuard path.
+wg_dpi_bypass_enabled: true
+
+# Camouflage needs a REAL certificate for your server name (Let's
+# Encrypt is fine). A self-signed cert defeats the point. Provide the
+# cert/key via the environment or a mount:
+#   CULVERT_STUNNEL_CERT, CULVERT_STUNNEL_KEY
+#
+# Full tunnel so DNS and all traffic ride the camouflaged path - a
+# split tunnel on a censored network leaks which sites you reach
+# directly.
+full_tunnel: true
+
+# Mobile-tolerant timers and MTU - travel means 4G/5G and flaky wifi.
+network_profile: wireless

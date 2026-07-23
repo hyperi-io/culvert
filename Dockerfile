@@ -27,7 +27,6 @@
 #   - Generic OIDC SSO (Entra ID, Okta, Keycloak, Google, Auth0)
 #   - Group-based access control
 #   - Stateless design for horizontal scaling
-#   - Auto-patching with unattended-upgrades
 #
 # Supply Chain:
 #   All third-party binaries are pulled directly from upstream GitHub releases.
@@ -61,6 +60,12 @@ ARG OPENVPN_AUTH_OAUTH2_VERSION="1.28.0"
 ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="4a4fd97312f6e3adc9baf31d0f009d8abdb3614160003b8f50d4d096f5ae2f34"
 ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="5e39cd6b656f7ccbc94790fd2b61b17f4687c9d69709fa75cc5c10578fe4748d"
 
+# openvpn: signed apt repo (install ladder rung 1). The repo key is fetched
+# over pinned-TLS, its fingerprint verified FAIL-CLOSED against the recorded
+# value before use, then dearmored to a binary keyring; apt verifies every
+# openvpn package AND update against it. Key 30EB F4E7 3CCE 63EE E124 DD27
+# 8E6D A8B4 E158 C569 (Samuli Seppanen, exp 2030), cross-checked vs the live
+# vendor endpoint + OpenVPN's published fingerprint. Re-pin if it rotates.
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -69,8 +74,13 @@ RUN apt-get update \
         gnupg \
         lsb-release \
     && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://swupdate.openvpn.net/repos/repo-public.gpg \
-       | gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg \
+    && curl --proto '=https' --tlsv1.2 -fsSL --max-time 30 \
+         https://swupdate.openvpn.net/repos/repo-public.gpg -o /tmp/openvpn-repo.gpg \
+    && gpg --show-keys --with-colons /tmp/openvpn-repo.gpg \
+       | awk -F: '$1=="fpr"{print $10}' \
+       | grep -qx 30EBF4E73CCE63EEE124DD278E6DA8B4E158C569 \
+    && gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg /tmp/openvpn-repo.gpg \
+    && rm /tmp/openvpn-repo.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/openvpn.gpg] https://build.openvpn.net/debian/openvpn/stable $(lsb_release -cs) main" \
        > /etc/apt/sources.list.d/openvpn.list \
     && apt-get update \
@@ -82,8 +92,6 @@ RUN apt-get update \
         iproute2 \
         procps \
         openssl \
-        unattended-upgrades \
-        apt-listchanges \
         kmod \
         logrotate \
         python3 \
@@ -96,7 +104,12 @@ RUN apt-get update \
         dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
-# openvpn-auth-oauth2 (OIDC SSO)
+# openvpn-auth-oauth2: pinned release .deb + per-arch SHA256 we hold (ladder
+# rung 3), fetched over pinned-TLS, verified FAIL-CLOSED before dpkg. The
+# project's apt repo points at releases/latest (Suites ./) so it is NOT
+# version-pinnable - a signed-repo switch would make the image non-reproducible,
+# so the pinned artefact is the deliberate choice here. Version + SHA are
+# renovate-bumped (see .github/workflows/dependency-check.yml).
 # Source: https://github.com/jkroepke/openvpn-auth-oauth2
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
@@ -105,46 +118,36 @@ RUN ARCH=$(dpkg --print-architecture) \
          *) echo "Unsupported architecture: ${ARCH}" >&2 && exit 1 ;; \
        esac \
     && DEB_FILE="openvpn-auth-oauth2_${OPENVPN_AUTH_OAUTH2_VERSION}_linux_${ARCH}.deb" \
-    && curl -fsSL "https://github.com/jkroepke/openvpn-auth-oauth2/releases/download/v${OPENVPN_AUTH_OAUTH2_VERSION}/${DEB_FILE}" \
+    && curl --proto '=https' --tlsv1.2 -fsSL --max-time 120 \
+         "https://github.com/jkroepke/openvpn-auth-oauth2/releases/download/v${OPENVPN_AUTH_OAUTH2_VERSION}/${DEB_FILE}" \
          -o /tmp/openvpn-auth-oauth2.deb \
     && echo "${OAUTH2_SHA256}  /tmp/openvpn-auth-oauth2.deb" | sha256sum -c - \
     && dpkg -i /tmp/openvpn-auth-oauth2.deb \
     && rm /tmp/openvpn-auth-oauth2.deb \
     && openvpn-auth-oauth2 --version
 
-# Unattended upgrades (auto-patching)
-RUN echo 'Unattended-Upgrade::Allowed-Origins {\n\
-    "${distro_id}:${distro_codename}";\n\
-    "${distro_id}:${distro_codename}-security";\n\
-    "${distro_id}ESMApps:${distro_codename}-apps-security";\n\
-    "${distro_id}ESM:${distro_codename}-infra-security";\n\
-    "origin=build.openvpn.net";\n\
-};\n\
-Unattended-Upgrade::AutoFixInterruptedDpkg "true";\n\
-Unattended-Upgrade::MinimalSteps "true";\n\
-Unattended-Upgrade::Remove-Unused-Dependencies "true";\n\
-Unattended-Upgrade::Automatic-Reboot "false";' > /etc/apt/apt.conf.d/50unattended-upgrades
-
-# Python dependencies (scalo for logging, config, metrics, secrets).
-# Granular secrets extras: file backend is core, openbao = secrets-vault,
-# aws = secrets-aws. The blanket [secrets] extra would add ansible-vault
-# + GCP + Azure deps no culvert backend uses.
-# hadolint ignore=DL3013
+# Python dependencies (scalo + full transitive tree) via pip (a package
+# manager, ladder rung 1) but installed FAIL-CLOSED with --require-hashes
+# from a lockfile whose SHA256s WE HOLD (requirements-docker.txt, exported
+# from uv.lock). Every transitive dep is pinned + hash-verified, so a
+# compromised or drifted PyPI release fails the build instead of shipping.
+# Granular secrets extras (file core, openbao=secrets-vault, aws=secrets-aws)
+# + otel are baked into the lockfile; regenerate on any uv.lock change with:
+#   uv export --frozen --no-dev --no-emit-project --extra otel \
+#     --format requirements-txt -o requirements-docker.txt
+COPY requirements-docker.txt /tmp/requirements-docker.txt
 RUN pip3 install --no-cache-dir --break-system-packages \
-    "scalo[metrics,secrets-vault,secrets-aws]==2.29.10"
-
-# Optional: OTel support (adds ~4MB)
-ARG OTEL_SUPPORT=true
-RUN if [ "$OTEL_SUPPORT" = "true" ]; then \
-        pip3 install --no-cache-dir --break-system-packages \
-            "scalo[opentelemetry]==2.29.10"; \
-    fi
+        --require-hashes -r /tmp/requirements-docker.txt \
+    && rm /tmp/requirements-docker.txt
 
 # scalo config cascade reads CULVERT_* env vars
 ENV ENV_PREFIX=CULVERT
 
-# wstunnel (DPI bypass for WireGuard — BSD-3-Clause, Rust binary)
-# v10.5.5 (latest as of 2026-06-06), sha256 verified per arch.
+# wstunnel: pinned release tarball + per-arch SHA256 we hold (ladder rung 3),
+# fetched over pinned-TLS, verified FAIL-CLOSED before extract. No apt repo
+# exists; the GHCR image binary is linked against a newer (trixie) glibc than
+# this noble base, so the release tarball is the deliberate choice. BSD-3-Clause
+# Rust binary; version + SHA renovate-bumped.
 ARG WSTUNNEL_VERSION="10.5.5"
 ARG WSTUNNEL_SHA256_AMD64="b20ffa02e945ec0c0d6b153ba69a290593f0957ed2892aee8f987f715ccd95d6"
 ARG WSTUNNEL_SHA256_ARM64="db85183da9732f26c110a08e3fffdfcfc4a44d544035d01eeefa708ed23874bb"
@@ -155,7 +158,7 @@ RUN ARCH=$(dpkg --print-architecture) \
          *) echo "Unsupported architecture: ${ARCH}" >&2 && exit 1 ;; \
        esac \
     && TARBALL="wstunnel_${WSTUNNEL_VERSION}_linux_${ARCH}.tar.gz" \
-    && curl -fsSL \
+    && curl --proto '=https' --tlsv1.2 -fsSL --max-time 120 \
          "https://github.com/erebe/wstunnel/releases/download/v${WSTUNNEL_VERSION}/${TARBALL}" \
          -o /tmp/wstunnel.tar.gz \
     && echo "${WSTUNNEL_SHA256}  /tmp/wstunnel.tar.gz" | sha256sum -c - \

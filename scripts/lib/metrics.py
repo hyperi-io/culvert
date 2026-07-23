@@ -212,6 +212,7 @@ def _collect_wg_transfer() -> tuple[int, int]:
 _mgr = None
 _max_clients: int = 100
 _protocol: str = "openvpn"
+_update_lock = threading.Lock()
 
 # Metric handles (set during init)
 _g_openvpn_up = None
@@ -345,10 +346,20 @@ def _init_metrics(
 
 
 def update_metrics() -> None:
-    """Collect current VPN state and update all metric values."""
+    """Collect current VPN state and update all metric values.
+
+    Serialised: the scrape path and the background refresh loop both
+    land here, and the byte-delta counters do a read-modify-write on
+    module state that would over-count if two runs interleave.
+    """
     if _mgr is None:
         return
 
+    with _update_lock:
+        _update_metrics_locked()
+
+
+def _update_metrics_locked() -> None:
     total_clients = 0
     total_rx = 0
     total_tx = 0

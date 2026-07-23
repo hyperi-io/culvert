@@ -19,6 +19,9 @@ license = {text = "Apache-2.0"}
 # no culvert backend uses.
 dependencies = [
     "scalo[metrics,secrets-vault,secrets-aws]>=2.29.10,<3",
+    # Imported directly in lib/oauth2.py (yaml.safe_dump) and for the profile
+    # cascade; also a transitive dep of dynaconf, pinned here so it is declared.
+    "pyyaml>=6,<7",
 ]
 
 [project.optional-dependencies]

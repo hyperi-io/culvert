@@ -1,0 +1,22 @@
+# Home / lab profile -- remote access to your home LAN, or a throwaway
+# test rig on a VM. Load with: CULVERT_PROFILE=home
+#
+# Opinionated for the "I just want in from the outside" case: OpenVPN
+# UDP only, split tunnel, local PKI. Usable as-is once you set
+# CULVERT_SERVER_CN (env var or edit below) to your DDNS name or the
+# VM's public IP.
+#
+# Explicit CULVERT_* env vars always override these values.
+
+protocol: openvpn
+udp_enabled: true
+
+# Split tunnel: only VPN + pushed routes go through the tunnel, the
+# rest of the client's traffic stays local. Push your home LAN so the
+# client can reach it. Set to your actual LAN, or delete for a plain
+# reach-the-server-only tunnel.
+full_tunnel: false
+push_routes: "192.168.1.0/24"
+
+# Local Easy-RSA CA - no external PKI to stand up.
+pki_mode: local

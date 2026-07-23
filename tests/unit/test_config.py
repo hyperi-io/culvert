@@ -368,6 +368,82 @@ class TestProfileLoader:
         cfg = Config.from_settings()
         assert cfg.server_cn == "vpn.example.com"
 
+    def test_profile_relative_path_loads(self, clean_env, monkeypatch, tmp_path):
+        """A RELATIVE profile path resolves against cwd and its values load.
+
+        Regression: get_config() rebases a relative path onto its own
+        config_dir and silently drops it. config.py must resolve to
+        absolute first so a relative CULVERT_PROFILE actually applies.
+        """
+        (tmp_path / "site.yaml").write_text("server_cn: vpn.rel.example\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CULVERT_PROFILE", "site.yaml")
+        cfg = Config.from_settings()
+        assert cfg.server_cn == "vpn.rel.example"
+
+
+class TestShippedProfiles:
+    """Regression lock: every shipped opinionated profile loads + validates."""
+
+    def _load(self, monkeypatch, name, extra_env=None):
+        from pathlib import Path
+
+        project_root = Path(__file__).resolve().parents[2]
+        monkeypatch.setenv(
+            "CULVERT_PROFILE", str(project_root / "profiles" / f"{name}.yaml")
+        )
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        for k, v in (extra_env or {}).items():
+            monkeypatch.setenv(k, v)
+        cfg = Config.from_settings()
+        cfg.validate()
+        return cfg
+
+    def test_home(self, clean_env, monkeypatch):
+        cfg = self._load(monkeypatch, "home")
+        assert cfg.protocol == "openvpn"
+        assert cfg.full_tunnel is False
+        assert cfg.push_routes == "192.168.1.0/24"
+
+    def test_corporate(self, clean_env, monkeypatch):
+        cfg = self._load(
+            monkeypatch,
+            "corporate",
+            {
+                "CULVERT_OAUTH2_ISSUER": "https://issuer.example.com",
+                "CULVERT_OAUTH2_CLIENT_ID": "id",
+                "CULVERT_OAUTH2_CLIENT_SECRET": "sec",
+                "CULVERT_OAUTH2_TLS_CERT": "/etc/hosts",
+                "CULVERT_OAUTH2_TLS_KEY": "/etc/hosts",
+            },
+        )
+        assert cfg.tcp_enabled is True
+        assert cfg.oauth2_enabled is True
+        assert cfg.oauth2_validate_groups == "vpn-users"
+
+    def test_travel(self, clean_env, monkeypatch):
+        cfg = self._load(
+            monkeypatch,
+            "travel",
+            {
+                "CULVERT_STUNNEL_CERT": "/etc/hosts",
+                "CULVERT_STUNNEL_KEY": "/etc/hosts",
+            },
+        )
+        assert cfg.protocol == "both"
+        assert cfg.https_enabled is True
+        assert cfg.wg_dpi_bypass_enabled is True
+        assert cfg.network_profile == "wireless"
+
+    def test_edge_fleet(self, clean_env, monkeypatch):
+        cfg = self._load(monkeypatch, "edge-fleet")
+        assert cfg.routing_control_enabled is True
+        assert cfg.client_isolation is True
+        assert cfg.udp_network == "100.64.0.0"
+        assert cfg.allowed_destinations == "10.20.0.0/16"
+        assert cfg.downstream_admin_cidrs == "10.10.0.0/16"
+        assert cfg.log_mode == "stdout"
+
 
 class TestStunnelValidation:
     """HTTPS listener requires stunnel cert/key."""
@@ -587,3 +663,80 @@ class TestValidatorErrorPrefix:
         assert "CULVERT_UDP_PORT" in output
         assert "DFE_VPN_" not in output
         assert "HYPERI_VPN_" not in output
+
+
+class TestRoutingControlConfig:
+    """Routing-control fields: defaults, validation, warning path."""
+
+    def test_defaults(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        cfg = Config.from_settings()
+        assert cfg.routing_control_enabled is False
+        assert cfg.client_isolation is True
+        assert cfg.allowed_destinations == ""
+        assert cfg.downstream_admin_cidrs == ""
+
+    def test_invalid_admin_cidr_fails_validation(self, clean_env, monkeypatch):
+        import pytest
+
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_ROUTING_CONTROL_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_DOWNSTREAM_ADMIN_CIDRS", "10.0.0.0/33")
+        cfg = Config.from_settings()
+        with pytest.raises(SystemExit):
+            cfg.validate()
+
+    def test_invalid_allowed_destination_fails_validation(self, clean_env, monkeypatch):
+        import pytest
+
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_ROUTING_CONTROL_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_ALLOWED_DESTINATIONS", "not-a-cidr")
+        cfg = Config.from_settings()
+        with pytest.raises(SystemExit):
+            cfg.validate()
+
+    def test_cidrs_without_switch_is_warning_not_error(self, clean_env, monkeypatch):
+        """Valid CIDRs with the switch off pass validation (warn only)."""
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_DOWNSTREAM_ADMIN_CIDRS", "10.10.0.0/16")
+        cfg = Config.from_settings()
+        cfg.validate()
+
+    def test_valid_lists_pass(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_ROUTING_CONTROL_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_CLIENT_ISOLATION", "false")
+        monkeypatch.setenv("CULVERT_ALLOWED_DESTINATIONS", "100.96.0.0/16,10.20.0.0/24")
+        monkeypatch.setenv("CULVERT_DOWNSTREAM_ADMIN_CIDRS", "10.10.0.0/16")
+        cfg = Config.from_settings()
+        cfg.validate()
+        assert cfg.client_isolation is False
+
+
+class TestNetmaskValidation:
+    """Malformed netmasks fail validation, not iptables setup at runtime."""
+
+    def test_bad_netmask_fails(self, clean_env, monkeypatch):
+        import pytest
+
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_UDP_NETMASK", "255.255.0")
+        cfg = Config.from_settings()
+        with pytest.raises(SystemExit):
+            cfg.validate()
+
+    def test_noncontiguous_netmask_fails(self, clean_env, monkeypatch):
+        import pytest
+
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_UDP_NETMASK", "255.0.255.0")
+        cfg = Config.from_settings()
+        with pytest.raises(SystemExit):
+            cfg.validate()
+
+    def test_valid_netmask_passes(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_UDP_NETMASK", "255.255.0.0")
+        cfg = Config.from_settings()
+        cfg.validate()

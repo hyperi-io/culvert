@@ -1,0 +1,60 @@
+# Starter values for the "Kubernetes at scale" use case.
+# See docs/USE-CASE-K8S-SCALE.md.
+#
+#   helm install culvert deploy/helm/culvert -n vpn \
+#     -f deploy/helm/culvert/values-k8s-scale.yaml \
+#     --set env.CULVERT_SERVER_CN=vpn.example.com
+#
+# The namespace must permit the VPN pod (NET_ADMIN, /dev/net/tun,
+# net.ipv4.ip_forward):
+#   kubectl label ns vpn pod-security.kubernetes.io/enforce=privileged
+
+# Expose UDP 1194 to clients. A connection-based LB is REQUIRED: a single
+# VPN flow must stay pinned to one pod (client IP allocation and cert
+# state are per-pod). Most cloud L4 LBs are 5-tuple/connection based;
+# do not front this with a per-packet balancer.
+#
+# NOTE: one Service carries every port, so LoadBalancer also publishes the
+# observability port 9090 (/healthz, /readyz, /metrics) unauthenticated.
+# Restrict it with loadBalancerSourceRanges (below), or keep the Service
+# ClusterIP and expose only the VPN port via a Gateway API UDPRoute.
+service:
+  type: LoadBalancer
+  # loadBalancerSourceRanges:
+  #   - 203.0.113.0/24   # your client / admin CIDRs only
+
+# Scale on CPU. Each pod is an independent VPN server, so scaling out
+# adds capacity; existing connections stay on their pod (see the LB note).
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "4"
+    memory: 2Gi
+
+# Non-secret config. CULVERT_SERVER_CN is set on the install command line
+# above; add other non-secret CULVERT_* here.
+env:
+  CULVERT_LOG_MODE: stdout
+
+# Sensitive CULVERT_* (OIDC client secret, client-download token, OpenBao
+# token) come from a Secret you create out-of-band (External Secrets
+# Operator, sealed-secrets, or kubectl), never inline. Set its name here.
+existingSecret: ""
+
+# Opt listeners in per capability - each needs its CULVERT_*_ENABLED under
+# env: above and its port here. Example: TCP fallback + OIDC callbacks.
+extraPorts: []
+  # - name: openvpn-tcp
+  #   port: 1194
+  #   protocol: TCP
+  # - name: oauth2-udp
+  #   port: 9000
+  #   protocol: TCP

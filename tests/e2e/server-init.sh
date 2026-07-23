@@ -14,7 +14,7 @@ fi
 # route interface. In a multi-homed compose setup the target may be on a
 # different interface. Add catch-all MASQUERADE for all VPN subnets so traffic
 # routes correctly regardless of which interface leads to the target.
-for subnet in 192.168.100.0/24 192.168.101.0/24 192.168.102.0/24 192.168.200.0/24; do
+for subnet in 10.8.0.0/24 10.8.2.0/24 10.8.1.0/24 10.8.3.0/24; do
     iptables -t nat -A POSTROUTING -s "${subnet}" -j MASQUERADE 2>/dev/null || true
 done
 

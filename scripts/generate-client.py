@@ -63,6 +63,8 @@ class Config:
         self.udp_port = vpn.udp_port
         self.tcp_port = vpn.tcp_port
         self.https_port = vpn.https_port
+        self.key_type = vpn.key_type
+        self.key_size = vpn.key_size
 
         # WireGuard
         self.wg_network = vpn.wg_network
@@ -91,6 +93,15 @@ def validate_client_name(name: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9_-]+$", name))
 
 
+def validate_wg_pubkey(key: str) -> bool:
+    """Validate WireGuard public key shape (32 bytes base64, 44 chars).
+
+    The key is written into peer files and interpolated into wg0.conf,
+    so reject anything that is not a plain single-line key.
+    """
+    return bool(re.match(r"^[A-Za-z0-9+/]{43}=$", key))
+
+
 def validate_proxy(proxy: str) -> bool:
     """Validate proxy format (host:port)."""
     return bool(re.match(r"^[a-zA-Z0-9._-]+:[0-9]+$", proxy))
@@ -101,7 +112,13 @@ def validate_proxy(proxy: str) -> bool:
 # ===============================================================================
 
 
-def generate_certificate(client_name: str, cert_days: int, pki_dir: Path) -> None:
+def generate_certificate(
+    client_name: str,
+    cert_days: int,
+    pki_dir: Path,
+    key_type: str = "ec",
+    key_size: str = "secp384r1",
+) -> None:
     """Generate client certificate using easy-rsa."""
     logger.info("Generating client certificate...", client=client_name, days=cert_days)
 
@@ -115,6 +132,12 @@ def generate_certificate(client_name: str, cert_days: int, pki_dir: Path) -> Non
             "EASYRSA_REQ_CN": client_name,
         }
     )
+    # Match the CA/server algorithm (easy-rsa would otherwise fall back
+    # to its RSA default for client keys).
+    if key_type == "ec":
+        env.update({"EASYRSA_ALGO": "ec", "EASYRSA_CURVE": key_size})
+    else:
+        env.update({"EASYRSA_ALGO": "rsa", "EASYRSA_KEY_SIZE": key_size})
 
     # Generate request and sign
     subprocess.run(
@@ -592,6 +615,12 @@ Examples:
         logger.error("--pubkey is only valid with --protocol wireguard or all")
         sys.exit(1)
 
+    if args.pubkey and not validate_wg_pubkey(args.pubkey):
+        logger.error(
+            "Invalid WireGuard public key: expected 44-char base64 (wg pubkey output)"
+        )
+        sys.exit(1)
+
     logger.info(f"Generating client: {client_name}")
     logger.info(f"  Protocol: {args.protocol}")
     if generate_openvpn:
@@ -631,7 +660,13 @@ Examples:
                     "or use --config-only to regenerate configs"
                 )
                 sys.exit(1)
-            generate_certificate(client_name, args.days, cfg.pki_dir)
+            generate_certificate(
+                client_name,
+                args.days,
+                cfg.pki_dir,
+                key_type=cfg.key_type,
+                key_size=cfg.key_size,
+            )
 
         # Generate 6 config files: 3 protocols x 2 tunnel modes
         configs = [

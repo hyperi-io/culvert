@@ -29,7 +29,7 @@ from lib.config import Config
 from lib.download import start_client_download_server
 from lib.health import health, set_protocol, start_observability
 from lib.metrics import init_metrics
-from lib.network import setup_network
+from lib.network import setup_network, setup_routing_control
 from lib.oauth2 import setup_oauth2, start_oauth2
 from lib.openvpn import (
     auto_generate_clients,
@@ -60,6 +60,7 @@ def run_server(cfg: Config) -> None:
     setup_directories(cfg)
     setup_log_rotation()
     setup_network(cfg)
+    setup_routing_control(cfg)
 
     # OpenVPN setup
     if cfg.protocol in ("openvpn", "both"):
@@ -115,15 +116,15 @@ def run_server(cfg: Config) -> None:
             tls_key=cfg.client_download_tls_key,
         )
 
-    health.set_started()
-    health.set_ready()
-
-    # Start VPN processes (blocks)
+    # Start VPN processes (blocks). start_server flips started/ready once
+    # its listeners are launched; in WireGuard-only mode the kernel
+    # interface is already up, so flip here before waiting.
     if cfg.protocol in ("openvpn", "both"):
         start_server(cfg, proc_manager)
     else:
-        # WireGuard-only mode: kernel manages the interface, just wait
         logger.info("WireGuard-only mode -- waiting for signals")
+        health.set_started()
+        health.set_ready()
         signal.pause()
 
 

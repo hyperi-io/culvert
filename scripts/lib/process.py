@@ -80,6 +80,10 @@ def setup_directories(cfg) -> None:
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
 
+    # Management/OAuth2 unix sockets live here - root-only so no other
+    # in-container user can drive the unauthenticated management API.
+    run_dir.chmod(0o700)
+
 
 def setup_log_rotation() -> None:
     """Configure logrotate for OpenVPN logs."""
@@ -182,8 +186,13 @@ class ProcessManager:
             logger.error(f"Failed to start {name}: {e}")
             return None
 
-    def shutdown(self) -> None:
-        """Gracefully shutdown all processes."""
+    def shutdown(self, exit_code: int = 0) -> None:
+        """Gracefully shutdown all processes and exit with exit_code.
+
+        Callers pass a non-zero code when the main VPN process died
+        unexpectedly, so PID 1 reports failure and restart policies
+        like on-failure actually fire.
+        """
         # Clear readiness immediately so K8s stops routing traffic
         from lib.health import health
 
@@ -230,7 +239,7 @@ class ProcessManager:
             except OSError:
                 pass
         logger.info("All processes stopped")
-        sys.exit(0)
+        sys.exit(exit_code)
 
     def wait_for_main(self, name: str) -> int:
         """Wait for main process to exit."""
