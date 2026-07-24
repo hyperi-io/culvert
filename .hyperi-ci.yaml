@@ -58,6 +58,10 @@ publish:
   enabled: true
   target: oss
   channel: release
+  # culvert ships ONLY its GHCR container - it is not a Python package.
+  # Opt out of the default PyPI publish while keeping the container.
+  destinations_oss:
+    python: false
   container:
     enabled: true
     # hyperi-ci's bundled defaults.yaml sets registry: ghcr (bare string),
