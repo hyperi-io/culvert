@@ -6,13 +6,6 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-# Buildable so the `culvert` console script (project.scripts, below) is
-# installed under `uv sync` - hyperi-ci's deployment-artefact stage invokes
-# it. The image does NOT install this package; it uses requirements-docker.txt.
-[build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "culvert"
 version = "0.0.0"
@@ -45,19 +38,11 @@ dev = [
     "scalo[deployment]",
 ]
 
-# CLI entry point that satisfies hyperi-ci's deployment-artefact stage.
-# culvert is a custom-mode container, not a scalo ServiceApp; the entry
-# point is a no-op producer (see culvert_ci.py). CI-only - not in the image.
-[project.scripts]
-culvert = "culvert_ci:main"
-
 # culvert is distributed as a container image, not a Python package.
 # Declare no packages so setuptools doesn't auto-discover config/, profiles/
-# and fail the build; py-modules ships only culvert_ci so the entry point
-# above resolves under `uv sync`. A minimal wheel is built for pipeline parity.
+# and fail the build. A minimal wheel is still built for pipeline parity.
 [tool.setuptools]
 packages = []
-py-modules = ["culvert_ci"]
 
 [tool.ty.environment]
 # scripts/ is injected onto sys.path by tests/conftest.py at runtime; tell ty

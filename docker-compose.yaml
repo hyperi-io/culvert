@@ -29,18 +29,14 @@
 
 services:
   openvpn:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # Private registry authentication for base images (optional)
-      # Set REGISTRY_URL, REGISTRY_USERNAME, REGISTRY_PASSWORD in .env
-      # Example: REGISTRY_URL=registry.example.com/library
-      args:
-        - REGISTRY_URL=${REGISTRY_URL:-}
-        - REGISTRY_USERNAME=${REGISTRY_USERNAME:-}
-        - REGISTRY_PASSWORD=${REGISTRY_PASSWORD:-}
-    # Use private registry image if REGISTRY_URL is set, otherwise local build
-    image: ${REGISTRY_URL:+${REGISTRY_URL}/}culvert:${IMAGE_TAG:-latest}
+    # Pulls the published multi-arch image from GHCR - the five-minute path.
+    # Set CULVERT_IMAGE to pin a tag (e.g. ...culvert:2.1.1) or point at a
+    # private mirror. To build locally instead, uncomment the build: block
+    # below and run `docker compose up --build`.
+    image: ${CULVERT_IMAGE:-ghcr.io/hyperi-io/culvert:latest}
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: ${CONTAINER_NAME:-culvert}
     restart: unless-stopped
     labels:
