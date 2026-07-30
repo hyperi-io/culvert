@@ -1,9 +1,8 @@
 # scalo Reference for culvert
 
-How culvert actually uses [scalo](https://pypi.org/project/scalo/)
-(v2.29+, the Apache-2.0 continuation of hyperi-pylib - same codebase,
-same version line). This documents the calls that exist in
-`scripts/lib/`, not the full library surface; the
+How culvert actually uses [scalo](https://pypi.org/project/scalo/) (v2.29+),
+the Apache-2.0 Python runtime it depends on. This documents the calls that
+exist in `scripts/lib/`, not the full library surface; the
 [scalo repo](https://github.com/hyperi-io/scalo-py) is the API SSoT.
 
 ## Installation

@@ -47,6 +47,22 @@ class TestShippedServerTemplates:
         ]
         assert not pushes, f"{name} pushes a Windows-only option: {pushes}"
 
+    @pytest.mark.parametrize("name", SERVER_TEMPLATES)
+    def test_external_scripts_are_not_permitted(self, name):
+        """script-security 2 lets OpenVPN run scripts; nothing here needs it.
+
+        Culvert ships no client-connect hooks, so enabling it by default only
+        widens what the server process is allowed to execute. An operator who
+        mounts their own hooks uncomments it along with the hook lines.
+        """
+        text = (REPO_ROOT / "config" / name).read_text(encoding="utf-8")
+        active = [
+            line
+            for line in text.splitlines()
+            if line.strip().startswith("script-security")
+        ]
+        assert not active, f"{name} enables external scripts: {active}"
+
 
 class TestGenerateConfig:
     """Tests for template-based config generation."""

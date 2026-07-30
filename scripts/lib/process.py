@@ -108,9 +108,12 @@ def setup_log_rotation() -> None:
 
 
 def setup_scripts(cfg) -> None:
-    """Make helper scripts executable."""
-    logger.info("Setting up helper scripts...")
+    """Make operator-supplied client-connect hooks executable.
 
+    Culvert ships no hook scripts. This exists for the operator who mounts their
+    own at the documented paths, so they do not have to get the mode right in
+    their image or volume as well as uncommenting the server config lines.
+    """
     scripts = [
         cfg.scripts_dir / "client-connect.sh",
         cfg.scripts_dir / "client-disconnect.sh",
@@ -119,6 +122,7 @@ def setup_scripts(cfg) -> None:
     for script in scripts:
         if script.exists():
             script.chmod(0o755)
+            logger.info(f"Made hook script executable: {script}")
 
 
 class ProcessManager:

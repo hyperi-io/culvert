@@ -1,19 +1,20 @@
 #  Project:      culvert
 #  File:         test_deploy_artefacts.py
-#  Purpose:      Guard the generated Helm chart and Compose fragment
+#  Purpose:      Guard the shipped deployment artefacts and tracked-tree hygiene
 #  Language:     Python
 #
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""Checks on the shipped deployment artefacts, runnable without a cluster.
+"""Checks on what culvert actually ships, runnable without a cluster.
 
 The cluster tier in tests/k8s/ proves the chart works on a real cluster, but it
 needs a kubeconfig and never runs in CI. These assertions cover the failures
-that are visible in the generated files alone - the ones that would otherwise be
-found by whoever runs `helm install` first.
+that are visible in the shipped files alone - the ones that would otherwise be
+found by whoever runs `helm install` first, or read by whoever clones the repo.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,9 +24,72 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CHART_DIR = REPO_ROOT / "deploy" / "helm" / "culvert"
 STARTERS = ("values-k8s-scale.yaml", "values-edge-fleet.yaml")
 
+# Decommissioned org libraries. culvert runs on scalo, their Apache-2.0
+# successor, and has done since the rebrand. A reference in a tracked file
+# either points a reader at something that no longer exists or, worse, names a
+# proprietary internal library from a public Apache-2.0 repo.
+RETIRED_DEPENDENCIES = (
+    "hyperi-pylib",
+    "hyperi_pylib",
+    "hyperi-rustlib",
+    "hyperi_rustlib",
+)
+
+# Text files only: a match inside a PNG is noise, and binary assets cannot
+# reference a dependency in any meaningful way.
+_BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".woff", ".woff2"}
+
 
 def _load(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _tracked_text_files() -> list[Path]:
+    """Every tracked file git knows about, minus binary assets."""
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
+        timeout=60,
+    )
+    return [
+        REPO_ROOT / name
+        for name in result.stdout.split("\0")
+        if name and Path(name).suffix.lower() not in _BINARY_SUFFIXES
+    ]
+
+
+class TestRetiredDependencies:
+    """Nothing culvert ships may name a decommissioned org library."""
+
+    def test_no_tracked_file_mentions_a_retired_library(self):
+        """hyperi-pylib and hyperi-rustlib were replaced by scalo.
+
+        Scanning the tracked tree rather than a hand-kept file list, because the
+        last few strays turned up in a changelog entry and a doc subtitle - not
+        anywhere anyone would think to look.
+        """
+        this_file = Path(__file__).resolve()
+        offenders = []
+        for path in _tracked_text_files():
+            # This module names them in order to look for them.
+            if path.resolve() == this_file:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, FileNotFoundError):
+                continue
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                if any(name in line for name in RETIRED_DEPENDENCIES):
+                    rel = path.relative_to(REPO_ROOT)
+                    offenders.append(f"{rel}:{lineno}: {line.strip()}")
+
+        assert not offenders, (
+            "retired library referenced in tracked files:\n" + "\n".join(offenders)
+        )
 
 
 @pytest.fixture(scope="module")

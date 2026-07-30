@@ -138,6 +138,18 @@ services:
       # Routing
       - CULVERT_FULL_TUNNEL=${CULVERT_FULL_TUNNEL:-false}
       - CULVERT_PUSH_ROUTES=${CULVERT_PUSH_ROUTES:-}
+      - CULVERT_DNS_DOMAIN=${CULVERT_DNS_DOMAIN:-}
+
+      # Routing control: who clients may reach, and who may reach back down the
+      # tunnels. Off by default (clients route wherever the host can). Turning it
+      # on denies client-to-client and unsolicited inbound; see .env.example.
+      - CULVERT_ROUTING_CONTROL_ENABLED=${CULVERT_ROUTING_CONTROL_ENABLED:-false}
+      - CULVERT_CLIENT_ISOLATION=${CULVERT_CLIENT_ISOLATION:-true}
+      - CULVERT_ALLOWED_DESTINATIONS=${CULVERT_ALLOWED_DESTINATIONS:-}
+      - CULVERT_DOWNSTREAM_ADMIN_CIDRS=${CULVERT_DOWNSTREAM_ADMIN_CIDRS:-}
+
+      # Site profile: loads profiles/<name>.yaml as a base for everything above
+      - CULVERT_PROFILE=${CULVERT_PROFILE:-}
 
       # WireGuard (opt-in: set CULVERT_PROTOCOL=wireguard, or both to run it
       # alongside OpenVPN, then uncomment the knobs you need)
@@ -185,6 +197,18 @@ services:
       - CULVERT_CA_CN=${CULVERT_CA_CN:-}
       - CULVERT_KEY_TYPE=${CULVERT_KEY_TYPE:-ec}
       - CULVERT_KEY_SIZE=${CULVERT_KEY_SIZE:-secp384r1}
+      # "local" mints a CA on first start. "external" takes the CA and server
+      # keypair from a secrets backend instead, which needs every
+      # CULVERT_SECRETS_* path below - see the External PKI section of
+      # .env.example. TC_KEY_PATH is what lets more than one server share
+      # clients; a single server can leave it unset and mint its own.
+      - CULVERT_PKI_MODE=${CULVERT_PKI_MODE:-local}
+      - CULVERT_SECRETS_PROVIDER=${CULVERT_SECRETS_PROVIDER:-}
+      - CULVERT_SECRETS_CA_CERT_PATH=${CULVERT_SECRETS_CA_CERT_PATH:-}
+      - CULVERT_SECRETS_SERVER_CERT_PATH=${CULVERT_SECRETS_SERVER_CERT_PATH:-}
+      - CULVERT_SECRETS_SERVER_KEY_PATH=${CULVERT_SECRETS_SERVER_KEY_PATH:-}
+      - CULVERT_SECRETS_CRL_PATH=${CULVERT_SECRETS_CRL_PATH:-}
+      - CULVERT_SECRETS_TC_KEY_PATH=${CULVERT_SECRETS_TC_KEY_PATH:-}
 
       # OIDC SSO, opt-in (works with Entra ID, Okta, Keycloak, Google, Auth0, etc.)
       - CULVERT_OAUTH2_ENABLED=${CULVERT_OAUTH2_ENABLED:-false}

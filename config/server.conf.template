@@ -119,10 +119,12 @@ remote-cert-tls client
 # Disable compression (VORACLE attack vulnerability)
 allow-compression no
 
-# Allow running external scripts
-script-security 2
-
-# Client connect/disconnect scripts (optional - commented out as not implemented)
+# Client connect/disconnect hooks. Not shipped: mount your own scripts at these
+# paths and uncomment all three lines together. script-security 2 is deliberately
+# NOT set by default - on its own it lets OpenVPN execute user-defined scripts
+# while nothing here uses that, so it would widen what the server can run for no
+# benefit.
+# script-security 2
 # client-connect /etc/vpn/scripts/client-connect.sh
 # client-disconnect /etc/vpn/scripts/client-disconnect.sh
 
