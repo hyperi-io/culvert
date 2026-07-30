@@ -4,7 +4,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
     image: culvert:dev
-    container_name: e2e-vpn-server
+    container_name: culvert-test-e2e-server
     cap_add:
       - NET_ADMIN
     devices:
@@ -13,7 +13,7 @@ services:
     command: ["server"]
     volumes:
       - ./server-init.sh:/e2e-init.sh:ro
-      - vpn-clients:/etc/vpn/clients
+      - clients:/etc/vpn/clients
     environment:
       # Entrypoint reads CULVERT_* via scalo
       CULVERT_PROTOCOL: both
@@ -31,9 +31,9 @@ services:
       CULVERT_WG_HTTPS_TUNNEL_ENABLED: "true"
       # generate-client.py now uses CULVERT_* via lib.config (no legacy vars needed)
     networks:
-      e2e-internal:
+      internal:
         ipv4_address: 172.30.0.10
-      e2e-external:
+      external:
         ipv4_address: 172.30.1.10
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9090/readyz"]
@@ -44,18 +44,18 @@ services:
 
   target:
     image: nginx:alpine
-    container_name: e2e-target
+    container_name: culvert-test-e2e-target
     volumes:
       - ./nginx-target.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
-      e2e-internal:
+      internal:
         ipv4_address: 172.30.0.20
 
   vpn-client:
     build:
       context: .
       dockerfile: Dockerfile.client
-    container_name: e2e-vpn-client
+    container_name: culvert-test-e2e-client
     cap_add:
       - NET_ADMIN
     devices:
@@ -68,25 +68,25 @@ services:
     sysctls:
       net.ipv4.conf.all.src_valid_mark: "1"
     volumes:
-      - vpn-clients:/etc/vpn/clients:ro
+      - clients:/etc/vpn/clients:ro
     depends_on:
       vpn-server:
         condition: service_healthy
     networks:
-      e2e-external:
+      external:
         ipv4_address: 172.30.1.20
 
 networks:
-  e2e-internal:
+  internal:
     driver: bridge
     ipam:
       config:
         - subnet: 172.30.0.0/24
-  e2e-external:
+  external:
     driver: bridge
     ipam:
       config:
         - subnet: 172.30.1.0/24
 
 volumes:
-  vpn-clients:
+  clients:

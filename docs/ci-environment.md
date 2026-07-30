@@ -58,5 +58,5 @@ uv run pytest tests/unit/ -q
 ## Vendored Dependencies
 
 Third-party binaries are pulled directly from upstream GitHub releases
-during image build. See [SUPPLY-CHAIN.md](SUPPLY-CHAIN.md) for the full
+during image build. See [supply-chain.md](supply-chain.md) for the full
 list and versions.

@@ -9,7 +9,9 @@
 """E2E tests for WireGuard connectivity."""
 
 import pytest
+from conftest import CLIENT_NAME
 from helpers import (
+    CLIENT_CONTAINER,
     TARGET_RESPONSE,
     assert_tunnel_mode,
     curl_target,
@@ -61,7 +63,7 @@ class TestWireGuard:
         assert ip.startswith("10.8.3."), f"Expected IP in 10.8.3.0/24, got {ip}"
 
         mark = docker_exec(
-            "e2e-vpn-client",
+            CLIENT_CONTAINER,
             "cat /proc/sys/net/ipv4/conf/all/src_valid_mark",
             check=False,
         ).stdout.strip()
@@ -88,8 +90,8 @@ class TestWireGuardOverHTTPSOpenNetwork:
     def _require_https_tunnel_config(self):
         """Skip if HTTPS-tunnel client config was not generated."""
         result = docker_exec(
-            "e2e-vpn-client",
-            "test -f /etc/vpn/clients/e2e-client-wg-https-split.conf",
+            CLIENT_CONTAINER,
+            f"test -f /etc/vpn/clients/{CLIENT_NAME}-wg-https-split.conf",
             check=False,
         )
         if result.returncode != 0:

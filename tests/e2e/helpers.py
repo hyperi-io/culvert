@@ -15,7 +15,14 @@ from pathlib import Path
 COMPOSE_DIR = Path(__file__).parent
 TARGET_IP = "172.30.0.20"
 TARGET_URL = f"http://{TARGET_IP}/"
-TARGET_RESPONSE = "culvert-e2e-target-ok"
+TARGET_RESPONSE = "culvert-test-e2e-target-ok"
+
+# Container names for the connectivity stack, matching docker-compose.yml.
+# Defined once: these were repeated as literals across the suite and a rename
+# left one copy pointing at a container that no longer existed.
+SERVER_CONTAINER = "culvert-test-e2e-server"
+CLIENT_CONTAINER = "culvert-test-e2e-client"
+TARGET_CONTAINER = "culvert-test-e2e-target"
 
 # The server as the client sees it, on the shared external network.
 SERVER_IP = "172.30.1.10"
@@ -29,20 +36,34 @@ PLAIN_VPN_PORTS = (("udp", 1194), ("tcp", 1194), ("udp", 51820))
 def docker_exec(
     container: str, cmd: str, timeout: int = 30, check: bool = True
 ) -> subprocess.CompletedProcess:
-    """Run a command inside a container via docker exec."""
-    return subprocess.run(
+    """Run a command inside a container via docker exec.
+
+    On failure the container's own stderr is put in the exception message.
+    CalledProcessError carries it on an attribute that pytest does not print, so
+    without this a failing exec reports only the exit status and the command -
+    which says nothing about why it failed.
+    """
+    result = subprocess.run(
         ["docker", "exec", container, "bash", "-c", cmd],
         capture_output=True,
         text=True,
         timeout=timeout,
-        check=check,
+        check=False,
     )
+    if check and result.returncode != 0:
+        raise AssertionError(
+            f"docker exec {container} failed (exit {result.returncode})\n"
+            f"  command: {cmd}\n"
+            f"  stdout: {result.stdout.strip()}\n"
+            f"  stderr: {result.stderr.strip()}"
+        )
+    return result
 
 
 def curl_target(timeout: int = 5) -> str | None:
     """Curl the target from the client container. Returns body or None."""
     result = docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"curl -sf --connect-timeout {timeout} {TARGET_URL}",
         timeout=timeout + 5,
         check=False,
@@ -65,7 +86,7 @@ def assert_tunnel_mode(interface: str, mode: str) -> None:
         mode: "split" or "full".
     """
     to_target = docker_exec(
-        "e2e-vpn-client", f"ip route get {TARGET_IP}", check=False
+        CLIENT_CONTAINER, f"ip route get {TARGET_IP}", check=False
     ).stdout
     assert f"dev {interface}" in to_target, (
         f"{mode} tunnel does not route the target through {interface}:\n{to_target}"
@@ -73,7 +94,7 @@ def assert_tunnel_mode(interface: str, mode: str) -> None:
 
     # 1.1.1.1 stands in for "anywhere else". Nothing is sent to it.
     elsewhere = docker_exec(
-        "e2e-vpn-client", "ip route get 1.1.1.1", check=False
+        CLIENT_CONTAINER, "ip route get 1.1.1.1", check=False
     ).stdout
     if mode == "full":
         assert f"dev {interface}" in elsewhere, (
@@ -92,7 +113,7 @@ def wait_for_tunnel(interface: str = "tun0", timeout: int = 30) -> str:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = docker_exec(
-            "e2e-vpn-client",
+            CLIENT_CONTAINER,
             f"ip -4 addr show dev {interface} 2>/dev/null | grep -oP 'inet \\K[0-9.]+'",
             check=False,
         )
@@ -109,7 +130,7 @@ def connect_openvpn(config_name: str) -> None:
     """Start OpenVPN in background inside the client container."""
     config_path = f"/etc/vpn/clients/{config_name}"
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"openvpn --config {config_path}"
         " --daemon --log /tmp/openvpn.log"
         " --connect-retry 1 --connect-retry-max 3",
@@ -119,7 +140,7 @@ def connect_openvpn(config_name: str) -> None:
 def disconnect_openvpn() -> None:
     """Kill all OpenVPN processes in the client container."""
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "pkill -SIGTERM openvpn || true",
         check=False,
     )
@@ -133,7 +154,7 @@ def connect_openvpn_https(ovpn_name: str, stunnel_name: str) -> None:
     # Patch stunnel config for e2e: disable cert verification (self-signed),
     # remove verifyChain/checkHost, and switch to background mode
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"sed"
         f" -e 's/^foreground.*/foreground = no/'"
         f" -e '/^verifyChain/d'"
@@ -144,13 +165,13 @@ def connect_openvpn_https(ovpn_name: str, stunnel_name: str) -> None:
     )
 
     # Start client-side stunnel (runs in background with foreground = no)
-    docker_exec("e2e-vpn-client", "stunnel /tmp/stunnel-client.conf")
+    docker_exec(CLIENT_CONTAINER, "stunnel /tmp/stunnel-client.conf")
     time.sleep(1)
 
     # Start OpenVPN connecting to local stunnel port
     ovpn_path = f"/etc/vpn/clients/{ovpn_name}"
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"openvpn --config {ovpn_path}"
         " --daemon --log /tmp/openvpn.log"
         " --connect-retry 1 --connect-retry-max 3",
@@ -160,7 +181,7 @@ def connect_openvpn_https(ovpn_name: str, stunnel_name: str) -> None:
 def disconnect_openvpn_https() -> None:
     """Kill OpenVPN and stunnel in the client container."""
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "pkill -SIGTERM openvpn || true; pkill -SIGTERM stunnel || true",
         check=False,
     )
@@ -176,11 +197,11 @@ def connect_wireguard(config_name: str) -> None:
     src = f"/etc/vpn/clients/{config_name}"
     # Copy config and strip DNS line (resolvconf not available in container)
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"mkdir -p /etc/wireguard && sed '/^DNS/d' {src} > /etc/wireguard/wg0.conf",
     )
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "wg-quick up wg0",
     )
 
@@ -188,7 +209,7 @@ def connect_wireguard(config_name: str) -> None:
 def disconnect_wireguard(config_name: str) -> None:  # noqa: ARG001
     """Stop WireGuard via wg-quick inside the client container."""
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "wg-quick down wg0",
         check=False,
     )
@@ -203,7 +224,7 @@ def connect_wireguard_https_tunnel(config_name: str) -> None:
     src = f"/etc/vpn/clients/{config_name}"
     # Copy config, strip DNS line
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"mkdir -p /etc/wireguard && sed '/^DNS/d' {src} > /etc/wireguard/wg0.conf",
     )
 
@@ -212,7 +233,7 @@ def connect_wireguard_https_tunnel(config_name: str) -> None:
     # Use setsid to properly daemonise inside docker exec
     # wstunnel 10.x: --tls-verify-certificate is opt-in; omit it to skip verification
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "setsid wstunnel client"
         " -L udp://127.0.0.1:51820:127.0.0.1:51820"
         " wss://172.30.1.10:4443"
@@ -222,7 +243,7 @@ def connect_wireguard_https_tunnel(config_name: str) -> None:
 
     # Start WireGuard (connects to local wstunnel listener)
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "wg-quick up wg0",
     )
 
@@ -230,7 +251,7 @@ def connect_wireguard_https_tunnel(config_name: str) -> None:
 def disconnect_wireguard_https_tunnel(config_name: str) -> None:  # noqa: ARG001
     """Stop WireGuard and wstunnel client."""
     docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "wg-quick down wg0 2>/dev/null; pkill -SIGTERM wstunnel || true",
         check=False,
     )
@@ -243,7 +264,7 @@ def has_wireguard_module() -> bool:
         return True
     # Try creating a wireguard interface inside the privileged client
     result = docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "ip link add wg-test type wireguard 2>/dev/null"
         " && ip link del wg-test 2>/dev/null"
         " && echo ok",
@@ -261,7 +282,7 @@ def block_plain_vpn_ports() -> None:
     """
     for proto, port in PLAIN_VPN_PORTS:
         docker_exec(
-            "e2e-vpn-client",
+            CLIENT_CONTAINER,
             f"iptables -I OUTPUT -d {SERVER_IP} -p {proto} --dport {port} -j REJECT",
         )
 
@@ -270,7 +291,7 @@ def unblock_plain_vpn_ports() -> None:
     """Remove the egress blocks added by block_plain_vpn_ports."""
     for proto, port in PLAIN_VPN_PORTS:
         docker_exec(
-            "e2e-vpn-client",
+            CLIENT_CONTAINER,
             f"iptables -D OUTPUT -d {SERVER_IP} -p {proto} --dport {port} -j REJECT",
             check=False,
         )
@@ -279,7 +300,7 @@ def unblock_plain_vpn_ports() -> None:
 def tcp_port_reachable(port: int, host: str = SERVER_IP, timeout: int = 5) -> bool:
     """Whether a TCP connect to host:port succeeds from the client."""
     result = docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"timeout {timeout} bash -c '</dev/tcp/{host}/{port}'",
         timeout=timeout + 5,
         check=False,
@@ -295,7 +316,7 @@ def tls_handshake(port: int, host: str = SERVER_IP, timeout: int = 10) -> str:
     protocol; an empty string means the handshake did not complete.
     """
     result = docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         f"timeout {timeout} openssl s_client -connect {host}:{port}"
         " -servername vpn-server -brief </dev/null 2>&1",
         timeout=timeout + 5,
@@ -307,7 +328,7 @@ def tls_handshake(port: int, host: str = SERVER_IP, timeout: int = 10) -> str:
 def get_openvpn_log() -> str:
     """Get the OpenVPN log from the client container (for debugging)."""
     result = docker_exec(
-        "e2e-vpn-client",
+        CLIENT_CONTAINER,
         "cat /tmp/openvpn.log 2>/dev/null",
         check=False,
     )

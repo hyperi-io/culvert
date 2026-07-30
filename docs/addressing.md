@@ -64,7 +64,7 @@ on top of CGNAT underlay is a self-inflicted routing loop.
 - **Corporate / larger networks.** `10.8.0.0/22` is safe for homes, but a
   company already using `10.8.x` internally will clash. Check the `/22`
   against your addressing plan and move it if it collides.
-- **Edge fleet.** The [edge-fleet preset](USE-CASE-EDGE-FLEET.md) opts
+- **Edge fleet.** The [edge-fleet preset](use-case-edge-fleet.md) opts
   INTO `100.64/10` on purpose. There the operator controls both ends of
   every tunnel and knows the appliances are not on CGNAT WANs, so the
   range that is wrong for a travelling laptop is exactly right for
@@ -104,10 +104,10 @@ README.
 
 ## See also
 
-- [USE-CASE-EDGE-FLEET.md](USE-CASE-EDGE-FLEET.md) - the one shape that
+- [use-case-edge-fleet.md](use-case-edge-fleet.md) - the one shape that
   opts into `100.64/10`, and why
-- [USE-CASE-HOME.md](USE-CASE-HOME.md) and
-  [USE-CASE-CORPORATE.md](USE-CASE-CORPORATE.md) - the split-tunnel and
+- [use-case-home.md](use-case-home.md) and
+  [use-case-corporate.md](use-case-corporate.md) - the split-tunnel and
   full-tunnel cases that push these subnets to clients
 - [Multi-Listener Configuration in .env.example](../.env.example) - the
   per-listener `CULVERT_*_NETWORK` / `_NETMASK` variables and defaults

@@ -398,9 +398,87 @@ def init_pki_local(cfg) -> None:
     logger.info(f"  Algorithm: {cfg.key_type} ({cfg.key_size})")
 
 
+def _regenerate_local_crl(cfg) -> bool:
+    """Regenerate the CRL from the local CA. True when it was rewritten."""
+    # easyrsa is not on PATH; run it from its install dir like every other call
+    # site, pointing EASYRSA_PKI at our dir.
+    result = run(
+        f"cd /usr/share/easy-rsa && EASYRSA_PKI={cfg.pki_dir} ./easyrsa gen-crl",
+        check=False,
+        capture=True,
+    )
+    if result.returncode == 0:
+        return True
+    logger.warning(
+        "CRL regeneration failed",
+        stderr=(result.stderr[:200] if result.stderr else ""),
+    )
+    return False
+
+
+def refetch_external_crl(cfg) -> bool:
+    """Re-fetch the CRL from the secrets provider. True when it was rewritten.
+
+    External PKI has no CA key here, so there is nothing to regenerate - the
+    authority that revokes is upstream. Re-fetching is what picks a revocation
+    up. Without it the CRL is whatever was fetched at startup and a certificate
+    revoked upstream keeps working until the container restarts.
+    """
+    manager = create_manager(cfg)
+    try:
+        if not _health_check_with_retry(manager, cfg.secrets_provider, retries=2):
+            logger.warning(
+                f"Provider '{cfg.secrets_provider}' unreachable, keeping the"
+                " CRL already on disk"
+            )
+            return False
+        return _fetch_one(
+            manager,
+            cfg.secrets_provider,
+            cfg.secrets_crl_path,
+            cfg.pki_dir / "crl.pem",
+            0o644,
+            "CRL",
+        )
+    finally:
+        try:
+            import asyncio
+
+            asyncio.run(manager.close())
+        except Exception:
+            pass
+
+
+def crl_refresher(cfg):
+    """How to refresh the CRL for this PKI mode, or None when it cannot be.
+
+    Local PKI regenerates from its own CA. External PKI re-fetches from the
+    provider, because the CA key is not here. Gating the refresher on local mode
+    - as it was - left external deployments serving the startup CRL forever, so
+    an upstream revocation took effect only on a restart, silently.
+
+    Returns (callable, description) or None.
+    """
+    if cfg.pki_mode != "external":
+        return _regenerate_local_crl, "regenerated from the local CA"
+    if not cfg.secrets_crl_path:
+        return None
+    return refetch_external_crl, "re-fetched from the secrets provider"
+
+
 def start_crl_refresh(cfg, proc_manager, interval_hours: int = 24) -> None:
-    """Start CRL auto-refresh in background thread."""
+    """Keep the CRL current in the background, by whichever means applies."""
     import threading
+
+    refresher = crl_refresher(cfg)
+    if refresher is None:
+        logger.warning(
+            "External PKI with no CULVERT_SECRETS_CRL_PATH, so revocations made"
+            " at the external CA cannot be picked up. Configure it, or restart"
+            " the server to load a new CRL."
+        )
+        return
+    refresh, how = refresher
 
     def refresh_loop():
         interval_seconds = interval_hours * 3600
@@ -408,30 +486,19 @@ def start_crl_refresh(cfg, proc_manager, interval_hours: int = 24) -> None:
             _time.sleep(interval_seconds)
             if proc_manager.shutdown_requested:
                 break
-            logger.info("Auto-refreshing CRL...")
+            logger.info("Refreshing CRL...")
             try:
-                # easyrsa is not on PATH; run it from its install dir like
-                # every other call site, pointing EASYRSA_PKI at our dir.
-                result = run(
-                    f"cd /usr/share/easy-rsa"
-                    f" && EASYRSA_PKI={cfg.pki_dir} ./easyrsa gen-crl",
-                    check=False,
-                    capture=True,
-                )
-                if result.returncode == 0:
+                if refresh(cfg):
                     logger.info("CRL refreshed successfully")
+                    # OpenVPN reads the CRL at startup, so a new file changes
+                    # nothing until the server re-reads it.
                     proc_manager._reload_handler(None, None)
-                else:
-                    logger.warning(
-                        "CRL refresh failed",
-                        stderr=(result.stderr[:200] if result.stderr else ""),
-                    )
             except Exception as e:
                 logger.warning(f"CRL refresh error: {e}")
 
     thread = threading.Thread(target=refresh_loop, daemon=True)
     thread.start()
     logger.info(
-        "CRL auto-refresh enabled",
+        f"CRL auto-refresh enabled, {how}",
         interval_hours=interval_hours,
     )

@@ -9,7 +9,9 @@
 """E2E tests for OpenVPN connectivity (UDP, TCP, HTTPS)."""
 
 import pytest
+from conftest import CLIENT_NAME
 from helpers import (
+    CLIENT_CONTAINER,
     TARGET_RESPONSE,
     assert_tunnel_mode,
     connect_openvpn,
@@ -72,7 +74,7 @@ class TestOpenVPNUDP:
 
     def test_target_unreachable_after_disconnect(self):
         """After connect+disconnect, target is unreachable again."""
-        connect_openvpn("e2e-client-udp-split.ovpn")
+        connect_openvpn(f"{CLIENT_NAME}-udp-split.ovpn")
         try:
             wait_for_tunnel("tun0", timeout=30)
         finally:
@@ -110,13 +112,14 @@ class TestOpenVPNHTTPS:
         path green - the listener is opted in by this stack, so the config not
         being there is a defect, not an unmet precondition.
         """
+        stunnel_conf = f"{CLIENT_NAME}-stunnel.conf"
         result = docker_exec(
-            "e2e-vpn-client",
-            "test -f /etc/vpn/clients/e2e-client-stunnel.conf",
+            CLIENT_CONTAINER,
+            f"test -f /etc/vpn/clients/{stunnel_conf}",
             check=False,
         )
         assert result.returncode == 0, (
-            "e2e-client-stunnel.conf was not generated, so the HTTPS listener"
+            f"{stunnel_conf} was not generated, so the HTTPS listener"
             " cannot be tested. generate-client should have produced it."
         )
 

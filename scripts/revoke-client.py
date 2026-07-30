@@ -49,6 +49,23 @@ PKI_DIR = Path("/etc/vpn/pki")
 OUTPUT_DIR = Path("/etc/vpn/clients")
 
 
+class RevocationError(RuntimeError):
+    """Revocation could not be completed, so the client still has access."""
+
+
+def _wg_interface_up() -> bool:
+    """True when a wg0 interface exists to remove a peer from.
+
+    A missing `wg` binary means there is no WireGuard here at all, which is the
+    same situation as no interface: nothing live to revoke.
+    """
+    try:
+        result = subprocess.run(["wg", "show", "wg0"], capture_output=True, check=False)
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0
+
+
 # ===============================================================================
 # Client Functions
 # ===============================================================================
@@ -183,16 +200,33 @@ def revoke_wireguard_client(client_name: str) -> bool:
     public_key = pub_key_path.read_text().strip()
     logger.info(f"Revoking WireGuard peer: {client_name}")
 
-    # Remove live peer from wg0 interface (if running)
-    try:
-        subprocess.run(
+    # Remove the peer from the running interface. The kernel holds the peer
+    # list, so until this lands the revoked client keeps its tunnel.
+    #
+    # "interface not up" and "removal refused" are reported separately on
+    # purpose. Treating every failure as the former - which is what catching
+    # CalledProcessError alongside FileNotFoundError did - meant a refused
+    # removal was logged as an inactive interface and the function still
+    # reported the client revoked, while its tunnel kept working.
+    if not _wg_interface_up():
+        logger.info("wg0 is not up - no live peer to remove")
+    else:
+        removal = subprocess.run(
             ["wg", "set", "wg0", "peer", public_key, "remove"],
-            check=True,
+            check=False,
             capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
+        if removal.returncode != 0:
+            raise RevocationError(
+                f"could not remove {client_name} from the running wg0 interface"
+                f" (exit {removal.returncode}): {removal.stderr.strip()}."
+                " The client's tunnel is still live, so nothing has been"
+                " revoked - refusing to report otherwise."
+            )
         logger.info("Removed live peer from wg0 interface")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        logger.info("wg0 interface not active, skipping live peer removal")
 
     # Delete peer public key file
     pub_key_path.unlink()
@@ -212,7 +246,10 @@ def revoke_wireguard_client(client_name: str) -> bool:
         removed += 1
         logger.info(f"  Removed: {wg_conf}")
 
-    # Regenerate wg0.conf without the removed peer
+    # Regenerate the server config without the removed peer, at the path the
+    # server actually reads. Writing it under the PKI directory instead left the
+    # revoked peer in the file the server loads, so a container restart brought
+    # the peer back - a revocation that silently expired.
     priv_path = wg_dir / "server_private.key"
     if priv_path.exists():
         from lib.config import Config as VpnConfig
@@ -229,9 +266,18 @@ def revoke_wireguard_client(client_name: str) -> bool:
             peers_dir=peers_dir,
             alloc_file=alloc_file,
         )
-        wg0_path = wg_dir / "wg0.conf"
-        write_secret(wg0_path, server_conf)
-        logger.info("Regenerated WireGuard server config without revoked peer")
+        write_secret(vcfg.wg_conf, server_conf)
+        logger.info(
+            "Regenerated WireGuard server config without revoked peer",
+            path=str(vcfg.wg_conf),
+        )
+    else:
+        logger.warning(
+            "No WireGuard server private key found, so the server config was not"
+            " regenerated - the peer is removed from the live interface but"
+            " would return if the server config were rebuilt from these files",
+            path=str(priv_path),
+        )
 
     logger.info(
         f"WireGuard client {client_name} has been revoked",
@@ -301,17 +347,24 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    if args.protocol == "all":
-        ovpn_revoked = revoke_client(args.client_name, missing_ok=True)
-        wg_revoked = revoke_wireguard_client(args.client_name)
-        if not (ovpn_revoked or wg_revoked):
-            logger.error(
-                f"No OpenVPN certificate or WireGuard peer found: {args.client_name}"
-            )
+    try:
+        if args.protocol == "all":
+            ovpn_revoked = revoke_client(args.client_name, missing_ok=True)
+            wg_revoked = revoke_wireguard_client(args.client_name)
+            if not (ovpn_revoked or wg_revoked):
+                logger.error(
+                    f"No OpenVPN certificate or WireGuard peer found:"
+                    f" {args.client_name}"
+                )
+                sys.exit(1)
+        elif args.protocol == "openvpn":
+            revoke_client(args.client_name)
+        elif not revoke_wireguard_client(args.client_name):
             sys.exit(1)
-    elif args.protocol == "openvpn":
-        revoke_client(args.client_name)
-    elif not revoke_wireguard_client(args.client_name):
+    except RevocationError as exc:
+        # A non-zero exit with the reason named, not a traceback: the operator
+        # needs to know the client still has access and why.
+        logger.error(f"Revocation FAILED for {args.client_name}: {exc}")
         sys.exit(1)
 
 

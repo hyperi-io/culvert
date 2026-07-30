@@ -43,7 +43,7 @@ identity-based ESO wiring on AWS / Azure / GCP / OpenBao.
 OIDC works with any OIDC-compliant provider via discovery. Tested with
 Microsoft Entra ID, Google Workspace, Okta, Keycloak, and Auth0. Issuer
 URL examples are in [.env.example](../.env.example); provider setup
-snippets are in [VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md).
+snippets are in [vpn-client-setup.md](vpn-client-setup.md).
 
 ## 2. Gate on a group
 
@@ -99,11 +99,11 @@ section of [.env.example](../.env.example).
 
 ## See also
 
-- [VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md) - OAuth2-capable clients
+- [vpn-client-setup.md](vpn-client-setup.md) - OAuth2-capable clients
   (OpenVPN Connect 3.4.0+ / OpenVPN GUI) and provider setup
-- [USE-CASE-K8S-SCALE.md](USE-CASE-K8S-SCALE.md) - running this shape on
+- [use-case-k8s-scale.md](use-case-k8s-scale.md) - running this shape on
   the Helm chart with external PKI and metrics
-- [USE-CASE-TRAVEL.md](USE-CASE-TRAVEL.md) - run the VPN over HTTPS for
+- [use-case-travel.md](use-case-travel.md) - run the VPN over HTTPS for
   users on networks that block VPNs outright
-- [ADDRESSING.md](ADDRESSING.md) - check the `10.8.0.0/22` default
+- [addressing.md](addressing.md) - check the `10.8.0.0/22` default
   against your corporate addressing plan

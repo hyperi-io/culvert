@@ -29,8 +29,8 @@ covers both HTTPS-tunnelled listeners.
 ## 2. Turn on the profile
 
 `CULVERT_PROFILE=travel` runs both protocols with their HTTPS-tunnelled
-listeners, a full tunnel (a split tunnel on a censored network leaks
-which sites you reach directly), and mobile-tolerant timers:
+listeners, a full tunnel (a split tunnel leaks which sites you reach
+directly), and mobile-tolerant timers:
 
 - **OpenVPN inside TLS on 443** (stunnel) - `CULVERT_HTTPS_ENABLED=true`,
   publish `443/tcp`. On the wire this is a TLS session on the HTTPS port
@@ -83,7 +83,7 @@ wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
 
 Full platform detail (install steps, one-liners, wrapper scripts, the
 Windows path) is in
-[VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md#running-the-vpn-over-https).
+[vpn-client-setup.md](vpn-client-setup.md#running-the-vpn-over-https).
 
 ## What this does and does not defeat
 
@@ -98,6 +98,15 @@ Be straight about the threat model:
   analysis (timing, volume, connection duration), is playing a different
   game. This buys you "indistinguishable from HTTPS at a glance", not
   invisibility.
+- **A full tunnel routes your traffic; it does not by itself settle DNS.**
+  The server pushes its DNS servers, and whether your client uses them to
+  the exclusion of the network's own resolver is up to the client. On
+  **Windows** you must uncomment `block-outside-dns` in the `.ovpn` -
+  without it applications can query the local network's resolver, which
+  leaks the names you look up even though the traffic itself is tunnelled.
+  It ships commented because OpenVPN 2.7 on Linux and macOS refuses to
+  start on an option it does not know. After connecting, check what
+  resolver you are actually using before trusting the tunnel.
 
 Use it where the barrier is protocol fingerprinting. Do not oversell it
 to yourself where the adversary is nation-state grade and paying
@@ -105,9 +114,9 @@ attention to you specifically.
 
 ## See also
 
-- [VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md#running-the-vpn-over-https)
+- [vpn-client-setup.md](vpn-client-setup.md#running-the-vpn-over-https)
   - installing stunnel / wstunnel and connecting on each platform
 - [Cryptography and CNSA 2.0 in the README](../README.md#cryptography-and-cnsa-20)
   - what the crypto does and does not give you
-- [USE-CASE-CORPORATE.md](USE-CASE-CORPORATE.md) - the same HTTPS listener
+- [use-case-corporate.md](use-case-corporate.md) - the same HTTPS listener
   as a managed corporate fallback with SSO

@@ -1,5 +1,5 @@
 # Starter values for the "Kubernetes at scale" use case.
-# See docs/USE-CASE-K8S-SCALE.md.
+# See docs/use-case-k8s-scale.md.
 #
 #   helm install culvert deploy/helm/culvert -n vpn \
 #     -f deploy/helm/culvert/values-k8s-scale.yaml \

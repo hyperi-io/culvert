@@ -37,12 +37,16 @@ from conftest import CHART_DIR, Kubectl, ready_pod, release_name
 
 pytestmark = pytest.mark.k8s
 
-CLIENT_POD = "culvert-test-client"
-TARGET_POD = "culvert-test-target"
-TARGET_RESPONSE = "culvert-k8s-target-ok"
-CLIENT_NAME = "k8s-e2e-client"
-TARGET_LABEL = "culvert-e2e-target"
-NETPOL_NAME = "culvert-e2e-target-isolation"
+CLIENT_POD = "culvert-test-k8s-client"
+TARGET_POD = "culvert-test-k8s-target"
+TARGET_RESPONSE = "culvert-test-k8s-target-ok"
+CLIENT_NAME = "culvert-test-k8s-client"
+TARGET_LABEL = "culvert-test-k8s-target"
+NETPOL_NAME = "culvert-test-k8s-target-isolation"
+
+# Label key used to select the target pod. Every object this tier creates
+# carries it, which is also how the sweep in conftest finds strays.
+TIER_LABEL_KEY = "culvert-test-tier"
 
 # Pod networks are flat by default, so the client could reach the target without
 # any tunnel and every connectivity assertion below would prove nothing. This
@@ -54,7 +58,7 @@ _TARGET_NETWORK_POLICY = {
     "kind": "NetworkPolicy",
     "metadata": {"name": NETPOL_NAME},
     "spec": {
-        "podSelector": {"matchLabels": {"culvert-e2e": TARGET_LABEL}},
+        "podSelector": {"matchLabels": {TIER_LABEL_KEY: TARGET_LABEL}},
         "policyTypes": ["Ingress"],
         "ingress": [
             {
@@ -207,7 +211,7 @@ def target(kubectl):
         TARGET_POD,
         image,
         pull_secret,
-        labels={"culvert-e2e": TARGET_LABEL},
+        labels={TIER_LABEL_KEY: TARGET_LABEL},
     )
     # Tiny HTTP responder - python3 is already in the image.
     _exec(

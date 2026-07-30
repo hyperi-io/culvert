@@ -136,13 +136,26 @@ sudo wg-quick up ./alice-wg-split.conf
 
 ## Running the VPN over HTTPS
 
+Use these configs where the network blocks the VPN protocols themselves but
+allows ordinary HTTPS: tight corporate egress, hotel and conference wifi,
+captive portals, cloud egress policy.
+
+**What this does and does not buy you.** To on-path inspection the traffic is
+TLS on 443 (or 4443) presenting a valid certificate for your server name, so a
+network that drops "things that look like OpenVPN or WireGuard" does not see
+either. It is NOT tested against, and makes no claim about, a censor that
+actively probes your endpoint or does traffic-flow analysis on timing, volume
+and connection duration. That is a different game. Treat this as
+"indistinguishable from HTTPS at a glance", not as invisibility, and do not rely
+on it where being wrong carries a personal risk.
+
 ### OpenVPN over HTTPS (stunnel)
 
 The `*-https-*.ovpn` configs use stunnel to wrap OpenVPN in real TLS on port 443. Most OpenVPN clients handle this automatically. See the OpenVPN HTTPS tunnel sections below for platform-specific instructions.
 
 ### WireGuard over HTTPS (wstunnel)
 
-For networks that block WireGuard (e.g. China GFW), use the HTTPS-tunnel configs (`*-wg-https-*.conf`). These require wstunnel on your machine.
+For networks that block WireGuard, use the HTTPS-tunnel configs (`*-wg-https-*.conf`). These require wstunnel on your machine.
 
 #### Installing wstunnel
 

@@ -20,7 +20,9 @@ plain path.
 """
 
 import pytest
+from conftest import CLIENT_NAME
 from helpers import (
+    CLIENT_CONTAINER,
     TARGET_RESPONSE,
     block_plain_vpn_ports,
     connect_openvpn,
@@ -38,8 +40,6 @@ from helpers import (
     unblock_plain_vpn_ports,
     wait_for_tunnel,
 )
-
-CLIENT_NAME = "e2e-client"
 
 pytestmark = pytest.mark.usefixtures("compose_stack")
 
@@ -135,7 +135,7 @@ class TestOpenVPNOverHTTPS:
         try:
             wait_for_tunnel("tun0", timeout=40)
             result = docker_exec(
-                "e2e-vpn-client",
+                CLIENT_CONTAINER,
                 "ss -tnp state established '( dport = :443 )'",
                 check=False,
             )

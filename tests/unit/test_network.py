@@ -6,6 +6,8 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
+import subprocess
+
 import pytest
 from lib import network
 from lib.network import (
@@ -253,3 +255,66 @@ class TestRoutingControl:
         assert drop in calls
         assert calls.index(a1) < calls.index(drop)
         assert calls.index(a2) < calls.index(drop)
+
+    def test_forward_jump_removed_before_chain_is_flushed(self, monkeypatch):
+        """Detach FORWARD first, so a failed rebuild cannot leave traffic free.
+
+        A flushed chain that is still jumped from a previous run matches nothing
+        and falls through to the FORWARD policy, which is permissive.
+        """
+        calls = self._capture(monkeypatch)
+        setup_routing_control(FakeCfg())
+        detach = calls.index("iptables -D FORWARD -j CULVERT_FWD")
+        flush = calls.index("iptables -F CULVERT_FWD")
+        assert detach < flush, (
+            "the chain is flushed while FORWARD still jumps at it, so traffic is"
+            f" unfiltered for the length of the rebuild: {calls}"
+        )
+
+
+class TestRoutingControlFailsClosed:
+    """A rule that does not install must abort, not be reported as applied.
+
+    Routing control is what enforces client isolation, the egress allow-list and
+    the downstream-admin gate. Logging success over a half-built chain hands the
+    operator a server they believe is filtering and which is not.
+    """
+
+    def _failing_on(self, monkeypatch, fragment):
+        """Make run() fail for any rule containing fragment, capturing the rest.
+
+        Honours check= the way the real run() does, so a call the code passes
+        check=False for stays tolerant here too.
+        """
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            if fragment in cmd and kw.get("check", True):
+                raise subprocess.CalledProcessError(1, cmd)
+
+        monkeypatch.setattr(network, "run", fake_run)
+        return calls
+
+    def test_failed_isolation_rule_aborts(self, monkeypatch):
+        self._failing_on(monkeypatch, "-i tun+ -o tun+")
+        with pytest.raises(network.FirewallError, match="client isolation"):
+            setup_routing_control(FakeCfg())
+
+    def test_failed_rule_never_installs_the_forward_jump(self, monkeypatch):
+        calls = self._failing_on(monkeypatch, "-i tun+ -o tun+")
+        with pytest.raises(network.FirewallError):
+            setup_routing_control(FakeCfg())
+        assert "iptables -I FORWARD 1 -j CULVERT_FWD" not in calls, (
+            "the chain was pointed at from FORWARD despite a rule failing"
+        )
+
+    def test_failed_egress_allowlist_aborts(self, monkeypatch):
+        self._failing_on(monkeypatch, "-d 10.20.0.0/24")
+        with pytest.raises(network.FirewallError, match="egress"):
+            setup_routing_control(FakeCfg(allowed_destinations="10.20.0.0/24"))
+
+    def test_tolerant_calls_are_still_tolerant(self, monkeypatch):
+        """-N and -D fail routinely (chain exists, rule absent) and must not abort."""
+        self._failing_on(monkeypatch, "-N CULVERT_FWD")
+        setup_routing_control(FakeCfg())

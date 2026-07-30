@@ -19,6 +19,21 @@ import pytest
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+# This directory holds tidy.py, which the docker and k8s conftests also import.
+sys.path.insert(0, str(Path(__file__).parent))
+
+from tidy import install_signal_handler, run_teardowns  # noqa: E402
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Arm the orderly-shutdown path for the tiers that build real infra."""
+    install_signal_handler()
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Run cleanups registered by any tier, however the session ended."""
+    run_teardowns()
+
 
 @pytest.fixture
 def temp_dir():

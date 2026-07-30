@@ -166,7 +166,7 @@ class Config:
     protocol: str = "openvpn"
 
     # Tunnel addressing lives in 10.8.0.0/22, one /24 per listener. The
-    # edge-fleet preset moves to CGNAT slices instead; docs/ADDRESSING.md
+    # edge-fleet preset moves to CGNAT slices instead; docs/addressing.md
     # covers when each applies. Cascade-overridable.
 
     # UDP Listener

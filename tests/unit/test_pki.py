@@ -279,3 +279,96 @@ class TestFetchExternalPki:
         assert result is False
         # Good local file preserved
         assert "FAKE_CA" in (pki / "ca.crt").read_text()
+
+
+class TestCrlRefresh:
+    """The CRL has to keep moving, in BOTH PKI modes.
+
+    External PKI used to be excluded outright: the CRL was fetched once at
+    startup and never again, so a certificate revoked at the upstream CA kept
+    working until someone restarted the container - with the configured refresh
+    interval logged as though it were doing something.
+    """
+
+    @pytest.fixture
+    def crl_env(self, tmp_path, clean_env, monkeypatch):
+        """External-PKI config backed by real files, as the fetch tests use."""
+        from lib.config import Config
+
+        src = tmp_path / "source"
+        src.mkdir()
+        (src / "ca.crt").write_text(FAKE_CA)
+        (src / "server.crt").write_text(FAKE_CERT)
+        (src / "server.key").write_text(FAKE_KEY)
+        (src / "crl.pem").write_text(FAKE_CRL)
+
+        pki = tmp_path / "pki"
+        pki.mkdir()
+        (pki / "issued").mkdir()
+        (pki / "private").mkdir()
+
+        monkeypatch.setenv("CULVERT_PKI_MODE", "external")
+        monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "file")
+        monkeypatch.setenv("CULVERT_SECRETS_CA_CERT_PATH", str(src / "ca.crt"))
+        monkeypatch.setenv("CULVERT_SECRETS_SERVER_CERT_PATH", str(src / "server.crt"))
+        monkeypatch.setenv("CULVERT_SECRETS_SERVER_KEY_PATH", str(src / "server.key"))
+        monkeypatch.setenv("CULVERT_SECRETS_CRL_PATH", str(src / "crl.pem"))
+
+        cfg = Config.from_settings()
+        cfg.pki_dir = pki
+        return cfg, pki, src
+
+    def test_external_mode_refetches(self, crl_env):
+        """External mode gets the re-fetcher, not the local regenerator."""
+        from lib.pki import crl_refresher, refetch_external_crl
+
+        cfg, _, _ = crl_env
+        refresh, how = crl_refresher(cfg)
+        assert refresh is refetch_external_crl
+        assert "provider" in how
+
+    def test_local_mode_regenerates(self, crl_env):
+        """Local mode still regenerates from its own CA."""
+        from lib.pki import _regenerate_local_crl, crl_refresher
+
+        cfg, _, _ = crl_env
+        cfg.pki_mode = "local"
+        refresh, how = crl_refresher(cfg)
+        assert refresh is _regenerate_local_crl
+        assert "local CA" in how
+
+    def test_external_without_crl_path_has_no_refresher(self, crl_env):
+        """Nothing to re-fetch, and it must say so rather than pretend."""
+        from lib.pki import crl_refresher
+
+        cfg, _, _ = crl_env
+        cfg.secrets_crl_path = ""
+        assert crl_refresher(cfg) is None
+
+    def test_refetch_picks_up_an_upstream_change(self, crl_env):
+        """A CRL updated at the provider reaches disk without a restart."""
+        from lib.pki import refetch_external_crl
+
+        cfg, pki, src = crl_env
+        (pki / "crl.pem").write_text(FAKE_CRL)
+
+        updated = FAKE_CRL.replace("FAKE_CRL", "FAKE_CRL_REVOKED_ALICE")
+        (src / "crl.pem").write_text(updated)
+
+        assert refetch_external_crl(cfg) is True
+        assert "FAKE_CRL_REVOKED_ALICE" in (pki / "crl.pem").read_text()
+
+    def test_refetch_keeps_the_existing_crl_when_unreachable(self, crl_env):
+        """A provider that cannot be read must not blank the CRL on disk.
+
+        Losing the CRL fails OPEN - OpenVPN would accept every revoked
+        certificate - so a stale CRL is strictly better than none.
+        """
+        from lib.pki import refetch_external_crl
+
+        cfg, pki, _ = crl_env
+        (pki / "crl.pem").write_text(FAKE_CRL)
+        cfg.secrets_crl_path = "/nonexistent/crl.pem"
+
+        assert refetch_external_crl(cfg) is False
+        assert "FAKE_CRL" in (pki / "crl.pem").read_text()

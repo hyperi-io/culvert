@@ -13,10 +13,37 @@ Handles iptables NAT rules, IP forwarding, and CIDR utilities.
 """
 
 import ipaddress
+import subprocess
 
 from scalo.logger import logger
 
 from lib.process import run
+
+
+class FirewallError(RuntimeError):
+    """A required iptables rule could not be installed."""
+
+
+def _add_rule(rule: str, purpose: str) -> None:
+    """Install an iptables rule, refusing to continue if it does not land.
+
+    These rules are not advisory. Routing control is what enforces client
+    isolation, the egress allow-list and the downstream-admin gate; the NAT
+    rules are what let a client reach anything at all. A rule that fails to
+    install silently removes the behaviour the operator asked for, so this
+    raises: the container exits rather than serving clients while reporting a
+    control it only appears to have.
+
+    Callers use it for -A and -I. -N and -D are expected to fail (chain already
+    present, rule not present) and stay tolerant.
+    """
+    try:
+        run(f"iptables {rule}")
+    except subprocess.CalledProcessError as exc:
+        raise FirewallError(
+            f"iptables {rule} failed (exit {exc.returncode}); this rule"
+            f" implements {purpose}, so refusing to start without it."
+        ) from exc
 
 
 def setup_network(cfg) -> None:
@@ -55,10 +82,9 @@ def setup_network(cfg) -> None:
         if not enabled:
             continue
         prefix = _prefixlen(network, netmask)
-        run(
-            f"iptables -t nat -A POSTROUTING"
-            f" -s {network}/{prefix} -o {iface} -j MASQUERADE",
-            check=False,
+        _add_rule(
+            f"-t nat -A POSTROUTING -s {network}/{prefix} -o {iface} -j MASQUERADE",
+            f"NAT for the {name} tunnel subnet",
         )
         logger.info(f"{name} NAT rule added")
 
@@ -67,10 +93,9 @@ def setup_network(cfg) -> None:
     # this a WireGuard client completes its handshake and then reaches nothing
     # off the server, which looks like a client problem and is not.
     if cfg.protocol in ("wireguard", "both"):
-        run(
-            f"iptables -t nat -A POSTROUTING"
-            f" -s {cfg.wg_network} -o {iface} -j MASQUERADE",
-            check=False,
+        _add_rule(
+            f"-t nat -A POSTROUTING -s {cfg.wg_network} -o {iface} -j MASQUERADE",
+            "NAT for the WireGuard subnet",
         )
         logger.info("WireGuard NAT rule added")
 
@@ -116,6 +141,13 @@ def setup_routing_control(cfg) -> None:
         logger.warning("Routing control enabled but no VPN interfaces resolved")
         return
 
+    # Detach FORWARD from the chain BEFORE flushing it. On a restart the jump
+    # from the previous run survives, and a flushed chain that is still jumped
+    # falls straight through to the FORWARD policy - so a failure part-way
+    # through the rebuild below would leave traffic unfiltered. Detached first,
+    # a failure leaves nothing in the forwarding path at all.
+    run("iptables -D FORWARD -j CULVERT_FWD", check=False)
+
     # Build CULVERT_FWD fully, then jump FORWARD at it LAST - so there is never
     # a window where the chain is jumped-but-empty (packets escaping to the
     # FORWARD policy). IPv4 only: the tunnels carry only IPv4, and the server
@@ -131,9 +163,9 @@ def setup_routing_control(cfg) -> None:
     verdict = "DROP" if cfg.client_isolation else "ACCEPT"
     for in_if in ifaces:
         for out_if in ifaces:
-            run(
-                f"iptables -A CULVERT_FWD -i {in_if} -o {out_if} -j {verdict}",
-                check=False,
+            _add_rule(
+                f"-A CULVERT_FWD -i {in_if} -o {out_if} -j {verdict}",
+                "client isolation",
             )
     if cfg.client_isolation:
         logger.info("Client-to-client isolation enforced")
@@ -141,18 +173,18 @@ def setup_routing_control(cfg) -> None:
         logger.info("Client-to-client permitted (isolation disabled)")
 
     # Replies to established flows pass.
-    run(
-        "iptables -A CULVERT_FWD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
-        check=False,
+    _add_rule(
+        "-A CULVERT_FWD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+        "replies to established flows",
     )
 
     # Downstream admin holes, then default-deny unsolicited into tunnels
     admin_cidrs = _csv_cidrs(cfg.downstream_admin_cidrs)
     for cidr in admin_cidrs:
         for out_if in ifaces:
-            run(
-                f"iptables -A CULVERT_FWD -o {out_if} -s {cidr} -j ACCEPT",
-                check=False,
+            _add_rule(
+                f"-A CULVERT_FWD -o {out_if} -s {cidr} -j ACCEPT",
+                "the downstream-admin gate",
             )
         # setup_network MASQUERADEs all VPN-subnet egress. That would rewrite a
         # client's REPLY to an admin-initiated connection to the server's own
@@ -163,9 +195,15 @@ def setup_routing_control(cfg) -> None:
         # so its tunnel IP is not exposed.
         ct = "-m conntrack --ctstate ESTABLISHED,RELATED"
         run(f"iptables -t nat -D POSTROUTING {ct} -d {cidr} -j RETURN", check=False)
-        run(f"iptables -t nat -I POSTROUTING 1 {ct} -d {cidr} -j RETURN", check=False)
+        _add_rule(
+            f"-t nat -I POSTROUTING 1 {ct} -d {cidr} -j RETURN",
+            "keeping the real tunnel source on reverse-admin replies",
+        )
     for out_if in ifaces:
-        run(f"iptables -A CULVERT_FWD -o {out_if} -j DROP", check=False)
+        _add_rule(
+            f"-A CULVERT_FWD -o {out_if} -j DROP",
+            "default-deny of unsolicited traffic into the tunnels",
+        )
     if admin_cidrs:
         logger.info(f"Downstream admin access allowed from {len(admin_cidrs)} CIDR(s)")
     else:
@@ -176,17 +214,19 @@ def setup_routing_control(cfg) -> None:
     if allowed:
         for cidr in allowed:
             for in_if in ifaces:
-                run(
-                    f"iptables -A CULVERT_FWD -i {in_if} -d {cidr} -j ACCEPT",
-                    check=False,
+                _add_rule(
+                    f"-A CULVERT_FWD -i {in_if} -d {cidr} -j ACCEPT",
+                    "the egress allow-list",
                 )
         for in_if in ifaces:
-            run(f"iptables -A CULVERT_FWD -i {in_if} -j DROP", check=False)
+            _add_rule(
+                f"-A CULVERT_FWD -i {in_if} -j DROP",
+                "the egress allow-list's terminal deny",
+            )
         logger.info(f"Client egress restricted to {len(allowed)} CIDR(s)")
 
     # Chain is fully populated - now point FORWARD at it.
-    run("iptables -D FORWARD -j CULVERT_FWD", check=False)
-    run("iptables -I FORWARD 1 -j CULVERT_FWD", check=False)
+    _add_rule("-I FORWARD 1 -j CULVERT_FWD", "routing control itself")
     logger.info("Routing control configured")
 
 

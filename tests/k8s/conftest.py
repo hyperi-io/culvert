@@ -31,12 +31,19 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tidy import register_teardown
 
 ENV_FILE = Path(__file__).parent / ".env"
 
 # Namespace and release name are ours, not the site's, so they carry defaults.
 DEFAULT_NAMESPACE = "culvert-test"
 DEFAULT_RELEASE = "culvert-test"
+
+# Objects this tier creates outside the Helm release, swept by name. A run that
+# is killed leaves them behind, and the client/target pods then collide on the
+# next run while a stray release keeps answering probes.
+TIER_PODS = ("culvert-test-k8s-client", "culvert-test-k8s-target")
+TIER_NETPOLS = ("culvert-test-k8s-target-isolation",)
 
 CHART_DIR = Path(__file__).resolve().parents[2] / "deploy" / "helm" / "culvert"
 
@@ -203,6 +210,63 @@ def release_name() -> str:
     return os.environ.get("CULVERT_K8S_RELEASE", DEFAULT_RELEASE)
 
 
+def _culvert_releases(context: str, namespace: str) -> list[str]:
+    """Names of Helm releases in the namespace that were installed from our chart.
+
+    Selecting on the chart rather than the release name catches releases an
+    interrupted or ad-hoc run left under a different name, while leaving
+    anything else in the namespace alone.
+    """
+    result = helm(
+        "list", "-o", "json", context=context, namespace=namespace, check=False
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    try:
+        releases = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return []
+    return [
+        r["name"] for r in releases if str(r.get("chart", "")).startswith("culvert-")
+    ]
+
+
+def sweep(context: str, namespace: str) -> None:
+    """Remove everything this tier creates in the namespace. Safe to repeat.
+
+    The namespace itself is deliberately NOT deleted. Deleting it is slower, and
+    a namespace still Terminating when the next run starts makes every pod
+    creation fail - which reads as a cluster fault rather than as leftover state.
+    An empty namespace costs nothing.
+    """
+    for release in _culvert_releases(context, namespace):
+        helm("uninstall", release, context=context, namespace=namespace, check=False)
+
+    strays = [
+        ("pod", TIER_PODS),
+        ("networkpolicy", TIER_NETPOLS),
+        ("secret", (GENERATED_PKI_SECRET,)),
+    ]
+    for kind, names in strays:
+        subprocess.run(
+            [
+                "kubectl",
+                "--context",
+                context,
+                "-n",
+                namespace,
+                "delete",
+                kind,
+                *names,
+                "--ignore-not-found",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+
+
 _PKI_FILES = {
     "ca.crt": "ca.crt",
     "server.crt": "issued/server.crt",
@@ -292,6 +356,10 @@ def deployed(kubectl, helm_values):
         text=True,
         check=False,
     )
+    # Clear anything an earlier run left behind before installing, so a killed
+    # run cannot leave a release answering probes or pods colliding by name.
+    sweep(context, namespace)
+    register_teardown(f"k8s {namespace}", lambda: sweep(context, namespace))
     # The VPN pod needs NET_ADMIN, /dev/net/tun and root, which a restricted
     # PodSecurity namespace rejects outright.
     subprocess.run(
@@ -332,18 +400,5 @@ def deployed(kubectl, helm_values):
 
     yield kubectl
 
-    helm("uninstall", release, context=context, namespace=namespace, check=False)
-    subprocess.run(
-        [
-            "kubectl",
-            "--context",
-            context,
-            "delete",
-            "namespace",
-            namespace,
-            "--wait=false",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    # Teardown is the registered sweep above, which also runs when the session
+    # is interrupted - a finaliser here would be skipped in exactly that case.

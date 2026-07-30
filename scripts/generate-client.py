@@ -739,9 +739,9 @@ Examples:
             pubkey=args.pubkey or "",
         )
 
-    # Copy VPN-CLIENT-SETUP.md to output directory
-    setup_doc_src = Path("/etc/vpn/docs/VPN-CLIENT-SETUP.md")
-    setup_doc_dst = cfg.output_dir / "VPN-CLIENT-SETUP.md"
+    # Copy vpn-client-setup.md to output directory
+    setup_doc_src = Path("/etc/vpn/docs/vpn-client-setup.md")
+    setup_doc_dst = cfg.output_dir / "vpn-client-setup.md"
     if setup_doc_src.exists():
         import shutil
 

@@ -1,6 +1,6 @@
 # Starter values for the edge-fleet use case: an appliance fleet
 # streaming into a central receiver, with reverse admin back down the
-# tunnels. See docs/USE-CASE-EDGE-FLEET.md.
+# tunnels. See docs/use-case-edge-fleet.md.
 #
 #   helm install culvert deploy/helm/culvert -n vpn \
 #     -f deploy/helm/culvert/values-edge-fleet.yaml \

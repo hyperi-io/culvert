@@ -24,12 +24,29 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import ROUTING_PROJECT, tidy_stack
+
+# Both stacks serve the same nginx-target.conf, so the marker has one
+# definition - a second copy here drifted out of step with it once already.
+from helpers import TARGET_RESPONSE, docker_exec
+from tidy import register_teardown
 
 COMPOSE_DIR = Path(__file__).parent
 COMPOSE_FILE = COMPOSE_DIR / "docker-compose.routing.yml"
-PROJECT = "culvert-rc-e2e"
+PROJECT = ROUTING_PROJECT
 RECEIVER_URL = "http://172.29.1.20/"
-TARGET_RESPONSE = "culvert-e2e-target-ok"
+
+# Containers, matching docker-compose.routing.yml.
+SERVER = f"{ROUTING_PROJECT}-server"
+CLIENT_A = f"{ROUTING_PROJECT}-client-a"
+CLIENT_B = f"{ROUTING_PROJECT}-client-b"
+ADMIN = f"{ROUTING_PROJECT}-admin"
+NONADMIN = f"{ROUTING_PROJECT}-nonadmin"
+CLIENTS = (CLIENT_A, CLIENT_B)
+
+# Certificate names, kept distinct from the container names so that reading one
+# for the other does not send you looking in the wrong place.
+CERT_NAMES = {CLIENT_A: "rc-client-a", CLIENT_B: "rc-client-b"}
 ADMIN_ROUTE_GW = "172.29.2.10"
 TUN_SUBNET = "10.8.0.0/24"
 
@@ -38,24 +55,11 @@ def _compose(*args: str) -> list[str]:
     return ["docker", "compose", "-f", str(COMPOSE_FILE), "-p", PROJECT, *args]
 
 
-def dexec(
-    container: str, cmd: str, timeout: int = 30, check: bool = True
-) -> subprocess.CompletedProcess:
-    """Run a shell command inside a container."""
-    return subprocess.run(
-        ["docker", "exec", container, "bash", "-c", cmd],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=check,
-    )
-
-
 def _tun_ip(container: str, timeout: int = 40) -> str:
     """Poll until the container's tun0 has an IPv4 address; return it."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = dexec(
+        result = docker_exec(
             container,
             "ip -4 addr show dev tun0 2>/dev/null | grep -oP 'inet \\K[0-9.]+'",
             check=False,
@@ -69,7 +73,7 @@ def _tun_ip(container: str, timeout: int = 40) -> str:
 
 def _can_ping(container: str, ip: str) -> bool:
     """True if container can ping ip (2 packets, 2s each)."""
-    result = dexec(
+    result = docker_exec(
         container,
         f"ping -c 2 -W 2 {ip}",
         timeout=15,
@@ -81,18 +85,25 @@ def _can_ping(container: str, ip: str) -> bool:
 @pytest.fixture(scope="module", autouse=True)
 def routing_stack():
     """Bring up the routing-control stack, connect both clients, tear down."""
+    # Clear anything an earlier run left behind before building - a killed run
+    # otherwise collides on container names or reuses a stale clients volume.
+    # Scoped to THIS project: the connectivity stack is session-scoped and still
+    # in use by the modules that run after this one.
+    tidy_stack(ROUTING_PROJECT)
+    register_teardown(f"compose {ROUTING_PROJECT}", lambda: tidy_stack(ROUTING_PROJECT))
+
     subprocess.run(_compose("up", "--build", "--wait", "-d"), check=True, timeout=420)
     try:
         # Generate a distinct client config for each client.
-        for name in ("rc-client-a", "rc-client-b"):
+        for cert_name in CERT_NAMES.values():
             subprocess.run(
                 [
                     "docker",
                     "exec",
-                    "rc-vpn-server",
+                    SERVER,
                     "generate-client",
                     "--name",
-                    name,
+                    cert_name,
                     "--protocol",
                     "openvpn",
                     "--output",
@@ -103,28 +114,31 @@ def routing_stack():
             )
 
         # Connect each client over UDP.
-        for cont, name in (
-            ("rc-client-a", "rc-client-a"),
-            ("rc-client-b", "rc-client-b"),
-        ):
-            dexec(
-                cont,
-                f"openvpn --config /etc/vpn/clients/{name}-udp-split.ovpn"
+        for container in CLIENTS:
+            config = f"{CERT_NAMES[container]}-udp-split.ovpn"
+            docker_exec(
+                container,
+                f"openvpn --config /etc/vpn/clients/{config}"
                 " --daemon --log /tmp/openvpn.log"
                 " --connect-retry 1 --connect-retry-max 3",
             )
-        _tun_ip("rc-client-a")
-        _tun_ip("rc-client-b")
+        for container in CLIENTS:
+            _tun_ip(container)
 
         # admin + non-admin need a route to the tunnel subnet via the server.
-        for cont in ("rc-admin", "rc-nonadmin"):
-            dexec(cont, f"ip route add {TUN_SUBNET} via {ADMIN_ROUTE_GW}", check=False)
+        for container in (ADMIN, NONADMIN):
+            docker_exec(
+                container,
+                f"ip route add {TUN_SUBNET} via {ADMIN_ROUTE_GW}",
+                check=False,
+            )
 
         yield
     finally:
-        subprocess.run(
-            _compose("down", "-v", "--remove-orphans"), check=False, timeout=90
-        )
+        # Module-scoped, so this frees the stack's ports and subnets before the
+        # modules that follow. The registered teardown is the backstop for an
+        # interrupted session, when this finaliser does not run at all.
+        tidy_stack(ROUTING_PROJECT)
 
 
 @pytest.mark.e2e
@@ -133,34 +147,34 @@ class TestRoutingControl:
 
     def test_clients_reach_allowed_destination(self):
         """Both clients reach the receiver through the tunnel (egress allow)."""
-        for cont in ("rc-client-a", "rc-client-b"):
-            result = dexec(
-                cont,
+        for container in CLIENTS:
+            result = docker_exec(
+                container,
                 f"curl -sf --connect-timeout 5 {RECEIVER_URL}",
                 timeout=15,
                 check=False,
             )
             assert result.stdout.strip() == TARGET_RESPONSE, (
-                f"{cont} could not reach the allowed receiver: {result.stdout!r}"
+                f"{container} could not reach the allowed receiver: {result.stdout!r}"
             )
 
     def test_client_to_client_is_blocked(self):
         """Client isolation: one client cannot reach another's tunnel IP."""
-        peer_ip = _tun_ip("rc-client-b")
-        assert not _can_ping("rc-client-a", peer_ip), (
-            f"client isolation breached: rc-client-a reached {peer_ip}"
+        peer_ip = _tun_ip(CLIENT_B)
+        assert not _can_ping(CLIENT_A, peer_ip), (
+            f"client isolation breached: {CLIENT_A} reached {peer_ip}"
         )
 
     def test_reverse_admin_allowed(self):
         """A source in downstream_admin_cidrs reaches a client down the tunnel."""
-        client_ip = _tun_ip("rc-client-a")
-        assert _can_ping("rc-admin", client_ip), (
-            f"reverse admin failed: rc-admin could not reach {client_ip}"
+        client_ip = _tun_ip(CLIENT_A)
+        assert _can_ping(ADMIN, client_ip), (
+            f"reverse admin failed: {ADMIN} could not reach {client_ip}"
         )
 
     def test_reverse_admin_denied_for_non_admin(self):
         """A source NOT in downstream_admin_cidrs is denied."""
-        client_ip = _tun_ip("rc-client-a")
-        assert not _can_ping("rc-nonadmin", client_ip), (
-            f"admin gate breached: rc-nonadmin reached {client_ip}"
+        client_ip = _tun_ip(CLIENT_A)
+        assert not _can_ping(NONADMIN, client_ip), (
+            f"admin gate breached: {NONADMIN} reached {client_ip}"
         )

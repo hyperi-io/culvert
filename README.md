@@ -93,7 +93,18 @@ Then generate a client config:
 docker exec -it <container> generate-client --name alice
 ```
 
-See [docs/VPN-CLIENT-SETUP.md](docs/VPN-CLIENT-SETUP.md) for the full
+That mints a real credential, so treat the output accordingly:
+
+- The `.ovpn` it writes into the `culvert-clients` volume EMBEDS alice's
+  private key. Whoever holds that file can connect as alice - move it to
+  the client over a channel you trust and do not leave copies about.
+- Access ends when you revoke it, not when you delete the file:
+  `docker exec -it <container> revoke-client alice`.
+- The `culvert-pki` volume holds the CA that signs every client. Back it up
+  and keep it private; losing it invalidates every issued config, and
+  leaking it lets someone else issue their own.
+
+See [docs/vpn-client-setup.md](docs/vpn-client-setup.md) for the full
 client connection guide.
 
 ## Use cases
@@ -103,28 +114,28 @@ ships opinionated profiles for the shapes we actually run it in - each
 usable as-is with one `CULVERT_PROFILE=` switch, or as a base to tweak.
 Each has a full walkthrough (deploy, client, ops) under [docs/](docs/):
 
-- **Home / lab** ([docs/USE-CASE-HOME.md](docs/USE-CASE-HOME.md)) -
+- **Home / lab** ([docs/use-case-home.md](docs/use-case-home.md)) -
   reach your home LAN or a throwaway VM. OpenVPN UDP, split tunnel,
   local PKI. `CULVERT_PROFILE=home`.
-- **Corporate** ([docs/USE-CASE-CORPORATE.md](docs/USE-CASE-CORPORATE.md))
+- **Corporate** ([docs/use-case-corporate.md](docs/use-case-corporate.md))
   \- per-user certs plus OIDC SSO, group gating, TCP fallback, clean
   offboarding. `CULVERT_PROFILE=corporate`.
-- **Restricted networks** ([docs/USE-CASE-TRAVEL.md](docs/USE-CASE-TRAVEL.md))
+- **Restricted networks** ([docs/use-case-travel.md](docs/use-case-travel.md))
   \- run the VPN over HTTPS so it works where only web traffic gets out:
   hotel and conference wifi, captive portals, tight corporate egress, or a
   network that blocks VPN protocols outright. `CULVERT_PROFILE=travel`.
 - **Kubernetes at scale**
-  ([docs/USE-CASE-K8S-SCALE.md](docs/USE-CASE-K8S-SCALE.md)) - the Helm
+  ([docs/use-case-k8s-scale.md](docs/use-case-k8s-scale.md)) - the Helm
   chart behind a load balancer: probes, drain, autoscaling, external
   PKI, metrics.
 - **Edge fleet -> receiver**
-  ([docs/USE-CASE-EDGE-FLEET.md](docs/USE-CASE-EDGE-FLEET.md)) - an
+  ([docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md)) - an
   appliance fleet streaming into a central receiver, with reverse
   admin back down the tunnels and CGNAT addressing.
   `CULVERT_PROFILE=edge-fleet`.
 
 Addressing (why the tunnels default to `10.8.0.0/22`, when to use the
-CGNAT range) is its own note: [docs/ADDRESSING.md](docs/ADDRESSING.md).
+CGNAT range) is its own note: [docs/addressing.md](docs/addressing.md).
 
 ## Configuration
 
@@ -149,10 +160,10 @@ preset needs), or as a starting point to copy and tweak:
 
 | Profile | Shape | Walkthrough |
 |---------|-------|-------------|
-| `home` | OpenVPN UDP, split tunnel, local PKI - reach your home LAN or a lab VM | [docs/USE-CASE-HOME.md](docs/USE-CASE-HOME.md) |
-| `corporate` | Per-user certs + OIDC SSO + group gating + TCP fallback | [docs/USE-CASE-CORPORATE.md](docs/USE-CASE-CORPORATE.md) |
-| `travel` | OpenVPN + WireGuard over HTTPS, for networks that only pass web traffic | [docs/USE-CASE-TRAVEL.md](docs/USE-CASE-TRAVEL.md) |
-| `edge-fleet` | Appliance fleet -> central receiver, reverse admin, CGNAT addressing | [docs/USE-CASE-EDGE-FLEET.md](docs/USE-CASE-EDGE-FLEET.md) |
+| `home` | OpenVPN UDP, split tunnel, local PKI - reach your home LAN or a lab VM | [docs/use-case-home.md](docs/use-case-home.md) |
+| `corporate` | Per-user certs + OIDC SSO + group gating + TCP fallback | [docs/use-case-corporate.md](docs/use-case-corporate.md) |
+| `travel` | OpenVPN + WireGuard over HTTPS, for networks that only pass web traffic | [docs/use-case-travel.md](docs/use-case-travel.md) |
+| `edge-fleet` | Appliance fleet -> central receiver, reverse admin, CGNAT addressing | [docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md) |
 | `example` | Reference template with placeholder site defaults | - |
 
 Load a shipped profile (they live at `/etc/vpn/profiles/` in the
@@ -184,7 +195,7 @@ Tested with:
 - Keycloak
 - Auth0
 
-See [docs/VPN-CLIENT-SETUP.md](docs/VPN-CLIENT-SETUP.md) for
+See [docs/vpn-client-setup.md](docs/vpn-client-setup.md) for
 provider-specific setup snippets.
 
 ## External PKI

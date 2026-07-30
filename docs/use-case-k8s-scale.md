@@ -134,10 +134,10 @@ specifically.
 
 ## See also
 
-- [USE-CASE-EDGE-FLEET.md](USE-CASE-EDGE-FLEET.md) - the hub-and-spoke
+- [use-case-edge-fleet.md](use-case-edge-fleet.md) - the hub-and-spoke
   fleet shape that runs on this chart behind a connection-sticky LB
-- [USE-CASE-CORPORATE.md](USE-CASE-CORPORATE.md) - OIDC SSO and per-user
+- [use-case-corporate.md](use-case-corporate.md) - OIDC SSO and per-user
   certs, the config side of a corporate cluster deploy
 - [Deployment in the README](../README.md#deployment) and
   [Observability](../README.md#observability)
-- [ADDRESSING.md](ADDRESSING.md) - tunnel subnet defaults and overrides
+- [addressing.md](addressing.md) - tunnel subnet defaults and overrides

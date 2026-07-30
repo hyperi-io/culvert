@@ -209,7 +209,7 @@ COPY profiles/ /etc/vpn/profiles/
 COPY oauth2-assets/ /etc/openvpn-auth-oauth2/assets/
 
 # Client documentation
-COPY docs/VPN-CLIENT-SETUP.md /etc/vpn/docs/VPN-CLIENT-SETUP.md
+COPY docs/vpn-client-setup.md /etc/vpn/docs/vpn-client-setup.md
 
 RUN chmod +x /entrypoint.py /usr/local/bin/generate-client \
     /usr/local/bin/revoke-client /usr/local/bin/update-crl

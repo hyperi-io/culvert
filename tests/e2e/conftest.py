@@ -13,9 +13,30 @@ import time
 from pathlib import Path
 
 import pytest
+from helpers import CLIENT_CONTAINER, SERVER_CONTAINER
+from tidy import register_teardown
 
 COMPOSE_DIR = Path(__file__).parent
+
+# The client identity the tests issue certificates for. Deliberately NOT the
+# client container's name: it names a certificate CN and the config filenames
+# derived from it, and reading one for the other sends you looking in the wrong
+# place.
 CLIENT_NAME = "e2e-client"
+
+# Every container, volume and network this tier creates belongs to one of these
+# compose projects, which is what lets the sweep below find strays.
+PROJECT = "culvert-test-e2e"
+ROUTING_PROJECT = "culvert-test-e2e-routing"
+
+# Projects these stacks used to run under. Swept too, so a stray left by a run
+# from before the rename is cleared once rather than lingering forever.
+LEGACY_PROJECTS = ("culvert-e2e", "culvert-routing-e2e")
+
+COMPOSE_FILES = {
+    PROJECT: COMPOSE_DIR / "docker-compose.yml",
+    ROUTING_PROJECT: COMPOSE_DIR / "docker-compose.routing.yml",
+}
 
 
 def _compose_cmd(*args: str) -> list[str]:
@@ -24,11 +45,85 @@ def _compose_cmd(*args: str) -> list[str]:
         "docker",
         "compose",
         "-f",
-        str(COMPOSE_DIR / "docker-compose.yml"),
+        str(COMPOSE_FILES[PROJECT]),
         "-p",
-        "culvert-e2e",
+        PROJECT,
         *args,
     ]
+
+
+def compose_down(project: str) -> None:
+    """Remove a stack's containers, volumes and networks. Safe to repeat."""
+    subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(COMPOSE_FILES[project]),
+            "-p",
+            project,
+            "down",
+            "-v",
+            "--remove-orphans",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+
+
+def sweep_project(project: str) -> None:
+    """Remove leftovers belonging to one compose project.
+
+    ``compose down`` only removes what the CURRENT project file describes, so an
+    object left by a run whose service or volume has since been renamed survives
+    it and then collides on the next ``up``.
+
+    Selection is on compose's own project label, not on a name prefix. A prefix
+    cannot separate these two stacks - ``culvert-test-e2e`` is a prefix of
+    ``culvert-test-e2e-routing`` - so sweeping the connectivity stack by name
+    also destroys the routing stack, and vice versa. The label matches exactly.
+    """
+    label = f"label=com.docker.compose.project={project}"
+    sweeps = (
+        (["docker", "ps", "-aq", "--filter", label], ["docker", "rm", "-f"]),
+        (
+            ["docker", "volume", "ls", "-q", "--filter", label],
+            ["docker", "volume", "rm", "-f"],
+        ),
+        (
+            ["docker", "network", "ls", "-q", "--filter", label],
+            ["docker", "network", "rm"],
+        ),
+    )
+    for list_cmd, remove_cmd in sweeps:
+        listing = subprocess.run(
+            list_cmd, capture_output=True, text=True, check=False, timeout=60
+        )
+        ids = listing.stdout.split()
+        if ids:
+            subprocess.run(
+                [*remove_cmd, *ids],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+
+
+def tidy_stack(project: str) -> None:
+    """Take one stack down and clear anything it left behind."""
+    compose_down(project)
+    sweep_project(project)
+
+
+def tidy_all() -> None:
+    """Full cleanup for both e2e stacks. The manual entry point calls this too."""
+    for project in COMPOSE_FILES:
+        tidy_stack(project)
+    for project in LEGACY_PROJECTS:
+        sweep_project(project)
 
 
 @pytest.fixture(scope="session")
@@ -39,6 +134,11 @@ def compose_stack():
     ``pytestmark = pytest.mark.usefixtures("compose_stack")`` so that other
     e2e modules (e.g. routing control) can run their own stack in isolation.
     """
+    # Clear anything an earlier run left behind before building, so a killed run
+    # cannot make the next one fail on a name collision or a stale volume.
+    tidy_stack(PROJECT)
+    register_teardown(f"compose {PROJECT}", lambda: tidy_stack(PROJECT))
+
     # Build and start
     subprocess.run(
         _compose_cmd("up", "--build", "--wait", "-d"),
@@ -52,7 +152,7 @@ def compose_stack():
         [
             "docker",
             "exec",
-            "e2e-vpn-server",
+            SERVER_CONTAINER,
             "generate-client",
             "--name",
             CLIENT_NAME,
@@ -70,7 +170,7 @@ def compose_stack():
             [
                 "docker",
                 "exec",
-                "e2e-vpn-server",
+                SERVER_CONTAINER,
                 "generate-client",
                 "--name",
                 CLIENT_NAME,
@@ -105,7 +205,7 @@ def compose_stack():
         f"{CLIENT_NAME}-wg-https-split.conf",
     ]
     result = subprocess.run(
-        ["docker", "exec", "e2e-vpn-client", "ls", "/etc/vpn/clients/"],
+        ["docker", "exec", CLIENT_CONTAINER, "ls", "/etc/vpn/clients/"],
         capture_output=True,
         text=True,
     )
@@ -115,12 +215,8 @@ def compose_stack():
 
     yield
 
-    # Teardown
-    subprocess.run(
-        _compose_cmd("down", "-v", "--remove-orphans"),
-        check=False,
-        timeout=60,
-    )
+    # Teardown is the registered one above, which also runs when the session is
+    # interrupted - a finaliser here would be skipped in exactly that case.
 
 
 @pytest.fixture

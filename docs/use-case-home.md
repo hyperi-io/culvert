@@ -65,7 +65,7 @@ public IP)? Switch to full tunnel:
 
 Addressing background - why the tunnel itself defaults to `10.8.0.0/22`
 and when a home LAN could still clash - is in
-[ADDRESSING.md](ADDRESSING.md).
+[addressing.md](addressing.md).
 
 ## 4. Generate a client
 
@@ -89,15 +89,15 @@ docker exec -it <container> revoke-client laptop
 
 Copy `laptop-udp-split.ovpn` to the client and import it. Platform steps
 (OpenVPN Connect, Tunnelblick, the Linux CLI, always-on setups) are in
-[VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md).
+[vpn-client-setup.md](vpn-client-setup.md).
 
 ## See also
 
-- [VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md) - installing and connecting
+- [vpn-client-setup.md](vpn-client-setup.md) - installing and connecting
   the client
-- [ADDRESSING.md](ADDRESSING.md) - the tunnel subnet defaults and when to
+- [addressing.md](addressing.md) - the tunnel subnet defaults and when to
   override
-- [USE-CASE-CORPORATE.md](USE-CASE-CORPORATE.md) - when you outgrow one
+- [use-case-corporate.md](use-case-corporate.md) - when you outgrow one
   shared config and want per-user certs plus SSO
 - [README quick start](../README.md#quick-start) and the
   [profiles table](../README.md#deployment-profiles)

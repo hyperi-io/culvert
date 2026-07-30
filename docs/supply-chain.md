@@ -11,7 +11,7 @@ GitHub releases during image build:
 | `openvpn` (server) | [build.openvpn.net](https://build.openvpn.net) (official APT repo) | stable channel, 2.7.x+ |
 | `easy-rsa` | Ubuntu archive | System package (from digest-pinned base) |
 | `stunnel4` | Ubuntu archive | System package (from digest-pinned base) |
-| `scalo` (HyperI-own) | PyPI | `==2.29.11`; ships immediately (no cooldown); `uv.lock` pins the dev/CI tree with hashes |
+| `scalo` (HyperI-own) | PyPI | image installs `==2.29.11` from the hash-pinned `requirements-docker.txt`; source range is `>=2.29.11,<3`; ships immediately (no cooldown); `uv.lock` pins the dev/CI tree with hashes |
 
 External dependencies track "latest stable released at least 7 days ago"
 -- the org `minimumReleaseAge` cooldown, a buffer against fresh-release
@@ -23,11 +23,30 @@ No private registries or mirrors are used for the public image. If you
 operate in an air-gapped environment, fork and add your own registry
 mirror logic.
 
-## Verification
+## What is verified at build time
 
-Each dependency's release artefact is fetched via HTTPS from GitHub and
-installed into the image. Image provenance is published via GHCR's
-attestation features when released.
+Each of these is enforced by the build, which fails closed if the check
+does not pass:
+
+- **Base image** is pinned by `sha256` digest, not by tag.
+- **`openvpn-auth-oauth2` and `wstunnel`** are fetched over HTTPS from the
+  upstream GitHub release and checked against a `sha256` pinned per
+  architecture in the `Dockerfile`.
+- **The OpenVPN APT repository key** is checked to be EXACTLY one primary
+  key whose fingerprint is the pinned one. Requiring a single `pub` record
+  rather than grepping for ours means a compromised endpoint serving the
+  real key alongside an attacker's key is rejected rather than accepted.
+- **The installed OpenVPN version** is checked against
+  `ARG OPENVPN_MIN_VERSION` with `dpkg --compare-versions`. The server
+  config depends on 2.7 behaviour, so an older package aborts the build.
+- **Python dependencies** are installed from `requirements-docker.txt`,
+  which pins every package to an exact version with hashes.
+
+**Not** verified: the image carries no provenance attestation. Nothing in
+the release pipeline generates one today, so there is no signature or
+SLSA statement to check a pulled image against - only the digest you
+pulled and the labels below. If you need attested provenance, build the
+image yourself from a tagged commit.
 
 Check image labels for source and version:
 

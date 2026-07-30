@@ -14,7 +14,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
     image: culvert:dev
-    container_name: rc-vpn-server
+    container_name: culvert-test-e2e-routing-server
     cap_add:
       - NET_ADMIN
     devices:
@@ -23,10 +23,10 @@ services:
     command: ["server"]
     volumes:
       - ./server-init.sh:/e2e-init.sh:ro
-      - rc-clients:/etc/vpn/clients
+      - clients:/etc/vpn/clients
     environment:
       CULVERT_PROTOCOL: openvpn
-      CULVERT_SERVER_CN: rc-vpn-server
+      CULVERT_SERVER_CN: culvert-test-e2e-routing-server
       CULVERT_FULL_TUNNEL: "false"
       # The feature under test.
       CULVERT_ROUTING_CONTROL_ENABLED: "true"
@@ -39,11 +39,11 @@ services:
       # replies to admin route back up the tunnel).
       CULVERT_PUSH_ROUTES: "172.29.1.0/24,172.29.2.0/24"
     networks:
-      rc-client-net:
+      client-net:
         ipv4_address: 172.29.0.10
-      rc-receiver-net:
+      receiver-net:
         ipv4_address: 172.29.1.10
-      rc-admin-net:
+      admin-net:
         ipv4_address: 172.29.2.10
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9090/readyz"]
@@ -54,47 +54,47 @@ services:
 
   receiver:
     image: nginx:alpine
-    container_name: rc-receiver
+    container_name: culvert-test-e2e-routing-receiver
     volumes:
       - ./nginx-target.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
-      rc-receiver-net:
+      receiver-net:
         ipv4_address: 172.29.1.20
 
   client-a:
     build:
       context: .
       dockerfile: Dockerfile.client
-    container_name: rc-client-a
+    container_name: culvert-test-e2e-routing-client-a
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun
     volumes:
-      - rc-clients:/etc/vpn/clients:ro
+      - clients:/etc/vpn/clients:ro
     depends_on:
       vpn-server:
         condition: service_healthy
     networks:
-      rc-client-net:
+      client-net:
         ipv4_address: 172.29.0.21
 
   client-b:
     build:
       context: .
       dockerfile: Dockerfile.client
-    container_name: rc-client-b
+    container_name: culvert-test-e2e-routing-client-b
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun
     volumes:
-      - rc-clients:/etc/vpn/clients:ro
+      - clients:/etc/vpn/clients:ro
     depends_on:
       vpn-server:
         condition: service_healthy
     networks:
-      rc-client-net:
+      client-net:
         ipv4_address: 172.29.0.22
 
   # In downstream_admin_cidrs: may reach back down a tunnel.
@@ -102,12 +102,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.client
-    container_name: rc-admin
+    container_name: culvert-test-e2e-routing-admin
     cap_add:
       - NET_ADMIN
     command: ["sleep", "infinity"]
     networks:
-      rc-admin-net:
+      admin-net:
         ipv4_address: 172.29.2.30
 
   # NOT in downstream_admin_cidrs: must be denied.
@@ -115,30 +115,30 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.client
-    container_name: rc-nonadmin
+    container_name: culvert-test-e2e-routing-nonadmin
     cap_add:
       - NET_ADMIN
     command: ["sleep", "infinity"]
     networks:
-      rc-admin-net:
+      admin-net:
         ipv4_address: 172.29.2.31
 
 networks:
-  rc-client-net:
+  client-net:
     driver: bridge
     ipam:
       config:
         - subnet: 172.29.0.0/24
-  rc-receiver-net:
+  receiver-net:
     driver: bridge
     ipam:
       config:
         - subnet: 172.29.1.0/24
-  rc-admin-net:
+  admin-net:
     driver: bridge
     ipam:
       config:
         - subnet: 172.29.2.0/24
 
 volumes:
-  rc-clients:
+  clients:

@@ -98,11 +98,9 @@ def run_server(cfg: Config) -> None:
         )
     start_observability(cfg.metrics_addr, metrics)
 
-    if (
-        cfg.crl_refresh_hours > 0
-        and cfg.protocol in ("openvpn", "both")
-        and cfg.pki_mode == "local"
-    ):
+    # Both PKI modes need this. External mode re-fetches rather than
+    # regenerating, since the CA key that signs a CRL lives upstream.
+    if cfg.crl_refresh_hours > 0 and cfg.protocol in ("openvpn", "both"):
         start_crl_refresh(cfg, proc_manager, cfg.crl_refresh_hours)
 
     if cfg.client_download_enabled:

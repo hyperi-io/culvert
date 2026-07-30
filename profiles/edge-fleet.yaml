@@ -55,7 +55,7 @@ push_routes: "10.20.0.0/16,10.10.0.0/16"
 
 # K8s behind a connection-based LB: log to stdout for the cluster log
 # pipeline. The LB must be connection-sticky (a single UDP/TCP flow
-# stays pinned to one culvert pod); see docs/USE-CASE-EDGE-FLEET.md.
+# stays pinned to one culvert pod); see docs/use-case-edge-fleet.md.
 log_mode: stdout
 
 # External PKI is typical here (fleet CA in OpenBao / a mounted secret).

@@ -36,7 +36,7 @@ to dodge overlap.
 **Warning:** do not use this preset for laptops on carrier or Starlink
 links. Those WANs already sit in `100.64/10`, as do Tailscale clients -
 run a CGNAT tunnel on top of a CGNAT underlay and the transport
-misroutes. The why is in [ADDRESSING.md](ADDRESSING.md). This is safe
+misroutes. The why is in [addressing.md](addressing.md). This is safe
 here precisely because the operator owns both ends and knows the
 appliances are not on CGNAT WANs.
 
@@ -100,7 +100,7 @@ Secret - is typical here; set `CULVERT_PKI_MODE=external` +
 `CULVERT_SECRETS_*` to swap).
 
 Run it on the Helm chart the same way as any scaled deploy - see
-[USE-CASE-K8S-SCALE.md](USE-CASE-K8S-SCALE.md). The load balancer MUST be
+[use-case-k8s-scale.md](use-case-k8s-scale.md). The load balancer MUST be
 connection-sticky: a single UDP or TCP flow has to stay pinned to one
 culvert pod, because the client-IP allocation and certificate state are
 per-pod. A per-packet LB will break the tunnels.
@@ -111,9 +111,9 @@ already set - copy it and pass `-f values-edge-fleet.yaml`.
 
 ## See also
 
-- [USE-CASE-K8S-SCALE.md](USE-CASE-K8S-SCALE.md) - the chart, the
+- [use-case-k8s-scale.md](use-case-k8s-scale.md) - the chart, the
   privileged namespace, and the connection-affinity requirement in full
-- [ADDRESSING.md](ADDRESSING.md) - why `100.64/10` here and why it is
+- [addressing.md](addressing.md) - why `100.64/10` here and why it is
   wrong for laptops
 - [Routing Control in .env.example](../.env.example) - the exact
   `CULVERT_*` routing-control variables
