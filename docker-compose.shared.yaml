@@ -39,13 +39,13 @@ services:
     volumes:
       # Override Docker volumes with shared storage bind mounts
       # PKI - MUST be shared (CA, certs, CRL, tls-crypt-v2 key)
-      - ${SHARED_STORAGE_PATH}/pki:/etc/openvpn/pki
+      - ${SHARED_STORAGE_PATH}/pki:/etc/vpn/pki
 
       # Client configs - SHOULD be shared (access .ovpn from any node)
-      - ${SHARED_STORAGE_PATH}/clients:/etc/openvpn/clients
+      - ${SHARED_STORAGE_PATH}/clients:/etc/vpn/clients
 
       # CCD - optional shared (client-specific overrides)
-      - ${SHARED_STORAGE_PATH}/ccd:/etc/openvpn/server/ccd:ro
+      - ${SHARED_STORAGE_PATH}/ccd:/etc/vpn/server/ccd:ro
 
       # Logs - keep local per container (or share for central aggregation)
       # Option 1: Local logs (default - for per-container debugging)

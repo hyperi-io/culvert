@@ -98,16 +98,16 @@ services:
     volumes:
       # PKI - certificates and keys (MANDATORY - persistent on host filesystem)
       # These MUST be bind mounts to survive container recreation
-      - ${CULVERT_PKI_PATH:-./pki}:/etc/openvpn/pki
+      - ${CULVERT_PKI_PATH:-./pki}:/etc/vpn/pki
       # Client configs output (persistent on host filesystem)
-      - ${CULVERT_CLIENTS_PATH:-./clients}:/etc/openvpn/clients
+      - ${CULVERT_CLIENTS_PATH:-./clients}:/etc/vpn/clients
       # Client-specific configs (ccd) - mount from host for customization
-      - ./config/ccd:/etc/openvpn/server/ccd:ro
+      - ./config/ccd:/etc/vpn/server/ccd:ro
       # Logs (persistent)
       - ${CULVERT_LOGS_PATH:-./logs}:/var/log/openvpn
       # OAuth2 TLS certificates (required when CULVERT_OAUTH2_ENABLED=true)
       # Mount wildcard or server-specific certificate for HTTPS callback endpoint
-      - ${OAUTH2_TLS_CERT_PATH:-/opt/openvpn/certs}:/etc/openvpn/oauth2-tls:ro
+      - ${OAUTH2_TLS_CERT_PATH:-/opt/openvpn/certs}:/etc/vpn/oauth2-tls:ro
 
     environment:
       # Server identity - MUST match DNS/certificate
@@ -147,6 +147,11 @@ services:
       - CULVERT_CLIENT_ISOLATION=${CULVERT_CLIENT_ISOLATION:-true}
       - CULVERT_ALLOWED_DESTINATIONS=${CULVERT_ALLOWED_DESTINATIONS:-}
       - CULVERT_DOWNSTREAM_ADMIN_CIDRS=${CULVERT_DOWNSTREAM_ADMIN_CIDRS:-}
+
+      # Clients cannot reach 169.254.0.0/16, which on a cloud instance is the
+      # metadata service and this host's credentials. On by default, and applies
+      # whether or not the routing control above is enabled.
+      - CULVERT_BLOCK_LINK_LOCAL=${CULVERT_BLOCK_LINK_LOCAL:-true}
 
       # Site profile: loads profiles/<name>.yaml as a base for everything above
       - CULVERT_PROFILE=${CULVERT_PROFILE:-}
@@ -232,12 +237,12 @@ services:
       # OAuth2 TLS (REQUIRED when CULVERT_OAUTH2_ENABLED=true - most IdPs
       # require HTTPS redirect URIs). Paths inside the container; mount certs
       # via the OAUTH2_TLS_CERT_PATH volume above.
-      - CULVERT_OAUTH2_TLS_CERT=${CULVERT_OAUTH2_TLS_CERT:-/etc/openvpn/oauth2-tls/fullchain.pem}
-      - CULVERT_OAUTH2_TLS_KEY=${CULVERT_OAUTH2_TLS_KEY:-/etc/openvpn/oauth2-tls/privkey.pem}
+      - CULVERT_OAUTH2_TLS_CERT=${CULVERT_OAUTH2_TLS_CERT:-/etc/vpn/oauth2-tls/fullchain.pem}
+      - CULVERT_OAUTH2_TLS_KEY=${CULVERT_OAUTH2_TLS_KEY:-/etc/vpn/oauth2-tls/privkey.pem}
       # stunnel TLS (for the opt-in HTTPS tunnel - same certs as OAuth2 by default)
       # Note: Use fullchain (leaf + intermediate CA) for proper certificate verification
-      - CULVERT_STUNNEL_CERT=${CULVERT_STUNNEL_CERT:-/etc/openvpn/oauth2-tls/fullchain.pem}
-      - CULVERT_STUNNEL_KEY=${CULVERT_STUNNEL_KEY:-/etc/openvpn/oauth2-tls/privkey.pem}
+      - CULVERT_STUNNEL_CERT=${CULVERT_STUNNEL_CERT:-/etc/vpn/oauth2-tls/fullchain.pem}
+      - CULVERT_STUNNEL_KEY=${CULVERT_STUNNEL_KEY:-/etc/vpn/oauth2-tls/privkey.pem}
       # OAuth2 Branding (optional)
       # Custom HTML template and assets for OAuth login page. The assets
       # fallback repeats the code default because an empty-but-set env var

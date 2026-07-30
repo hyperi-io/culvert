@@ -20,8 +20,15 @@ topology subnet
 server ${OPENVPN_HTTPS_NETWORK} ${OPENVPN_HTTPS_NETMASK}
 
 # Listen on internal port - stunnel handles external port 443
-# stunnel forwards TLS-unwrapped traffic to this port
+# stunnel forwards TLS-unwrapped traffic to this port.
+#
+# Bound to loopback, not 0.0.0.0. stunnel connects from inside this container
+# (connect = 127.0.0.1 in stunnel-server.conf), so loopback is all it needs -
+# and without `local` OpenVPN binds every interface, which on Kubernetes puts a
+# plain TCP listener on the pod IP that any pod can reach, sidestepping the TLS
+# wrap this listener exists to travel inside.
 proto tcp
+local 127.0.0.1
 port ${OPENVPN_HTTPS_INTERNAL_PORT}
 
 # Use tun1 to avoid conflict with UDP instance (tun0)

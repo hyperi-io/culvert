@@ -12,6 +12,7 @@ import pytest
 from conftest import CLIENT_NAME
 from helpers import (
     CLIENT_CONTAINER,
+    SERVER_CONTAINER,
     TARGET_RESPONSE,
     assert_tunnel_mode,
     connect_openvpn,
@@ -82,6 +83,67 @@ class TestOpenVPNUDP:
 
         result = curl_target(timeout=3)
         assert result is None, "Target should be unreachable after disconnect"
+
+
+@pytest.mark.e2e
+class TestLinkLocalIsBlocked:
+    """A client must not reach link-local through the server.
+
+    On a cloud instance 169.254.169.254 is the metadata service, so forwarding
+    this hands a VPN client the host's instance credentials.
+
+    Asserted on the server's DROP COUNTER, not on the client failing to connect.
+    Nothing answers at that address in this stack, so a connectivity check would
+    fail identically whether or not the guard existed - it would pass for the
+    wrong reason. A counter that advances is proof the server saw the packets and
+    dropped them.
+    """
+
+    def _drop_count(self) -> int:
+        """Packets dropped by the link-local guard so far."""
+        listing = docker_exec(
+            SERVER_CONTAINER, "iptables -L CULVERT_GUARD -v -n -x", check=False
+        )
+        assert listing.returncode == 0, (
+            "the CULVERT_GUARD chain does not exist, so nothing is stopping"
+            f" clients reaching link-local:\n{listing.stdout}{listing.stderr}"
+        )
+        total = 0
+        for line in listing.stdout.splitlines():
+            if "169.254.0.0/16" in line and "DROP" in line:
+                total += int(line.split()[0])
+        return total
+
+    def test_server_drops_client_traffic_to_link_local(self, openvpn_udp_connection):
+        wait_for_tunnel("tun0", timeout=30)
+        before = self._drop_count()
+
+        # Force it down the tunnel; a split tunnel would not route it there.
+        docker_exec(
+            CLIENT_CONTAINER, "ip route add 169.254.169.254/32 dev tun0", check=False
+        )
+        route = docker_exec(
+            CLIENT_CONTAINER, "ip route get 169.254.169.254", check=False
+        ).stdout
+        assert "dev tun0" in route, (
+            "the address is not routed through the tunnel, so the server never"
+            f" sees the packets and this proves nothing:\n{route}"
+        )
+
+        docker_exec(
+            CLIENT_CONTAINER,
+            "curl -s --max-time 4 http://169.254.169.254/",
+            timeout=15,
+            check=False,
+        )
+
+        after = self._drop_count()
+        assert after > before, (
+            "the guard's DROP counter did not move, so the server forwarded the"
+            " client's link-local traffic rather than dropping it. On a cloud"
+            " instance that reaches the metadata service and returns this host's"
+            f" credentials. Counter {before} -> {after}"
+        )
 
 
 @pytest.mark.e2e

@@ -28,7 +28,7 @@ jobs:
         id: current
         run: |
           CURRENT=$(grep 'ARG OPENVPN_AUTH_OAUTH2_VERSION=' Dockerfile | cut -d'"' -f2)
-          echo "version=${CURRENT}" >> $GITHUB_OUTPUT
+          echo "version=${CURRENT}" >> "$GITHUB_OUTPUT"
           echo "Current version: ${CURRENT}"
 
       - name: Get latest release from GitHub
@@ -37,17 +37,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           LATEST=$(gh api repos/jkroepke/openvpn-auth-oauth2/releases/latest --jq '.tag_name' | sed 's/^v//')
-          echo "version=${LATEST}" >> $GITHUB_OUTPUT
+          # The tag name is chosen upstream, and it reaches a shell, a branch
+          # name and a URL below. Anything but a plain semver is rejected here
+          # rather than carried further.
+          if ! printf '%s' "${LATEST}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::upstream tag '${LATEST}' is not a plain semver, refusing to use it"
+            exit 1
+          fi
+          echo "version=${LATEST}" >> "$GITHUB_OUTPUT"
           echo "Latest version: ${LATEST}"
 
       - name: Compare versions
         id: compare
+        # Passed as env rather than interpolated into the script with ${{ }}.
+        # An expression is substituted before the shell parses the line, so an
+        # upstream-controlled value lands as code; "$VAR" stays data.
+        env:
+          CURRENT: ${{ steps.current.outputs.version }}
+          LATEST: ${{ steps.latest.outputs.version }}
         run: |
-          if [ "${{ steps.current.outputs.version }}" != "${{ steps.latest.outputs.version }}" ]; then
-            echo "update_available=true" >> $GITHUB_OUTPUT
-            echo "New version available: ${{ steps.latest.outputs.version }}"
+          if [ "${CURRENT}" != "${LATEST}" ]; then
+            echo "update_available=true" >> "$GITHUB_OUTPUT"
+            echo "New version available: ${LATEST}"
           else
-            echo "update_available=false" >> $GITHUB_OUTPUT
+            echo "update_available=false" >> "$GITHUB_OUTPUT"
             echo "Already on latest version"
           fi
 

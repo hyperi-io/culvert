@@ -211,6 +211,16 @@ class Config:
     allowed_destinations: str = ""
     downstream_admin_cidrs: str = ""
 
+    # Drop forwarded client traffic to 169.254.0.0/16. On by default, and
+    # separate from routing_control_enabled because it must hold even on the
+    # default configuration: on any cloud instance 169.254.169.254 is the
+    # metadata service, and a client that routes it down the tunnel gets the
+    # HOST's instance credentials back. Link-local is not routable past the link
+    # anyway, so there is nothing legitimate to lose. Only forwarded traffic is
+    # affected - the server's own access is untouched, which matters because
+    # external PKI on AWS authenticates with those same instance credentials.
+    block_link_local: bool = True
+
     # Network Profile
     network_profile: str = "default"
 
@@ -493,6 +503,7 @@ class Config:
             client_isolation=_settings_bool(s, "client_isolation", True),
             allowed_destinations=s.get("allowed_destinations", ""),
             downstream_admin_cidrs=s.get("downstream_admin_cidrs", ""),
+            block_link_local=_settings_bool(s, "block_link_local", True),
             # Network profile + performance
             network_profile=network_profile,
             sndbuf=_settings_int(s, "sndbuf", 393216 if is_wireless else 0),

@@ -29,7 +29,7 @@ from lib.config import Config
 from lib.download import start_client_download_server
 from lib.health import health, set_protocol, start_observability
 from lib.metrics import init_metrics
-from lib.network import setup_network, setup_routing_control
+from lib.network import setup_forward_guards, setup_network, setup_routing_control
 from lib.oauth2 import setup_oauth2, start_oauth2
 from lib.openvpn import (
     auto_generate_clients,
@@ -61,6 +61,10 @@ def run_server(cfg: Config) -> None:
     setup_log_rotation()
     setup_network(cfg)
     setup_routing_control(cfg)
+    # LAST of the three: it inserts at FORWARD position 1, and it has to sit
+    # above routing control's chain so a client cannot reach link-local through
+    # an ACCEPT there.
+    setup_forward_guards(cfg)
 
     # OpenVPN setup
     if cfg.protocol in ("openvpn", "both"):

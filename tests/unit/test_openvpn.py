@@ -63,6 +63,27 @@ class TestShippedServerTemplates:
         ]
         assert not active, f"{name} enables external scripts: {active}"
 
+    def test_https_listener_binds_loopback_only(self):
+        """The stunnel-fronted listener must not be reachable directly.
+
+        stunnel terminates TLS and connects to 127.0.0.1, so loopback is all this
+        instance needs. Without an explicit `local`, OpenVPN binds every
+        interface - and on Kubernetes that publishes a plain TCP listener on the
+        pod IP, reachable by any pod, which skips the TLS wrap the listener
+        exists to travel inside.
+        """
+        text = (REPO_ROOT / "config" / "server-https.conf.template").read_text(
+            encoding="utf-8"
+        )
+        directives = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip().startswith("local ")
+        ]
+        assert directives == ["local 127.0.0.1"], (
+            f"server-https.conf.template must bind loopback only, found: {directives}"
+        )
+
 
 class TestGenerateConfig:
     """Tests for template-based config generation."""

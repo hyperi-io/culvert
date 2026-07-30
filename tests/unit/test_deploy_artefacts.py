@@ -39,6 +39,15 @@ RETIRED_DEPENDENCIES = (
 # reference a dependency in any meaningful way.
 _BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".woff", ".woff2"}
 
+# Container paths the server does NOT read. See TestCanonicalPaths.
+LEGACY_CONTAINER_PATHS = (
+    "/etc/openvpn/pki",
+    "/etc/openvpn/clients",
+    "/etc/openvpn/server",
+    "/etc/openvpn/oauth2-tls",
+    "/var/log/openvpn/",
+)
+
 
 def _load(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -89,6 +98,43 @@ class TestRetiredDependencies:
 
         assert not offenders, (
             "retired library referenced in tracked files:\n" + "\n".join(offenders)
+        )
+
+
+class TestCanonicalPaths:
+    """Nothing may point a mount or a config value at the legacy /etc/openvpn.
+
+    The server reads /etc/vpn. /etc/openvpn is a real directory owned by the
+    openvpn package, so a mount there does not reach the server - it just sits
+    somewhere nothing looks. That is how the shipped compose file mounted PKI at
+    a path the server never read, quietly minting a fresh CA on every recreate
+    and invalidating every client config already issued.
+
+    Named exactly, rather than by prefix, because two lookalikes are correct and
+    must not be flagged: /etc/openvpn-auth-oauth2 is where openvpn-auth-oauth2
+    keeps its OWN config, and /etc/openvpn/client (singular) is the standard
+    place a Linux CLIENT keeps its profile - the client-setup guide is right to
+    say so, since that path is on the reader's machine, not in this container.
+    """
+
+    def test_no_tracked_file_uses_a_legacy_container_path(self):
+        this_file = Path(__file__).resolve()
+        offenders = []
+        for path in _tracked_text_files():
+            if path.resolve() == this_file:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, FileNotFoundError):
+                continue
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                if any(legacy in line for legacy in LEGACY_CONTAINER_PATHS):
+                    rel = path.relative_to(REPO_ROOT)
+                    offenders.append(f"{rel}:{lineno}: {line.strip()}")
+
+        assert not offenders, (
+            "legacy container path referenced in tracked files - the server reads"
+            " /etc/vpn and /var/log/vpn:\n" + "\n".join(offenders)
         )
 
 

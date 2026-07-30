@@ -29,12 +29,14 @@ class FakeCfg:
         client_isolation=True,
         allowed_destinations="",
         downstream_admin_cidrs="",
+        block_link_local=True,
     ):
         self.protocol = protocol
         self.routing_control_enabled = routing_control_enabled
         self.client_isolation = client_isolation
         self.allowed_destinations = allowed_destinations
         self.downstream_admin_cidrs = downstream_admin_cidrs
+        self.block_link_local = block_link_local
 
 
 class TestCidrToNetmask:
@@ -318,3 +320,74 @@ class TestRoutingControlFailsClosed:
         """-N and -D fail routinely (chain exists, rule absent) and must not abort."""
         self._failing_on(monkeypatch, "-N CULVERT_FWD")
         setup_routing_control(FakeCfg())
+
+
+class TestLinkLocalGuard:
+    """Clients must not reach 169.254.0.0/16 through the server.
+
+    On any cloud instance that range carries the metadata service, so a client
+    that routes it down the tunnel gets the HOST's credentials back - a VPN
+    account escalated to cloud credentials. Link-local is not routable past the
+    link, so nothing legitimate is denied.
+    """
+
+    def _capture(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(network, "run", lambda cmd, **kw: calls.append(cmd))
+        return calls
+
+    def test_link_local_is_dropped_for_each_tunnel_interface(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        network.setup_forward_guards(FakeCfg(protocol="both"))
+        for iface in ("tun+", "wg0"):
+            assert (
+                f"iptables -A CULVERT_GUARD -i {iface} -d 169.254.0.0/16 -j DROP"
+                in calls
+            ), f"no link-local DROP for {iface}: {calls}"
+
+    def test_guard_is_installed_even_without_routing_control(self, monkeypatch):
+        """It is a default, not part of the opt-in feature.
+
+        routing_control_enabled defaults to false, so a guard that only ran with
+        it would leave the metadata service reachable on the configuration
+        almost everyone runs.
+        """
+        calls = self._capture(monkeypatch)
+        network.setup_forward_guards(
+            FakeCfg(protocol="openvpn", routing_control_enabled=False)
+        )
+        assert "iptables -I FORWARD 1 -j CULVERT_GUARD" in calls
+
+    def test_guard_jump_is_inserted_at_the_top_of_forward(self, monkeypatch):
+        """Position 1, so it is evaluated before routing control's own chain."""
+        calls = self._capture(monkeypatch)
+        network.setup_forward_guards(FakeCfg())
+        assert "iptables -I FORWARD 1 -j CULVERT_GUARD" in calls
+
+    def test_existing_jump_is_removed_before_the_chain_is_rebuilt(self, monkeypatch):
+        """Restarts must not stack duplicate jumps."""
+        calls = self._capture(monkeypatch)
+        network.setup_forward_guards(FakeCfg())
+        detach = calls.index("iptables -D FORWARD -j CULVERT_GUARD")
+        flush = calls.index("iptables -F CULVERT_GUARD")
+        assert detach < flush
+
+    def test_can_be_switched_off(self, monkeypatch):
+        """An operator who needs link-local forwarded can turn it off."""
+        calls = self._capture(monkeypatch)
+        cfg = FakeCfg()
+        cfg.block_link_local = False
+        network.setup_forward_guards(cfg)
+        assert calls == []
+
+    def test_only_forward_is_touched(self, monkeypatch):
+        """The server's own metadata access must survive.
+
+        External PKI on AWS authenticates with the instance credentials the
+        metadata service hands out, so filtering OUTPUT would break it.
+        """
+        calls = self._capture(monkeypatch)
+        network.setup_forward_guards(FakeCfg(protocol="both"))
+        assert not any("OUTPUT" in c or "INPUT" in c for c in calls), (
+            f"the guard touched a chain other than FORWARD: {calls}"
+        )

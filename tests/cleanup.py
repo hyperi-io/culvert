@@ -14,23 +14,29 @@ killed run cannot poison the next one. This is for the other case: you killed a
 run and want the containers, volumes, networks, pods and Helm release gone NOW,
 without waiting for the next run to do it.
 
-    python3 tests/cleanup.py            # both tiers
-    python3 tests/cleanup.py docker     # compose stacks only
-    python3 tests/cleanup.py k8s        # cluster objects only
+    python3 tests/cleanup.py                 # every tier
+    python3 tests/cleanup.py docker          # e2e compose stacks only
+    python3 tests/cleanup.py integration     # BATS integration containers only
+    python3 tests/cleanup.py k8s             # cluster objects only
 
-Each tier's cleanup is the same code the test run uses, imported rather than
-reimplemented, so this cannot drift from what the fixtures do.
+The docker and k8s cleanups are the same code the test run uses, imported
+rather than reimplemented, so they cannot drift from what the fixtures do.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
 
 TESTS_DIR = Path(__file__).resolve().parent
+
+# The BATS tier names containers directly rather than through compose, so it is
+# swept by name prefix instead of by a compose project label.
+INTEGRATION_PREFIX = "culvert-test-integration"
 
 
 def _load(name: str, path: Path) -> ModuleType:
@@ -56,6 +62,35 @@ def clean_docker() -> None:
     print("docker: compose stacks down, tier-named containers/volumes/networks removed")
 
 
+def clean_integration() -> None:
+    """Remove the containers, volumes and network the BATS tier creates."""
+    sweeps = (
+        (["docker", "ps", "-aq"], ["docker", "rm", "-f"]),
+        (["docker", "volume", "ls", "-q"], ["docker", "volume", "rm", "-f"]),
+        (["docker", "network", "ls", "-q"], ["docker", "network", "rm"]),
+    )
+    removed = 0
+    for list_cmd, remove_cmd in sweeps:
+        listing = subprocess.run(
+            [*list_cmd, "--filter", f"name={INTEGRATION_PREFIX}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        ids = listing.stdout.split()
+        if ids:
+            removed += len(ids)
+            subprocess.run(
+                [*remove_cmd, *ids],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+    print(f"integration: removed {removed} object(s) named {INTEGRATION_PREFIX}*")
+
+
 def clean_k8s() -> None:
     """Uninstall culvert releases and remove the pods this tier creates."""
     sys.path.insert(0, str(TESTS_DIR))
@@ -71,18 +106,24 @@ def clean_k8s() -> None:
     print(f"k8s: culvert releases and tier pods removed from {namespace}")
 
 
+CLEANERS = {
+    "docker": clean_docker,
+    "integration": clean_integration,
+    "k8s": clean_k8s,
+}
+
+
 def main(argv: list[str]) -> int:
     """Run the requested tier cleanups."""
-    tiers = argv[1:] or ["docker", "k8s"]
-    unknown = [t for t in tiers if t not in ("docker", "k8s")]
+    tiers = argv[1:] or list(CLEANERS)
+    unknown = [t for t in tiers if t not in CLEANERS]
     if unknown:
         print(f"unknown tier(s): {', '.join(unknown)}", file=sys.stderr)
         print(__doc__, file=sys.stderr)
         return 2
-    if "docker" in tiers:
-        clean_docker()
-    if "k8s" in tiers:
-        clean_k8s()
+    for tier in CLEANERS:
+        if tier in tiers:
+            CLEANERS[tier]()
     return 0
 
 

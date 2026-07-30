@@ -27,7 +27,9 @@
 #     loaded on the host regardless - see vm-setup/setup-host.sh, which installs
 #     it there. Leaving it out drops a compiler toolchain from the image without
 #     costing the capability.
-#   - CNSA 2.0 aligned cryptography (TLS 1.3, AES-256-GCM, SHA-384)
+#   - CNSA 2.0 classical suite on the OpenVPN path (TLS 1.3, AES-256-GCM,
+#     SHA-384, P-384). No ML-KEM or ML-DSA - the base image's OpenSSL has
+#     neither. WireGuard's suite is fixed and outside CNSA.
 #   - 4G/mobile network optimizations
 #   - Generic OIDC SSO (Entra ID, Okta, Keycloak, Google, Auth0)
 #   - Group-based access control
@@ -49,7 +51,12 @@ ARG VERSION
 ARG COMMIT
 
 LABEL maintainer="HyperI <opensource@hyperi.io>"
-LABEL description="Culvert - OpenVPN + WireGuard, optionally tunnelled over HTTPS, with CNSA 2.0 crypto and OIDC SSO"
+# The crypto claim is scoped deliberately. The suite is the CNSA 2.0
+# CLASSICAL set and only on the OpenVPN path - WireGuard's suite is fixed
+# outside CNSA, and there is no ML-KEM or ML-DSA, so an unqualified
+# "CNSA 2.0 crypto" here would overstate it to anyone reading the label
+# without the README's limits section in front of them.
+LABEL description="Culvert - OpenVPN + WireGuard, optionally tunnelled over HTTPS, CNSA 2.0 classical suite on the OpenVPN path, OIDC SSO"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${COMMIT}"
 LABEL org.opencontainers.image.source="https://github.com/hyperi-io/culvert"
@@ -183,9 +190,16 @@ WORKDIR /etc/vpn
 RUN mkdir -p /etc/vpn/pki /etc/vpn/server/ccd /etc/vpn/clients \
     /etc/vpn/scripts /etc/vpn/docs /var/log/vpn
 
-# Backwards compatibility symlinks (existing volume mounts to /etc/openvpn still work)
-RUN ln -s /etc/vpn /etc/openvpn \
-    && ln -s /var/log/vpn /var/log/openvpn
+# The canonical paths are /etc/vpn and /var/log/vpn, and nothing aliases them.
+#
+# There were compatibility symlinks to the legacy openvpn directories here. They
+# never worked: the openvpn package already owns both as real directories, so
+# `ln -s` created a link INSIDE each one rather than the alias it looks like.
+# Anything mounted at the legacy PKI path therefore landed somewhere the server
+# never reads, which silently defeated PKI persistence - a fresh CA on every
+# recreate. Removed rather than forced over package-owned directories: one set
+# of paths, and a mount at the wrong one now fails visibly instead of appearing
+# to work.
 
 # Configuration templates (processed by envsubst at runtime)
 COPY config/server.conf.template /etc/vpn/server/server.conf.template

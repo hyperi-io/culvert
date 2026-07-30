@@ -46,10 +46,32 @@ check_dependencies() {
 #===============================================================================
 # Cleanup
 #===============================================================================
+# Remove everything this tier creates. Selection is by docker's own name
+# filter: `docker rm -f culvert-test-integration-*` looks like it would work and
+# does not - the shell expands the glob against FILENAMES before docker sees it,
+# so it matches nothing and the cleanup silently does nothing at all.
 cleanup() {
+    local ids
+
     log_info "Cleaning up test resources..."
-    docker rm -f openvpn-test-* 2>/dev/null || true
-    docker network rm openvpn-test-net 2>/dev/null || true
+
+    ids=$(docker ps -aq --filter "name=culvert-test-integration" 2>/dev/null || true)
+    if [[ -n "${ids}" ]]; then
+        # shellcheck disable=SC2086 # deliberate word splitting: one id per arg
+        docker rm -f ${ids} >/dev/null 2>&1 || true
+    fi
+
+    ids=$(docker volume ls -q --filter "name=culvert-test-integration" 2>/dev/null || true)
+    if [[ -n "${ids}" ]]; then
+        # shellcheck disable=SC2086 # deliberate word splitting
+        docker volume rm -f ${ids} >/dev/null 2>&1 || true
+    fi
+
+    ids=$(docker network ls -q --filter "name=culvert-test-integration" 2>/dev/null || true)
+    if [[ -n "${ids}" ]]; then
+        # shellcheck disable=SC2086 # deliberate word splitting
+        docker network rm ${ids} >/dev/null 2>&1 || true
+    fi
 }
 
 #===============================================================================

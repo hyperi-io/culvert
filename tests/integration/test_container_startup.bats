@@ -54,27 +54,27 @@ teardown_file() {
 }
 
 @test "CA certificate is created" {
-    run container_exec test -f /etc/openvpn/pki/ca.crt
+    run container_exec test -f /etc/vpn/pki/ca.crt
     assert_success
 }
 
 @test "server certificate is created" {
-    run container_exec test -f /etc/openvpn/pki/issued/server.crt
+    run container_exec test -f /etc/vpn/pki/issued/server.crt
     assert_success
 }
 
 @test "server private key is created" {
-    run container_exec test -f /etc/openvpn/pki/private/server.key
+    run container_exec test -f /etc/vpn/pki/private/server.key
     assert_success
 }
 
 @test "tls-crypt-v2 key is created" {
-    run container_exec test -f /etc/openvpn/pki/tc.key
+    run container_exec test -f /etc/vpn/pki/tc.key
     assert_success
 }
 
 @test "CRL is created" {
-    run container_exec test -f /etc/openvpn/pki/crl.pem
+    run container_exec test -f /etc/vpn/pki/crl.pem
     assert_success
 }
 
@@ -84,7 +84,7 @@ teardown_file() {
 }
 
 @test "private key has correct permissions (600)" {
-    run container_exec stat -c %a /etc/openvpn/pki/private/server.key
+    run container_exec stat -c %a /etc/vpn/pki/private/server.key
     assert_success
     [ "${output}" = "600" ]
 }
@@ -94,17 +94,17 @@ teardown_file() {
 #===============================================================================
 
 @test "server config file exists" {
-    run container_exec test -f /etc/openvpn/server/server.conf
+    run container_exec test -f /etc/vpn/server/server.conf
     assert_success
 }
 
 @test "server config has correct protocol" {
-    run container_exec grep "^proto udp" /etc/openvpn/server/server.conf
+    run container_exec grep "^proto udp" /etc/vpn/server/server.conf
     assert_success
 }
 
 @test "server config has correct port" {
-    run container_exec grep "^port 1194" /etc/openvpn/server/server.conf
+    run container_exec grep "^port 1194" /etc/vpn/server/server.conf
     assert_success
 }
 
@@ -112,9 +112,9 @@ teardown_file() {
     local config
     config=$(get_server_config)
 
-    assert_contains "${config}" "ca /etc/openvpn/pki/ca.crt"
-    assert_contains "${config}" "cert /etc/openvpn/pki/issued/server.crt"
-    assert_contains "${config}" "key /etc/openvpn/pki/private/server.key"
+    assert_contains "${config}" "ca /etc/vpn/pki/ca.crt"
+    assert_contains "${config}" "cert /etc/vpn/pki/issued/server.crt"
+    assert_contains "${config}" "key /etc/vpn/pki/private/server.key"
 }
 
 #===============================================================================
@@ -137,11 +137,11 @@ teardown_file() {
 #===============================================================================
 
 @test "log directory is created" {
-    run container_exec test -d /var/log/openvpn
+    run container_exec test -d /var/log/vpn
     assert_success
 }
 
 @test "openvpn.log is created" {
-    run container_exec test -f /var/log/openvpn/openvpn.log
+    run container_exec test -f /var/log/vpn/openvpn.log
     assert_success
 }

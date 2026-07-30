@@ -11,8 +11,8 @@
 #
 # Build: docker build -f Dockerfile.test-client -t culvert-client .
 # Run:   docker run --rm -it --cap-add NET_ADMIN --device /dev/net/tun \
-#          -v ./clients:/etc/openvpn/clients:ro \
-#          culvert-client /etc/openvpn/clients/alice-split.ovpn
+#          -v ./clients:/etc/vpn/clients:ro \
+#          culvert-client /etc/vpn/clients/alice-split.ovpn
 #
 # Base image: Override with --build-arg UBUNTU_VERSION=xx.xx
 # Default: 24.04 LTS (pinned for stability, override for testing newer)
@@ -55,7 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         procps \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /etc/openvpn
+WORKDIR /etc/vpn
 
 COPY scripts/test-client-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

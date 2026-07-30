@@ -230,6 +230,50 @@ def setup_routing_control(cfg) -> None:
     logger.info("Routing control configured")
 
 
+LINK_LOCAL = "169.254.0.0/16"
+
+
+def setup_forward_guards(cfg) -> None:
+    """Drop forwarded client traffic to link-local addresses.
+
+    On any cloud instance 169.254.169.254 is the metadata service. A client that
+    adds a route for it down the tunnel has its packet forwarded and masqueraded
+    by the server, and gets the HOST's instance credentials back - a VPN account
+    turned into cloud credentials. Link-local is not routable beyond the link, so
+    there is nothing legitimate being denied.
+
+    This is deliberately NOT part of routing control: that is opt-in, and this
+    has to hold on the default configuration. Scoped to FORWARD, so the server's
+    own access to the metadata service is untouched - external PKI on AWS
+    authenticates with exactly those instance credentials.
+
+    MUST be called AFTER setup_routing_control. Both insert at FORWARD position
+    1, so whichever runs last is evaluated first, and this one has to be.
+    """
+    if not cfg.block_link_local:
+        logger.warning(
+            "CULVERT_BLOCK_LINK_LOCAL is off - clients can reach"
+            f" {LINK_LOCAL}, which on a cloud instance includes the metadata"
+            " service and this host's credentials"
+        )
+        return
+
+    ifaces = _vpn_interfaces(cfg)
+    if not ifaces:
+        return
+
+    run("iptables -D FORWARD -j CULVERT_GUARD", check=False)
+    run("iptables -N CULVERT_GUARD", check=False)
+    run("iptables -F CULVERT_GUARD", check=False)
+    for in_if in ifaces:
+        _add_rule(
+            f"-A CULVERT_GUARD -i {in_if} -d {LINK_LOCAL} -j DROP",
+            "the link-local guard, which stops clients reaching cloud metadata",
+        )
+    _add_rule("-I FORWARD 1 -j CULVERT_GUARD", "the link-local guard")
+    logger.info(f"Link-local guard installed ({LINK_LOCAL} unreachable by clients)")
+
+
 def cidr_to_netmask(prefix: int) -> str:
     """Convert CIDR prefix to netmask."""
     return str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)

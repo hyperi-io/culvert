@@ -11,10 +11,10 @@ load '../helpers/test_helper'
 load '../helpers/docker_helper'
 
 # Override container names for multi-container tests
-CONTAINER_PRIMARY="openvpn-test-shared-primary"
-CONTAINER_SECONDARY="openvpn-test-shared-secondary"
-SHARED_VOLUME="openvpn-test-shared-pki"
-SHARED_CLIENTS_VOLUME="openvpn-test-shared-clients"
+CONTAINER_PRIMARY="culvert-test-integration-shared-primary"
+CONTAINER_SECONDARY="culvert-test-integration-shared-secondary"
+SHARED_VOLUME="culvert-test-integration-shared-pki"
+SHARED_CLIENTS_VOLUME="culvert-test-integration-shared-clients"
 
 setup_file() {
     echo "Setting up shared storage test environment..." >&3
@@ -44,8 +44,8 @@ setup_file() {
         --device /dev/net/tun:/dev/net/tun \
         -e CULVERT_SERVER_CN=test-vpn.example.com \
         -e CULVERT_CA_CN="Test Shared VPN CA" \
-        -v "${SHARED_VOLUME}:/etc/openvpn/pki" \
-        -v "${SHARED_CLIENTS_VOLUME}:/etc/openvpn/clients" \
+        -v "${SHARED_VOLUME}:/etc/vpn/pki" \
+        -v "${SHARED_CLIENTS_VOLUME}:/etc/vpn/clients" \
         "${TEST_IMAGE_NAME}" >/dev/null
 
     # Wait for primary to initialize PKI
@@ -74,8 +74,8 @@ setup_file() {
         --device /dev/net/tun:/dev/net/tun \
         -e CULVERT_SERVER_CN=test-vpn.example.com \
         -e CULVERT_CA_CN="Test Shared VPN CA" \
-        -v "${SHARED_VOLUME}:/etc/openvpn/pki" \
-        -v "${SHARED_CLIENTS_VOLUME}:/etc/openvpn/clients" \
+        -v "${SHARED_VOLUME}:/etc/vpn/pki" \
+        -v "${SHARED_CLIENTS_VOLUME}:/etc/vpn/clients" \
         "${TEST_IMAGE_NAME}" >/dev/null
 
     # Wait for secondary
@@ -123,8 +123,8 @@ teardown_file() {
 @test "both containers share the same CA certificate" {
     local ca_primary ca_secondary
 
-    ca_primary=$(docker exec "${CONTAINER_PRIMARY}" cat /etc/openvpn/pki/ca.crt | openssl x509 -noout -fingerprint -sha256)
-    ca_secondary=$(docker exec "${CONTAINER_SECONDARY}" cat /etc/openvpn/pki/ca.crt | openssl x509 -noout -fingerprint -sha256)
+    ca_primary=$(docker exec "${CONTAINER_PRIMARY}" cat /etc/vpn/pki/ca.crt | openssl x509 -noout -fingerprint -sha256)
+    ca_secondary=$(docker exec "${CONTAINER_SECONDARY}" cat /etc/vpn/pki/ca.crt | openssl x509 -noout -fingerprint -sha256)
 
     [ "${ca_primary}" = "${ca_secondary}" ]
 }
@@ -132,8 +132,8 @@ teardown_file() {
 @test "both containers share the same server certificate" {
     local cert_primary cert_secondary
 
-    cert_primary=$(docker exec "${CONTAINER_PRIMARY}" cat /etc/openvpn/pki/issued/server.crt | openssl x509 -noout -fingerprint -sha256)
-    cert_secondary=$(docker exec "${CONTAINER_SECONDARY}" cat /etc/openvpn/pki/issued/server.crt | openssl x509 -noout -fingerprint -sha256)
+    cert_primary=$(docker exec "${CONTAINER_PRIMARY}" cat /etc/vpn/pki/issued/server.crt | openssl x509 -noout -fingerprint -sha256)
+    cert_secondary=$(docker exec "${CONTAINER_SECONDARY}" cat /etc/vpn/pki/issued/server.crt | openssl x509 -noout -fingerprint -sha256)
 
     [ "${cert_primary}" = "${cert_secondary}" ]
 }
@@ -141,8 +141,8 @@ teardown_file() {
 @test "both containers share the same tls-crypt-v2 key" {
     local tc_primary tc_secondary
 
-    tc_primary=$(docker exec "${CONTAINER_PRIMARY}" md5sum /etc/openvpn/pki/tc.key | awk '{print $1}')
-    tc_secondary=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/openvpn/pki/tc.key | awk '{print $1}')
+    tc_primary=$(docker exec "${CONTAINER_PRIMARY}" md5sum /etc/vpn/pki/tc.key | awk '{print $1}')
+    tc_secondary=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/vpn/pki/tc.key | awk '{print $1}')
 
     [ "${tc_primary}" = "${tc_secondary}" ]
 }
@@ -157,7 +157,7 @@ teardown_file() {
     assert_success
 
     # Verify client cert exists on secondary
-    run docker exec "${CONTAINER_SECONDARY}" test -f /etc/openvpn/pki/issued/sharedtest1.crt
+    run docker exec "${CONTAINER_SECONDARY}" test -f /etc/vpn/pki/issued/sharedtest1.crt
     assert_success
 }
 
@@ -166,10 +166,10 @@ teardown_file() {
     docker exec "${CONTAINER_PRIMARY}" generate-client sharedtest2
 
     # Verify configs exist on secondary
-    run docker exec "${CONTAINER_SECONDARY}" test -f /etc/openvpn/clients/sharedtest2-split.ovpn
+    run docker exec "${CONTAINER_SECONDARY}" test -f /etc/vpn/clients/sharedtest2-udp-split.ovpn
     assert_success
 
-    run docker exec "${CONTAINER_SECONDARY}" test -f /etc/openvpn/clients/sharedtest2-full.ovpn
+    run docker exec "${CONTAINER_SECONDARY}" test -f /etc/vpn/clients/sharedtest2-udp-full.ovpn
     assert_success
 }
 
@@ -179,13 +179,13 @@ teardown_file() {
     assert_success
 
     # Verify client cert on primary is signed by the same CA
-    run docker exec "${CONTAINER_PRIMARY}" test -f /etc/openvpn/pki/issued/sharedtest3.crt
+    run docker exec "${CONTAINER_PRIMARY}" test -f /etc/vpn/pki/issued/sharedtest3.crt
     assert_success
 
     # Verify using openssl
     run docker exec "${CONTAINER_PRIMARY}" openssl verify \
-        -CAfile /etc/openvpn/pki/ca.crt \
-        /etc/openvpn/pki/issued/sharedtest3.crt
+        -CAfile /etc/vpn/pki/ca.crt \
+        /etc/vpn/pki/issued/sharedtest3.crt
     assert_success
 }
 
@@ -196,8 +196,8 @@ teardown_file() {
 @test "CRL is shared between containers" {
     local crl_primary crl_secondary
 
-    crl_primary=$(docker exec "${CONTAINER_PRIMARY}" md5sum /etc/openvpn/pki/crl.pem | awk '{print $1}')
-    crl_secondary=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/openvpn/pki/crl.pem | awk '{print $1}')
+    crl_primary=$(docker exec "${CONTAINER_PRIMARY}" md5sum /etc/vpn/pki/crl.pem | awk '{print $1}')
+    crl_secondary=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/vpn/pki/crl.pem | awk '{print $1}')
 
     [ "${crl_primary}" = "${crl_secondary}" ]
 }
@@ -207,12 +207,12 @@ teardown_file() {
     docker exec "${CONTAINER_PRIMARY}" generate-client revoketest
 
     local crl_before
-    crl_before=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/openvpn/pki/crl.pem | awk '{print $1}')
+    crl_before=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/vpn/pki/crl.pem | awk '{print $1}')
 
     docker exec "${CONTAINER_PRIMARY}" revoke-client revoketest
 
     local crl_after
-    crl_after=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/openvpn/pki/crl.pem | awk '{print $1}')
+    crl_after=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/vpn/pki/crl.pem | awk '{print $1}')
 
     # CRL should have changed after revocation
     [ "${crl_before}" != "${crl_after}" ]
@@ -225,7 +225,7 @@ teardown_file() {
 @test "secondary container does not create new CA" {
     # Get CA creation time from primary's perspective
     local ca_mtime
-    ca_mtime=$(docker exec "${CONTAINER_PRIMARY}" stat -c %Y /etc/openvpn/pki/ca.crt)
+    ca_mtime=$(docker exec "${CONTAINER_PRIMARY}" stat -c %Y /etc/vpn/pki/ca.crt)
 
     # Stop and restart secondary
     docker stop "${CONTAINER_SECONDARY}" >/dev/null
@@ -243,7 +243,7 @@ teardown_file() {
 
     # CA modification time should not have changed
     local ca_mtime_after
-    ca_mtime_after=$(docker exec "${CONTAINER_PRIMARY}" stat -c %Y /etc/openvpn/pki/ca.crt)
+    ca_mtime_after=$(docker exec "${CONTAINER_PRIMARY}" stat -c %Y /etc/vpn/pki/ca.crt)
 
     [ "${ca_mtime}" = "${ca_mtime_after}" ]
 }
@@ -270,7 +270,7 @@ teardown_file() {
     # If it reinitializes, it should at least not overwrite
     # Verify CA wasn't regenerated by checking it's still valid for clients
     run docker exec "${CONTAINER_SECONDARY}" openssl verify \
-        -CAfile /etc/openvpn/pki/ca.crt \
-        /etc/openvpn/pki/issued/sharedtest1.crt
+        -CAfile /etc/vpn/pki/ca.crt \
+        /etc/vpn/pki/issued/sharedtest1.crt
     assert_success
 }

@@ -26,8 +26,8 @@ from pathlib import Path
 import pytest
 from conftest import ROUTING_PROJECT, tidy_stack
 
-# Both stacks serve the same nginx-target.conf, so the marker has one
-# definition - a second copy here drifted out of step with it once already.
+# Both stacks serve the same nginx-target.conf, so the marker has exactly one
+# definition. A copy here would silently disagree with what nginx returns.
 from helpers import TARGET_RESPONSE, docker_exec
 from tidy import register_teardown
 

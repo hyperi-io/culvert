@@ -99,6 +99,7 @@ it, so you can tell at a glance what a stray object belongs to:
 |------|-------|
 | docker e2e connectivity | `culvert-test-e2e-server`, `-client`, `-target` |
 | docker e2e routing control | `culvert-test-e2e-routing-server`, `-receiver`, `-client-a`, `-client-b`, `-admin`, `-nonadmin` |
+| integration (BATS) | `culvert-test-integration-<test file>`, one per test file |
 | cluster | `culvert-test-k8s-client`, `culvert-test-k8s-target`, release `culvert-test` |
 
 Both tiers sweep what they own BEFORE they build, so a run that was killed
@@ -112,9 +113,10 @@ the pre-run sweep is the guarantee.
 To tidy up immediately rather than waiting for the next run:
 
 ```bash
-python3 tests/cleanup.py            # both tiers
-python3 tests/cleanup.py docker     # compose stacks only
-python3 tests/cleanup.py k8s        # cluster objects only
+python3 tests/cleanup.py                 # every tier
+python3 tests/cleanup.py docker          # e2e compose stacks only
+python3 tests/cleanup.py integration     # BATS integration containers only
+python3 tests/cleanup.py k8s             # cluster objects only
 ```
 
 The cluster sweep removes releases installed from the culvert chart in the

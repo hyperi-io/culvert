@@ -36,70 +36,70 @@ teardown_file() {
 @test "UDP split config file is created" {
     generate_test_client "testuser2"
 
-    run container_exec test -f /etc/openvpn/clients/testuser2-udp-split.ovpn
+    run container_exec test -f /etc/vpn/clients/testuser2-udp-split.ovpn
     assert_success
 }
 
 @test "UDP full config file is created" {
     generate_test_client "testuser2a"
 
-    run container_exec test -f /etc/openvpn/clients/testuser2a-udp-full.ovpn
+    run container_exec test -f /etc/vpn/clients/testuser2a-udp-full.ovpn
     assert_success
 }
 
 @test "TCP split config file is created" {
     generate_test_client "testuser2b"
 
-    run container_exec test -f /etc/openvpn/clients/testuser2b-tcp-split.ovpn
+    run container_exec test -f /etc/vpn/clients/testuser2b-tcp-split.ovpn
     assert_success
 }
 
 @test "TCP full config file is created" {
     generate_test_client "testuser2c"
 
-    run container_exec test -f /etc/openvpn/clients/testuser2c-tcp-full.ovpn
+    run container_exec test -f /etc/vpn/clients/testuser2c-tcp-full.ovpn
     assert_success
 }
 
 @test "HTTPS split config file is created" {
     generate_test_client "testuser2d"
 
-    run container_exec test -f /etc/openvpn/clients/testuser2d-https-split.ovpn
+    run container_exec test -f /etc/vpn/clients/testuser2d-https-split.ovpn
     assert_success
 }
 
 @test "HTTPS full config file is created" {
     generate_test_client "testuser3"
 
-    run container_exec test -f /etc/openvpn/clients/testuser3-https-full.ovpn
+    run container_exec test -f /etc/vpn/clients/testuser3-https-full.ovpn
     assert_success
 }
 
 @test "client certificate is created" {
     generate_test_client "testuser4"
 
-    run container_exec test -f /etc/openvpn/pki/issued/testuser4.crt
+    run container_exec test -f /etc/vpn/pki/issued/testuser4.crt
     assert_success
 }
 
 @test "client private key is created" {
     generate_test_client "testuser5"
 
-    run container_exec test -f /etc/openvpn/pki/private/testuser5.key
+    run container_exec test -f /etc/vpn/pki/private/testuser5.key
     assert_success
 }
 
 @test "client tls-crypt-v2 key is created" {
     generate_test_client "testuser6"
 
-    run container_exec test -f /etc/openvpn/pki/private/testuser6-tc.key
+    run container_exec test -f /etc/vpn/pki/private/testuser6-tc.key
     assert_success
 }
 
 @test "client private key has correct permissions" {
     generate_test_client "testuser7"
 
-    run container_exec stat -c %a /etc/openvpn/pki/private/testuser7.key
+    run container_exec stat -c %a /etc/vpn/pki/private/testuser7.key
     assert_success
     [ "${output}" = "600" ]
 }
@@ -301,17 +301,17 @@ teardown_file() {
     revoke_test_client "revoketest2"
 
     # Check that all 6 config files are removed
-    run container_exec test -f /etc/openvpn/clients/revoketest2-udp-split.ovpn
+    run container_exec test -f /etc/vpn/clients/revoketest2-udp-split.ovpn
     assert_failure
-    run container_exec test -f /etc/openvpn/clients/revoketest2-udp-full.ovpn
+    run container_exec test -f /etc/vpn/clients/revoketest2-udp-full.ovpn
     assert_failure
-    run container_exec test -f /etc/openvpn/clients/revoketest2-tcp-split.ovpn
+    run container_exec test -f /etc/vpn/clients/revoketest2-tcp-split.ovpn
     assert_failure
-    run container_exec test -f /etc/openvpn/clients/revoketest2-tcp-full.ovpn
+    run container_exec test -f /etc/vpn/clients/revoketest2-tcp-full.ovpn
     assert_failure
-    run container_exec test -f /etc/openvpn/clients/revoketest2-https-split.ovpn
+    run container_exec test -f /etc/vpn/clients/revoketest2-https-split.ovpn
     assert_failure
-    run container_exec test -f /etc/openvpn/clients/revoketest2-https-full.ovpn
+    run container_exec test -f /etc/vpn/clients/revoketest2-https-full.ovpn
     assert_failure
 }
 
@@ -320,11 +320,11 @@ teardown_file() {
     revoke_test_client "revoketest3"
 
     # CRL should be updated
-    run container_exec test -f /etc/openvpn/pki/crl.pem
+    run container_exec test -f /etc/vpn/pki/crl.pem
     assert_success
 
     # CRL should have content
-    crl_size=$(container_exec wc -c /etc/openvpn/pki/crl.pem | awk '{print $1}')
+    crl_size=$(container_exec wc -c /etc/vpn/pki/crl.pem | awk '{print $1}')
     [ "${crl_size}" -gt 0 ]
 }
 
