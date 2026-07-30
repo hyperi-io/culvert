@@ -21,7 +21,12 @@
 #
 # Features:
 #   - OpenVPN 2.7.0+ from official repository (latest stable)
-#   - Data Channel Offload (DCO) for kernel-space encryption
+#   - Data Channel Offload (DCO) when the HOST provides the kernel module.
+#     openvpn-dco-dkms is deliberately NOT installed here: DKMS would compile
+#     against the container's absent kernel headers, and the module has to be
+#     loaded on the host regardless - see vm-setup/setup-host.sh, which installs
+#     it there. Leaving it out drops a compiler toolchain from the image without
+#     costing the capability.
 #   - CNSA 2.0 aligned cryptography (TLS 1.3, AES-256-GCM, SHA-384)
 #   - 4G/mobile network optimizations
 #   - Generic OIDC SSO (Entra ID, Okta, Keycloak, Google, Auth0)
@@ -93,7 +98,6 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         openvpn \
-        openvpn-dco-dkms \
         easy-rsa \
         iptables \
         iproute2 \

@@ -211,7 +211,9 @@ HTTPS-tunnelled listeners):
 - TLS 1.3 only (`tls-version-min 1.3`), no downgrade
 - Data channel AES-256-GCM, SHA-384 control-channel auth. DCO requires an
   AEAD cipher rather than this one specifically - ChaCha20-Poly1305 also
-  qualifies
+  qualifies. DCO itself needs the kernel module on the HOST (Linux 6.16+, or
+  ovpn-backports); without it OpenVPN encrypts in userspace and says so at
+  startup
 - Key exchange P-384 (`secp384r1`) first, X25519 as a compatibility
   fallback
 - PKI defaults to EC P-384 certificates (`CULVERT_KEY_TYPE=ec`,

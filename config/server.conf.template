@@ -26,8 +26,10 @@ dev-type tun
 #===============================================================================
 # Data Channel Offload (DCO) - OpenVPN 2.6+
 #===============================================================================
-# Moves encryption to kernel space for massive performance gains
-# Falls back gracefully to userspace if DCO unavailable
+# Moves encryption to kernel space when the host kernel provides the module,
+# and falls back to userspace when it does not. Nothing is configured here: the
+# binary decides at startup and logs which it chose. Needs Linux 6.16+, or the
+# ovpn-backports/openvpn-dco-dkms module installed and loaded on the HOST.
 
 #===============================================================================
 # CNSA 2.0 Cryptography (Required for DCO)
