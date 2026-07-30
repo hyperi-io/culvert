@@ -55,7 +55,7 @@ The chart renders one Service carrying the metrics port (`9090/TCP`),
   listeners) in front of the ClusterIP Service.
 
 One Service carries every port, so `LoadBalancer` also publishes the
-observability port `9090` (`/healthz`, `/readyz`, and `/metrics` when
+observability port `9090` (`/livez`, `/readyz`, and `/metrics` when
 enabled) - unauthenticated. Restrict it with `loadBalancerSourceRanges`,
 or keep the Service `ClusterIP` and expose only the VPN port through
 Gateway API. The `values-k8s-scale.yaml` starter notes this.
@@ -90,9 +90,10 @@ lists every listener (`openvpn-tcp`, `openvpn-https`, `wireguard`,
   `prometheus.io/port: "9090"`, `prometheus.io/path: "/metrics"`
   annotations by default. `/metrics` serves when
   `CULVERT_METRICS_ENABLED=true`.
-- **Probes:** liveness `/healthz`, readiness `/readyz`, startup
-  `/healthz`, all on the metrics port (`9090`) - served always,
-  independent of the metrics toggle.
+- **Probes:** liveness `/livez`, readiness `/readyz`, both on the metrics
+  port (`9090`) - served always, independent of the metrics toggle. There
+  is no separate startup path: point a `startupProbe` at `/livez` too, and
+  Kubernetes suspends liveness until it passes.
 - **Drain:** the container handles SIGTERM to drain connections on
   rollout / scale-down.
 

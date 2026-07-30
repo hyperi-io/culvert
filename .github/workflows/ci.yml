@@ -1,6 +1,6 @@
 # Project:      culvert
 # File:         .github/workflows/ci.yml
-# Purpose:      CI pipeline — delegates to hyperi-ci reusable workflow
+# Purpose:      CI pipeline - delegates to hyperi-ci reusable workflow
 # License:      Apache-2.0
 # Copyright:    (c) 2026 HYPERI PTY LIMITED
 
@@ -16,4 +16,8 @@ on:
 jobs:
   ci:
     uses: hyperi-io/hyperi-ci/.github/workflows/python-ci.yml@main
+    # free mode keeps CI on GitHub-hosted runners, which are free for public
+    # repos, rather than drawing on the org's self-hosted pool.
+    with:
+      runner-mode: free
     secrets: inherit

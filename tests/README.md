@@ -6,12 +6,13 @@ This directory contains the test framework for the culvert deployment.
 
 ```
 tests/
-├── unit/           # Python unit tests (pytest)
-├── integration/    # Docker-based integration tests (BATS)
-├── e2e/            # End-to-end tests against real VMs (BATS)
-├── fixtures/       # Test data and mock files
-├── helpers/        # Shared test utilities
-└── conftest.py     # pytest fixtures (clean_env, sample_env)
+|-- unit/           # Python unit tests (pytest)
+|-- smoke/          # Container startup smoke test (BATS)
+|-- integration/    # Docker-based integration tests (BATS)
+|-- e2e/            # Full VPN connectivity over docker-compose (pytest)
+|-- fixtures/       # Test data and mock files
+|-- helpers/        # Shared BATS helpers
+`-- conftest.py     # pytest fixtures (temp_dir, clean_env, mock_pki_dir)
 ```
 
 ## Test Types
@@ -56,7 +57,7 @@ Test full VPN connectivity against a self-contained docker-compose stack
 
 - **Framework:** pytest + docker-compose
 - **Purpose:** Validate real VPN connections (OpenVPN UDP/TCP/HTTPS,
-  WireGuard, wstunnel DPI bypass) end to end
+  WireGuard, WireGuard over HTTPS via wstunnel) end to end
 - **Dependencies:** Docker
 - **Run time:** 5-15 minutes
 
@@ -85,7 +86,7 @@ python3 -m pytest tests/unit/ -v
 | `lib/pki.py` | External PKI file validation (present/missing/partial) |
 | `lib/openvpn.py` | Template substitution, common options, timestamp stripping |
 | `lib/stunnel.py` | Config generation with valid/missing certs |
-| `lib/health.py` | Liveness, readiness, startup probes, state transitions |
+| `lib/health.py` | Liveness, readiness, state transitions, retired paths 404 |
 | `lib/download.py` | File listing, download, path traversal prevention |
 | `lib/metrics.py` | OpenVPN status v3 parsing, WG transfer/handshake parsing |
 | `lib/wireguard.py` | Key gen, IP allocation, config gen, subnet validation |

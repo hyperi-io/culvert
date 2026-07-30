@@ -1,7 +1,7 @@
 # gitleaks configuration
 # Documentation: https://github.com/gitleaks/gitleaks
 #
-# This extends the default ruleset. Only the allowlist below is customised —
+# This extends the default ruleset. Only the allowlist below is customised -
 # all default detection rules still apply.
 [extend]
 useDefault = true

@@ -1,8 +1,8 @@
 # Edge-fleet profile -- the pre-opinionated preset for an appliance fleet
 # streaming data INTO a central receiver, with reverse admin back down
-# the same tunnels. This is the DFE inbound-VPN shape (edge stream hubs
-# -> dfe receiver); it is generally reusable for any hub-and-spoke
-# telemetry fleet. Load with: CULVERT_PROFILE=edge-fleet
+# the same tunnels - the shape of any hub-and-spoke telemetry fleet
+# (edge stream hubs -> central ingest). Load with:
+# CULVERT_PROFILE=edge-fleet
 #
 # Two deliberate differences from an ordinary client VPN:
 #   1. Reverse admin: admin networks may INITIATE back down an
@@ -17,7 +17,7 @@
 #      (they already sit in 100.64/10 - see the default 10.8 profile).
 #
 # Traffic model:
-#   outbound (data): appliance -> culvert -> dfe receiver
+#   outbound (data): appliance -> culvert -> receiver
 #   inbound  (admin): admin/repos -> culvert (back down tunnel) -> appliance
 #
 # Explicit CULVERT_* env vars always override these values.
@@ -37,7 +37,7 @@ routing_control_enabled: true
 client_isolation: true
 
 # Outbound allow-list: appliances may only INITIATE to the receiver
-# network. Set this to your dfe receiver service CIDR.
+# network. Set this to your receiver's service CIDR.
 allowed_destinations: "10.20.0.0/16"
 
 # Reverse admin: these source networks may INITIATE back down the

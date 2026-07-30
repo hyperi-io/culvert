@@ -14,11 +14,11 @@ services:
     expose:
       - "9090"
     ports:
-      - "1194:1194"
+      - "1194:1194/udp"
     volumes:
       - ./config/culvert.yaml:/etc/vpn/profiles/culvert.yaml:ro
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9090/healthz"]
+      test: ["CMD", "curl", "-sf", "http://localhost:9090/livez"]
       interval: 10s
       timeout: 3s
       retries: 5

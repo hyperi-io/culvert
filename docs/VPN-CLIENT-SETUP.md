@@ -8,10 +8,10 @@ This guide covers installing and configuring OpenVPN and WireGuard clients on Li
 
 | Client | Minimum Version | OAuth2/SSO Support | Download |
 |--------|-----------------|-------------------|----------|
-| **OpenVPN Connect** | 3.4.0+ | ✅ Yes | https://openvpn.net/client/ |
-| **OpenVPN GUI (Windows)** | 2.6.0+ | ✅ Yes | https://openvpn.net/community-downloads/ |
-| **OpenVPN (Linux CLI)** | 2.6.0+ | ❌ No (certificate only) | https://openvpn.net/community-downloads/ |
-| **Tunnelblick (macOS)** | 3.8.8+ | ❌ No (certificate only) | https://tunnelblick.net/ |
+| **OpenVPN Connect** | 3.4.0+ | Yes | https://openvpn.net/client/ |
+| **OpenVPN GUI (Windows)** | 2.6.0+ | Yes | https://openvpn.net/community-downloads/ |
+| **OpenVPN (Linux CLI)** | 2.6.0+ | No (certificate only) | https://openvpn.net/community-downloads/ |
+| **Tunnelblick (macOS)** | 3.8.8+ | No (certificate only) | https://tunnelblick.net/ |
 | **WireGuard** | Any | N/A (key-based) | https://www.wireguard.com/install/ |
 
 ### OAuth2/SSO Authentication
@@ -55,7 +55,7 @@ These clients support the web-based OAuth2 authentication flow required for SSO.
 1. Try **WireGuard** first (best performance, simplest setup)
 2. If WireGuard is blocked, try **OpenVPN UDP** (UDP 1194)
 3. If UDP blocked, try **OpenVPN TCP** (TCP 1194)
-4. If still blocked, use **DPI bypass** — WireGuard via wstunnel (WSS 4443) or OpenVPN via stunnel (TCP 443)
+4. If still blocked, use **DPI bypass** - WireGuard via wstunnel (WSS 4443) or OpenVPN via stunnel (TCP 443)
 
 ---
 
@@ -362,7 +362,7 @@ Download: https://openvpn.net/client/ or from the Mac App Store
 **Minimum version:** 3.4.0
 
 1. Download and install OpenVPN Connect
-2. Open the app and click **Import Profile** → **FILE**
+2. Open the app and click **Import Profile** -> **FILE**
 3. Select your `.ovpn` file
 4. Click **Connect**
 
@@ -413,7 +413,7 @@ Download: https://openvpn.net/client/
 **Minimum version:** 3.4.0
 
 1. Download and install OpenVPN Connect
-2. Open the app and click **Import Profile** → **FILE**
+2. Open the app and click **Import Profile** -> **FILE**
 3. Select your `.ovpn` file
 4. Click **Connect**
 
@@ -468,14 +468,14 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 
 1. Install OpenVPN with the option "Launch on Windows startup"
 2. Copy `.ovpn` to `C:\Users\<username>\OpenVPN\config\`
-3. Right-click the config in system tray → **Connect on startup**
+3. Right-click the config in system tray -> **Connect on startup**
 
 **Using OpenVPN Service:**
 
 1. Copy `.ovpn` to `C:\Program Files\OpenVPN\config\`
 2. Rename to `client.ovpn`
 3. Open Services (services.msc)
-4. Find "OpenVPN Service" → Set to "Automatic"
+4. Find "OpenVPN Service" -> Set to "Automatic"
 5. Start the service
 
 ---
@@ -508,10 +508,10 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 
 ### WireGuard Issues
 
-- **"Handshake did not complete"** — check that the server is reachable on port 51820 (or 4443 for DPI bypass)
-- **DNS not working** — check DNS settings in the `.conf` file
-- **Connected but no internet** — try the split tunnel config instead of full tunnel
-- **wstunnel connection refused** — ensure DPI bypass is enabled on the server (`CULVERT_WG_DPI_BYPASS_ENABLED=true`)
+- **"Handshake did not complete"** - check that the server is reachable on port 51820 (or 4443 for DPI bypass)
+- **DNS not working** - check DNS settings in the `.conf` file
+- **Connected but no internet** - try the split tunnel config instead of full tunnel
+- **wstunnel connection refused** - ensure DPI bypass is enabled on the server (`CULVERT_WG_DPI_BYPASS_ENABLED=true`)
 
 ### Split vs Full Tunnel
 
@@ -524,7 +524,7 @@ Use split tunnel for normal work; use full tunnel for maximum security.
 
 ## Security Notes
 
-- Keep `.ovpn` and `.conf` files secure — they contain your VPN credentials or keys
+- Keep `.ovpn` and `.conf` files secure - they contain your VPN credentials or keys
 - OpenVPN uses TLS 1.3 with AES-256-GCM encryption (the CNSA 2.0 classical suite)
 - tls-crypt-v2 provides metadata protection and DoS mitigation
 - HTTPS tunnel adds an additional layer of TLS 1.3 encryption

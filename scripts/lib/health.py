@@ -1,6 +1,6 @@
 #  Project:      culvert
 #  File:         health.py
-#  Purpose:      Health check HTTP server (liveness, readiness, startup probes)
+#  Purpose:      Health check HTTP server (liveness and readiness probes)
 #  Language:     Python
 #
 #  License:      Apache-2.0
@@ -10,11 +10,12 @@
 Health state and observability listener for culvert.
 
 Uses scalo's HealthManager + observability server: ONE port (default
-0.0.0.0:9090, the fleet standard) serves /metrics, /healthz, /readyz and
-the /health/live, /health/ready, /health/startup aliases culvert's
-existing probes use. BaseHandler stays here for the client download
-server, which serves user-facing files and deliberately does NOT share
-the operator port.
+0.0.0.0:9090) serves /livez, /readyz and /metrics. That is the whole
+surface - there is no startup route, so a startupProbe targets /livez
+(Kubernetes suspends liveness until the startup probe passes).
+
+BaseHandler stays here for the client download server, which serves
+user-facing files and must not share the operator port.
 """
 
 import json
@@ -25,11 +26,11 @@ from pathlib import Path
 from scalo.health import HealthManager, serve_observability
 from scalo.logger import logger
 
-# Shared health state — the entrypoint marks set_started()/set_ready(),
+# Shared health state - the entrypoint marks set_started()/set_ready(),
 # the observability server answers probes from it
 health = HealthManager()
 
-# Protocol mode — set by entrypoint so liveness knows what to check
+# Protocol mode - set by entrypoint so liveness knows what to check
 _protocol = "openvpn"
 
 

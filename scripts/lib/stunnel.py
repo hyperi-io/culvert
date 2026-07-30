@@ -1,6 +1,6 @@
 #  Project:      culvert
 #  File:         stunnel.py
-#  Purpose:      stunnel TLS wrapper configuration for HTTPS DPI bypass
+#  Purpose:      stunnel TLS wrapper so OpenVPN can travel over a web port
 #  Language:     Python
 #
 #  License:      Apache-2.0
@@ -9,9 +9,9 @@
 """
 stunnel configuration for culvert.
 
-Generates stunnel config to terminate TLS on port 443 and forward
-to OpenVPN on an internal port, making VPN traffic indistinguishable
-from regular HTTPS.
+Generates the stunnel config that terminates TLS on the HTTPS port and
+forwards to OpenVPN on an internal localhost port, so the VPN travels as an
+ordinary HTTPS session and gets out of networks that only permit web traffic.
 """
 
 import os

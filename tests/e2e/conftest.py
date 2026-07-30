@@ -1,12 +1,12 @@
 #  Project:      culvert
 #  File:         conftest.py
-#  Purpose:      E2E test configuration — compose lifecycle and client configs
+#  Purpose:      E2E test configuration - compose lifecycle and client configs
 #  Language:     Python
 #
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""E2E test configuration — compose lifecycle and client config generation."""
+"""E2E test configuration - compose lifecycle and client config generation."""
 
 import subprocess
 import time
@@ -85,7 +85,7 @@ def compose_stack():
         )
 
     # generate-client writes updated server config to /etc/vpn/pki/wireguard/wg0.conf
-    # but the running server uses /etc/vpn/server/wg0.conf — copy and reload
+    # but the running server uses /etc/vpn/server/wg0.conf - copy and reload
     subprocess.run(
         [
             "docker",
@@ -105,10 +105,15 @@ def compose_stack():
     # Small delay for configs to sync via shared volume
     time.sleep(1)
 
-    # Verify expected config files exist
+    # Verify expected config files exist. This stack opts in to every listener,
+    # so the HTTPS-tunnelled configs are checked here too - a test that skipped
+    # on their absence would let a broken generator look green.
     expected = [
         f"{CLIENT_NAME}-udp-split.ovpn",
         f"{CLIENT_NAME}-tcp-split.ovpn",
+        f"{CLIENT_NAME}-https-split.ovpn",
+        f"{CLIENT_NAME}-stunnel.conf",
+        f"{CLIENT_NAME}-wg-dpi-split.conf",
     ]
     result = subprocess.run(
         ["docker", "exec", "e2e-vpn-client", "ls", "/etc/vpn/clients/"],

@@ -9,7 +9,7 @@
 """Culvert's deployment contract for the scalo artefact generators.
 
 scalo's ``deployment`` subsystem turns a :class:`DeploymentContract` into the
-fleet-standard Helm chart and Compose fragment. Culvert declares its contract
+a conventional Helm chart and Compose fragment. Culvert declares its contract
 once, here, from its :class:`~lib.config.Config` defaults, so the same values
 flow into both the running container and the generated deployment artefacts.
 
@@ -65,10 +65,13 @@ def _metrics_port(addr: str) -> int:
     return int(port)
 
 
+# scalo gates its deployment types behind the [deployment] extra, rebinding each
+# name to a stub when pydantic is absent. ty therefore reads every one as
+# `Stub | Class` and rejects both the annotation and each argument. pydantic IS
+# installed here (the dev extra), so the ty: ignore comments below are that shim,
+# not a real type error.
 def deployment_contract(
     cfg: Config | None = None,
-    # scalo's optional-import shim confuses ty's static resolution of the
-    # DeploymentContract symbol (pydantic IS installed via the dev extra)
 ) -> DeploymentContract:  # ty: ignore[invalid-type-form]
     """Build culvert's deployment contract from its config defaults.
 
@@ -85,12 +88,13 @@ def deployment_contract(
     return DeploymentContract(
         app_name=APP_NAME,
         description=(
-            "OpenVPN + WireGuard VPN server with DPI bypass, OIDC SSO, and external PKI"
+            "OpenVPN + WireGuard VPN server, optionally tunnelled over HTTPS,"
+            " with OIDC SSO and external PKI"
         ),
         # The observability port: health probes always, /metrics when enabled.
         metrics_port=_metrics_port(cfg.metrics_addr),
-        health=HealthContract(
-            liveness_path="/healthz",
+        health=HealthContract(  # ty: ignore[invalid-argument-type]
+            liveness_path="/livez",
             readiness_path="/readyz",
             metrics_path="/metrics",
         ),
@@ -102,12 +106,15 @@ def deployment_contract(
         # other listener (TCP, HTTPS/stunnel, WireGuard, wstunnel, OIDC,
         # client download) is a deliberate opt-in, added via the chart's
         # `extraPorts` values rather than the always-on contract ports.
-        extra_ports=[
+        extra_ports=[  # ty: ignore[invalid-argument-type]
             PortContract(name="openvpn-udp", port=cfg.udp_port, protocol="UDP"),
         ],
-        oci_labels=OciLabels(
+        oci_labels=OciLabels(  # ty: ignore[invalid-argument-type]
             title=APP_NAME,
-            description=("OpenVPN + WireGuard with DPI bypass, OIDC SSO, external PKI"),
+            description=(
+                "OpenVPN + WireGuard, optionally tunnelled over HTTPS,"
+                " with OIDC SSO and external PKI"
+            ),
             licenses="Apache-2.0",
         ),
     )

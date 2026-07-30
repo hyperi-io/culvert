@@ -56,7 +56,7 @@ teardown() {
 @test "health endpoint responds in wireguard mode" {
     start_test_container -e "CULVERT_PROTOCOL=wireguard"
     wait_for_container_ready 30
-    run docker exec "${TEST_CONTAINER_NAME}" curl -sf http://localhost:9090/health/live
+    run docker exec "${TEST_CONTAINER_NAME}" curl -sf http://localhost:9090/livez
     assert_success
 }
 

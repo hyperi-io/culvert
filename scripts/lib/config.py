@@ -140,7 +140,7 @@ class Config:
 
     # Server Identity
     # org_name identifies the deploying organisation. Used to derive
-    # ca_cn when not explicitly set (e.g. org_name="Acme" → ca_cn="Acme VPN CA").
+    # ca_cn when not explicitly set (e.g. org_name="Acme" -> ca_cn="Acme VPN CA").
     # Leave empty for a neutral default ("VPN CA").
     org_name: str = ""
     ca_cn: str = ""
@@ -165,13 +165,9 @@ class Config:
     # Protocol selection
     protocol: str = "openvpn"
 
-    # Tunnel addressing lives in 10.8.0.0/22 - the hub-VPN convention
-    # (OpenVPN's reference config, angristan, wg-easy all use 10.8.x),
-    # one /24 per listener. Deliberately NOT the 100.64.0.0/10 CGNAT
-    # range: carrier WANs (Starlink, 4G/5G) and Tailscale both occupy
-    # it and break the tunnel transport underneath. The edge-fleet
-    # preset opts back into CGNAT slices where the operator controls
-    # both ends. Cascade-overridable.
+    # Tunnel addressing lives in 10.8.0.0/22, one /24 per listener. The
+    # edge-fleet preset moves to CGNAT slices instead; docs/ADDRESSING.md
+    # covers when each applies. Cascade-overridable.
 
     # UDP Listener
     udp_enabled: bool = True
@@ -264,8 +260,8 @@ class Config:
     wg_post_up: str = ""
     wg_post_down: str = ""
 
-    # Observability: ONE listener (fleet standard :9090) serves health
-    # probes always, and /metrics when metrics_enabled
+    # Observability: ONE listener serves health probes always, and
+    # /metrics when metrics_enabled
     metrics_enabled: bool = False
     metrics_addr: str = "0.0.0.0:9090"
 
@@ -300,7 +296,7 @@ class Config:
     def __post_init__(self):
         """Apply network profile defaults and derived identity fields."""
         # Derive ca_cn from org_name when not explicitly set.
-        # "Acme" → "Acme VPN CA"; empty org_name → "VPN CA".
+        # "Acme" -> "Acme VPN CA"; empty org_name -> "VPN CA".
         if not self.ca_cn:
             if self.org_name:
                 self.ca_cn = f"{self.org_name} VPN CA"

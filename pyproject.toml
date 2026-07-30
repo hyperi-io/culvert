@@ -9,7 +9,7 @@
 [project]
 name = "culvert"
 version = "0.0.0"
-description = "Culvert — OpenVPN + WireGuard with DPI bypass, OIDC SSO, and external PKI"
+description = "Culvert - OpenVPN + WireGuard, optionally tunnelled over HTTPS, with OIDC SSO and external PKI"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
 
@@ -18,7 +18,7 @@ license = {text = "Apache-2.0"}
 # [secrets] extra would drag in ansible-vault + GCP + Azure (~180MB) that
 # no culvert backend uses.
 dependencies = [
-    "scalo[metrics,secrets-vault,secrets-aws]>=2.29.10,<3",
+    "scalo[metrics,secrets-vault,secrets-aws]>=2.29.11,<3",
     # Imported directly in lib/oauth2.py (yaml.safe_dump) and for the profile
     # cascade; also a transitive dep of dynaconf, pinned here so it is declared.
     "pyyaml>=6,<7",

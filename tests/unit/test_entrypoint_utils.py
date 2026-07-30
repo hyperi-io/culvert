@@ -79,7 +79,3 @@ key=value
         result = _strip_timestamps(content)
         assert "Configuration comment" in result
         assert "key=value" in result
-
-
-# TestLogger and TestDie removed — Logger class and die() were replaced
-# with direct scalo.logger usage. Those are tested upstream.

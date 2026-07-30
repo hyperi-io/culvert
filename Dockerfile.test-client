@@ -25,8 +25,8 @@ LABEL description="OpenVPN test client for connectivity validation"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install OpenVPN client from the official signed apt repo. Key fingerprint
-# verified fail-closed before use (see Dockerfile for the full receipt).
+# OpenVPN client from the project's signed apt repo. The repo key's
+# fingerprint must match the pinned value or the build fails.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \

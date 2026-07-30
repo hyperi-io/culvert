@@ -23,10 +23,12 @@ quality:
     # has a few dynamic-pattern diagnostics, so kept non-blocking for now.
     # Promote to `blocking` once tests/ typing is addressed.
     ty: warn
-    # vulture: hyperi-ci points it at a hardcoded src/ dir; this project
-    # uses a flat scripts/ + tests/ layout, so the tool errors before it
-    # scans. Same upstream limitation as the coverage note above.
-    vulture: warn
+    # vulture: hyperi-ci points it at a hardcoded src/ dir; this project uses a
+    # flat scripts/ + tests/ layout, so the tool errors before it scans anything.
+    # `disabled` rather than `warn` because --strict promotes warn to blocking,
+    # which fails the gate on a tool that cannot run here at all. Same upstream
+    # limitation as the coverage note below; re-enable if it takes a source path.
+    vulture: disabled
 
 test:
   enabled: true

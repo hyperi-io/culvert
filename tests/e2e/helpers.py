@@ -16,6 +16,14 @@ COMPOSE_DIR = Path(__file__).parent
 TARGET_URL = "http://172.30.0.20/"
 TARGET_RESPONSE = "culvert-e2e-target-ok"
 
+# The server as the client sees it, on the shared external network.
+SERVER_IP = "172.30.1.10"
+
+# The plain VPN listeners, as (protocol, port). Blocking exactly these leaves
+# only the web ports (443 stunnel, 4443 wstunnel) reachable, which is the
+# network condition the HTTPS-tunnelled listeners exist for.
+PLAIN_VPN_PORTS = (("udp", 1194), ("tcp", 1194), ("udp", 51820))
+
 
 def docker_exec(
     container: str, cmd: str, timeout: int = 30, check: bool = True
@@ -206,6 +214,58 @@ def has_wireguard_module() -> bool:
         check=False,
     )
     return "ok" in result.stdout
+
+
+def block_plain_vpn_ports() -> None:
+    """Block the client's egress to every plain VPN listener on the server.
+
+    Leaves TCP 443 and 4443 open, so the only way out is a tunnel wrapped in
+    TLS on a web port. REJECT rather than DROP so a blocked attempt fails fast
+    instead of burning the test's timeout.
+    """
+    for proto, port in PLAIN_VPN_PORTS:
+        docker_exec(
+            "e2e-vpn-client",
+            f"iptables -I OUTPUT -d {SERVER_IP} -p {proto} --dport {port} -j REJECT",
+        )
+
+
+def unblock_plain_vpn_ports() -> None:
+    """Remove the egress blocks added by block_plain_vpn_ports."""
+    for proto, port in PLAIN_VPN_PORTS:
+        docker_exec(
+            "e2e-vpn-client",
+            f"iptables -D OUTPUT -d {SERVER_IP} -p {proto} --dport {port} -j REJECT",
+            check=False,
+        )
+
+
+def tcp_port_reachable(port: int, host: str = SERVER_IP, timeout: int = 5) -> bool:
+    """Whether a TCP connect to host:port succeeds from the client."""
+    result = docker_exec(
+        "e2e-vpn-client",
+        f"timeout {timeout} bash -c '</dev/tcp/{host}/{port}'",
+        timeout=timeout + 5,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def tls_handshake(port: int, host: str = SERVER_IP, timeout: int = 10) -> str:
+    """Complete a TLS handshake against host:port and return openssl's report.
+
+    Proves the listener really is speaking TLS, not just accepting bytes on a
+    web port. Returns stdout+stderr so the caller can assert on the negotiated
+    protocol; an empty string means the handshake did not complete.
+    """
+    result = docker_exec(
+        "e2e-vpn-client",
+        f"timeout {timeout} openssl s_client -connect {host}:{port}"
+        " -servername vpn-server -brief </dev/null 2>&1",
+        timeout=timeout + 5,
+        check=False,
+    )
+    return result.stdout + result.stderr
 
 
 def get_openvpn_log() -> str:

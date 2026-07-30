@@ -12,7 +12,7 @@ configuration required for the culvert CI/CD pipeline.
 
 ## GitHub Actions Secrets (Required)
 
-Configure these in **Settings → Secrets and variables → Actions → Secrets**:
+Configure these in **Settings -> Secrets and variables -> Actions -> Secrets**:
 
 | Secret | Description |
 |--------|-------------|
@@ -24,7 +24,7 @@ for GHCR login during publish.
 
 ## GitHub Actions Variables (Optional)
 
-Configure these in **Settings → Secrets and variables → Actions → Variables**:
+Configure these in **Settings -> Secrets and variables -> Actions -> Variables**:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -45,7 +45,7 @@ uv run pytest tests/unit/ -q
 | Workflow | Trigger | Action |
 |----------|---------|--------|
 | CI | Push/PR to main | Lint, build (no push), test |
-| Release | Push to main | Semantic-release → multi-arch build → push to GHCR |
+| Release | Push to main | Semantic-release -> multi-arch build -> push to GHCR |
 | Dependency Check | Weekly (Mon 09:00 UTC) | Check for new upstream versions, open PR |
 
 ## Image Tags

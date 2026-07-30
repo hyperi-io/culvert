@@ -83,15 +83,22 @@ class TestOpenVPNHTTPS:
     """OpenVPN HTTPS (stunnel) connectivity."""
 
     @pytest.fixture(autouse=True)
-    def _check_stunnel_config(self):
-        """Skip if stunnel client config was not generated."""
+    def _require_stunnel_config(self):
+        """Fail, not skip, if the stunnel client config is missing.
+
+        Skipping here would let a broken config generator turn the whole HTTPS
+        path green - the listener is opted in by this stack, so the config not
+        being there is a defect, not an unmet precondition.
+        """
         result = docker_exec(
             "e2e-vpn-client",
             "test -f /etc/vpn/clients/e2e-client-stunnel.conf",
             check=False,
         )
-        if result.returncode != 0:
-            pytest.skip("stunnel config not generated")
+        assert result.returncode == 0, (
+            "e2e-client-stunnel.conf was not generated, so the HTTPS listener"
+            " cannot be tested. generate-client should have produced it."
+        )
 
     def test_connect_and_reach_target(self, openvpn_https_connection):
         """Client connects via HTTPS tunnel and reaches target."""

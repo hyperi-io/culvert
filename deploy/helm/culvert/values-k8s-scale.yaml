@@ -15,7 +15,7 @@
 # do not front this with a per-packet balancer.
 #
 # NOTE: one Service carries every port, so LoadBalancer also publishes the
-# observability port 9090 (/healthz, /readyz, /metrics) unauthenticated.
+# observability port 9090 (/livez, /readyz, /metrics) unauthenticated.
 # Restrict it with loadBalancerSourceRanges (below), or keep the Service
 # ClusterIP and expose only the VPN port via a Gateway API UDPRoute.
 service:

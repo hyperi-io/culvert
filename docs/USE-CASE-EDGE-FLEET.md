@@ -1,12 +1,13 @@
 # Edge fleet -> receiver
 
 An appliance fleet streaming data into a central receiver, with reverse
-admin back down the same tunnels. This is the DFE inbound-VPN shape (edge
-stream hubs -> DFE receiver) and it is generally reusable for any
-hub-and-spoke telemetry fleet. It is the `edge-fleet` profile.
+admin back down the same tunnels. Any hub-and-spoke telemetry fleet has
+this shape: edge stream hubs pushing into a central ingest service, and
+operators needing a way back down to the appliances. It is the
+`edge-fleet` profile.
 
-The dependency arrow points one way: dfe-infra consumes culvert for its
-inbound VPN. Culvert never depends on dfe-* or anything HyperI-internal.
+This is the shape we run culvert in ourselves, which is why the profile
+is opinionated rather than a blank template.
 
 Two things make this different from an ordinary client VPN. Understand
 both before you deploy it.

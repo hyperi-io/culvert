@@ -1,6 +1,6 @@
 #  Project:      culvert
 #  File:         metrics.py
-#  Purpose:      HyperI-standard metrics via scalo (Prometheus + OTel)
+#  Purpose:      Metrics via scalo (Prometheus + OTel)
 #  Language:     Python
 #
 #  License:      Apache-2.0
@@ -13,7 +13,7 @@ Uses scalo MetricsManager for dual Prometheus/OTel export.
 When OTel is configured, the same metrics push via OTLP AND serve on
 the Prometheus /metrics endpoint. When OTel is not configured, only
 Prometheus scrape is available. The scrape itself is served by the
-observability port (lib.health.start_observability) — init_metrics()
+observability port (lib.health.start_observability) - init_metrics()
 returns the adapter that port renders from.
 
 Parses OpenVPN status files and WireGuard show output to collect
@@ -60,7 +60,7 @@ class WgPeerHandshake:
 
 
 # ---------------------------------------------------------------------------
-# Parsers (non-fragile — skip malformed lines, never crash)
+# Parsers (non-fragile - skip malformed lines, never crash)
 # ---------------------------------------------------------------------------
 
 
@@ -208,7 +208,7 @@ def _collect_wg_transfer() -> tuple[int, int]:
 # MetricsManager integration (Prometheus + OTel)
 # ---------------------------------------------------------------------------
 
-# Module-level state — set by init_metrics
+# Module-level state - set by init_metrics
 _mgr = None
 _max_clients: int = 100
 _protocol: str = "openvpn"
@@ -431,8 +431,8 @@ class ScrapeAdapter:
     """Render metrics for the observability port, refreshing first.
 
     The observability server calls get_metrics()/get_content_type() on
-    each scrape; refreshing here preserves the always-current semantics
-    the old bespoke /metrics handler had.
+    each scrape, so refreshing here keeps every scrape current rather
+    than serving whatever the 15s poll last left behind.
     """
 
     def get_metrics(self) -> bytes:

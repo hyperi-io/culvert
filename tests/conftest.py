@@ -49,8 +49,3 @@ def mock_pki_dir(temp_dir):
     (pki_dir / "private").mkdir()
     (pki_dir / "reqs").mkdir()
     return pki_dir
-
-
-# sample_env fixture removed — all tests now use monkeypatch.setenv
-# with CULVERT_* prefix directly.
-# text_log_mode fixture removed — Logger replaced with scalo.logger

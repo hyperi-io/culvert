@@ -1,7 +1,8 @@
 # Culvert stunnel Server Configuration
-# Wraps OpenVPN TCP in real TLS for DPI bypass
+# Wraps OpenVPN TCP in real TLS so the VPN can travel over a web port
 #
-# This makes VPN traffic indistinguishable from regular HTTPS
+# On the wire this is an ordinary TLS session on 443, which is what lets it
+# through networks that only pass HTTPS.
 # Client connects: stunnel(TLS) -> stunnel(server) -> OpenVPN TCP
 
 # Run as nobody for security (after binding to port)

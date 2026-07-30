@@ -26,11 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - All configuration uses the `CULVERT_*` environment prefix
-- Default `ca_cn` now derives from `org_name` (empty → `"VPN CA"`)
-- Default `server_cn` no longer set — must be explicitly configured
-- Default `stunnel_cert` / `stunnel_key` no longer set — must be
+- Default `ca_cn` now derives from `org_name` (empty -> `"VPN CA"`)
+- Default `server_cn` no longer set - must be explicitly configured
+- Default `stunnel_cert` / `stunnel_key` no longer set - must be
   explicitly configured when the HTTPS listener is enabled
-- OIDC log strings genericised: `"Entra ID"` → `"OIDC"`
+- OIDC log strings genericised: `"Entra ID"` -> `"OIDC"`
 - Client config headers and OAuth2 login page branded `"Culvert"`
 - Dockerfile pulls `openvpn-auth-oauth2` and `wstunnel` directly from
   upstream GitHub releases

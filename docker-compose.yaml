@@ -1,6 +1,6 @@
 # Culvert Server
-# OpenVPN 2.7+ with DCO and WireGuard in one image - TLS camouflage,
-# OIDC SSO, external PKI
+# OpenVPN 2.7+ with DCO and WireGuard in one image - each optionally
+# tunnelled over HTTPS - plus OIDC SSO and external PKI
 # Drop-in 'just works' docker or k8s scale deploy
 #
 # Authentication:
@@ -24,13 +24,13 @@
 #   docker compose up -d                                # Start server
 #   docker compose logs -f                              # View logs
 #   docker compose down                                 # Stop server
-#   docker compose exec openvpn generate-client --name derek  # Generate client config (all protocols/modes)
-#   docker compose exec openvpn revoke-client derek           # Revoke client
+#   docker compose exec openvpn generate-client --name alice  # Generate client config (all protocols/modes)
+#   docker compose exec openvpn revoke-client alice           # Revoke client
 
 services:
   openvpn:
     # Pulls the published multi-arch image from GHCR - the five-minute path.
-    # Set CULVERT_IMAGE to pin a tag (e.g. ...culvert:2.1.1) or point at a
+    # Set CULVERT_IMAGE to pin a tag (e.g. ...culvert:v2.1.3) or point at a
     # private mirror. To build locally instead, uncomment the build: block
     # below and run `docker compose up --build`.
     image: ${CULVERT_IMAGE:-ghcr.io/hyperi-io/culvert:latest}
@@ -42,21 +42,25 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
-    # Required for DCO and VPN functionality
-    # NET_ADMIN: Network configuration, iptables, tun device
-    # SYS_MODULE: Load/access kernel modules (DCO)
+    # NET_ADMIN: network configuration, iptables, tun device. That is all the
+    # server needs - kernel modules (DCO, wireguard) are loaded on the HOST,
+    # so SYS_MODULE is not granted here. Uncomment it only if your host
+    # offers OpenVPN DCO kernel offload and you want the container to load it;
+    # it is close to host-root, since it can load any module.
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
+      # - SYS_MODULE
 
     # Device access for VPN
     devices:
       - /dev/net/tun:/dev/net/tun
 
-    # Sysctls for network performance optimization
+    # The tunnels carry IPv4. IPv6 forwarding is deliberately NOT enabled:
+    # routing control (client isolation, the egress allow-list, the
+    # reverse-admin gate) is enforced with iptables only, so forwarded IPv6
+    # would walk straight past every one of those rules.
     sysctls:
       - net.ipv4.ip_forward=1
-      - net.ipv6.conf.all.forwarding=1
 
     # DNS servers for container (required for OAuth2 OIDC discovery)
     # Uses internal DNS first, falls back to Cloudflare
@@ -72,16 +76,16 @@ services:
       - "${CULVERT_UDP_PORT:-1194}:${CULVERT_UDP_PORT:-1194}/udp"
       # Observability - health probes + Prometheus /metrics on one port
       # (bind is CULVERT_METRICS_ADDR; keep the port here in sync with it).
-      # Published on loopback only: /healthz + /metrics are unauthenticated.
+      # Published on loopback only: /livez + /metrics are unauthenticated.
       # Scraping from another host? Change to "9090:9090/tcp" and firewall it.
       - "127.0.0.1:9090:9090/tcp"
       # TCP - Proxy fallback for corporate firewalls (CULVERT_TCP_ENABLED=true)
       # - "${CULVERT_TCP_PORT:-1194}:${CULVERT_TCP_PORT:-1194}/tcp"
-      # HTTPS - DPI bypass via port 443 (CULVERT_HTTPS_ENABLED=true)
+      # HTTPS - OpenVPN inside TLS on 443 (CULVERT_HTTPS_ENABLED=true)
       # - "${CULVERT_HTTPS_PORT:-443}:${CULVERT_HTTPS_PORT:-443}/tcp"
       # WireGuard - UDP primary (CULVERT_PROTOCOL=wireguard or both)
       # - "${CULVERT_WG_PORT:-51820}:${CULVERT_WG_PORT:-51820}/udp"
-      # WireGuard - DPI bypass via wstunnel (CULVERT_WG_DPI_BYPASS_ENABLED=true)
+      # WireGuard over HTTPS via wstunnel (CULVERT_WG_DPI_BYPASS_ENABLED=true)
       # - "${CULVERT_WG_DPI_BYPASS_PORT:-4443}:${CULVERT_WG_DPI_BYPASS_PORT:-4443}/tcp"
       # OAuth2 callback servers, one per enabled OpenVPN listener
       # (CULVERT_OAUTH2_ENABLED=true; each listener needs its own instance)
@@ -110,13 +114,13 @@ services:
       - CULVERT_SERVER_CN=${CULVERT_SERVER_CN:-vpn.example.com}
 
       # Listener configuration. Default is the simplest working server:
-      # OpenVPN UDP only. TCP and HTTPS (DPI bypass) are deliberate opt-ins.
+      # OpenVPN UDP only. The TCP and HTTPS listeners are deliberate opt-ins.
       # UDP - Primary (best performance)
       - CULVERT_UDP_ENABLED=${CULVERT_UDP_ENABLED:-true}
       - CULVERT_UDP_PORT=${CULVERT_UDP_PORT:-1194}
       - CULVERT_UDP_NETWORK=${CULVERT_UDP_NETWORK:-10.8.0.0}
       - CULVERT_UDP_NETMASK=${CULVERT_UDP_NETMASK:-255.255.255.0}
-      # HTTPS - DPI bypass via port 443 (opt-in)
+      # HTTPS - OpenVPN wrapped in TLS on port 443 (opt-in)
       - CULVERT_HTTPS_ENABLED=${CULVERT_HTTPS_ENABLED:-false}
       - CULVERT_HTTPS_PORT=${CULVERT_HTTPS_PORT:-443}
       - CULVERT_HTTPS_NETWORK=${CULVERT_HTTPS_NETWORK:-10.8.2.0}
@@ -142,7 +146,7 @@ services:
       # - CULVERT_WG_PORT=${CULVERT_WG_PORT:-51820}
       # - CULVERT_WG_MTU=${CULVERT_WG_MTU:-1420}
       # - CULVERT_WG_PERSISTENT_KEEPALIVE=${CULVERT_WG_PERSISTENT_KEEPALIVE:-25}
-      # WireGuard DPI bypass via wstunnel (a further opt-in on top of WireGuard)
+      # WireGuard over HTTPS via wstunnel (a further opt-in on top of WireGuard)
       # - CULVERT_WG_DPI_BYPASS_ENABLED=${CULVERT_WG_DPI_BYPASS_ENABLED:-false}
       # - CULVERT_WG_DPI_BYPASS_PORT=${CULVERT_WG_DPI_BYPASS_PORT:-4443}
 
@@ -174,7 +178,11 @@ services:
       - CULVERT_CLIENT_DOWNLOAD_TOKEN=${CULVERT_CLIENT_DOWNLOAD_TOKEN:-}
 
       # PKI settings (CNSA 2.0 compliant defaults)
-      - CULVERT_CA_CN=${CULVERT_CA_CN:-Culvert CA}
+      # ORG_NAME names the CA: "Acme" -> "Acme VPN CA". CA_CN overrides that
+      # derivation outright, so it is passed through empty rather than
+      # defaulted - set it only if you want to name the CA yourself.
+      - CULVERT_ORG_NAME=${CULVERT_ORG_NAME:-}
+      - CULVERT_CA_CN=${CULVERT_CA_CN:-}
       - CULVERT_KEY_TYPE=${CULVERT_KEY_TYPE:-ec}
       - CULVERT_KEY_SIZE=${CULVERT_KEY_SIZE:-secp384r1}
 
@@ -217,8 +225,8 @@ services:
       - TZ=${TZ:-Australia/Sydney}
 
     # No healthcheck override: the image's protocol-aware HEALTHCHECK
-    # (entrypoint healthcheck -> /health/live) covers OpenVPN, WireGuard,
-    # and both. A pgrep for openvpn would report a WireGuard-only server
+    # (entrypoint healthcheck -> /livez) covers OpenVPN, WireGuard, and
+    # both. A pgrep for openvpn would report a WireGuard-only server
     # unhealthy forever.
 
     logging:

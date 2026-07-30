@@ -15,7 +15,7 @@ class TestConfigDefaults:
     """Config.from_settings() with no env vars produces sane defaults."""
 
     def test_default_server_cn_empty(self, clean_env):
-        """server_cn has no default — must be explicitly configured."""
+        """server_cn has no default - must be explicitly configured."""
         cfg = Config.from_settings()
         assert cfg.server_cn == ""
 
@@ -25,7 +25,7 @@ class TestConfigDefaults:
         assert cfg.ca_cn == "VPN CA"
 
     def test_ca_cn_derived_from_org_name(self, clean_env, monkeypatch):
-        """org_name='Acme' → ca_cn='Acme VPN CA'."""
+        """org_name='Acme' -> ca_cn='Acme VPN CA'."""
         monkeypatch.setenv("CULVERT_ORG_NAME", "Acme")
         cfg = Config.from_settings()
         assert cfg.ca_cn == "Acme VPN CA"
@@ -36,6 +36,18 @@ class TestConfigDefaults:
         monkeypatch.setenv("CULVERT_CA_CN", "Custom Name CA")
         cfg = Config.from_settings()
         assert cfg.ca_cn == "Custom Name CA"
+
+    def test_empty_ca_cn_still_derives_from_org_name(self, clean_env, monkeypatch):
+        """An empty ca_cn must not defeat the org_name derivation.
+
+        docker-compose.yaml passes CULVERT_CA_CN through as an empty string so
+        an operator can rely on CULVERT_ORG_NAME alone. If empty were treated
+        as "set", the documented ORG_NAME behaviour would silently do nothing.
+        """
+        monkeypatch.setenv("CULVERT_ORG_NAME", "Acme")
+        monkeypatch.setenv("CULVERT_CA_CN", "")
+        cfg = Config.from_settings()
+        assert cfg.ca_cn == "Acme VPN CA"
 
     def test_default_stunnel_cert_empty(self, clean_env):
         """stunnel_cert has no default."""
@@ -98,7 +110,7 @@ class TestConfigDefaults:
         assert cfg.otel_enabled is False
 
     def test_default_metrics_addr(self, clean_env):
-        """One observability listener, fleet-standard bind."""
+        """One observability listener on the conventional 9090 bind."""
         cfg = Config.from_settings()
         assert cfg.metrics_addr == "0.0.0.0:9090"
 

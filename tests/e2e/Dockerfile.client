@@ -1,17 +1,21 @@
 FROM ubuntu:24.04
 
 # Match the production Dockerfile's wstunnel version + per-arch SHA256.
-ARG WSTUNNEL_VERSION="10.5.5"
-ARG WSTUNNEL_SHA256_AMD64="b20ffa02e945ec0c0d6b153ba69a290593f0957ed2892aee8f987f715ccd95d6"
-ARG WSTUNNEL_SHA256_ARM64="db85183da9732f26c110a08e3fffdfcfc4a44d544035d01eeefa708ed23874bb"
+ARG WSTUNNEL_VERSION="10.6.2"
+ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e19241311e34868e6e"
+ARG WSTUNNEL_SHA256_ARM64="26bb36b856948255bec7cd71a39df5f8912acdd7a47a9ccd4044a9b80ced108d"
 
+# iptables lets a test block its own egress to the plain VPN ports, so the
+# HTTPS-tunnelled listeners can be proven to work when nothing else gets out.
+# openssl is for asserting the web ports really terminate TLS.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openvpn stunnel4 wireguard-tools curl iproute2 iputils-ping \
+    iptables openssl \
     ca-certificates resolvconf \
     && rm -rf /var/lib/apt/lists/*
 
-# wstunnel client for WireGuard DPI bypass testing. Pinned + SHA256 verified
-# fail-closed - never pipe an unverified fetch into tar (mirror prod).
+# wstunnel client for WireGuard DPI bypass testing. Same pinned version and
+# checksum check as the server image, so the test exercises what ships.
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
          amd64) WSTUNNEL_SHA256="${WSTUNNEL_SHA256_AMD64}" ;; \

@@ -271,9 +271,12 @@ net.netfilter.nf_conntrack_max = 1048576
 
 #===============================================================================
 # IP Forwarding (also set in container, but good to have on host)
+#
+# IPv4 only. Culvert's routing control is enforced with iptables, so
+# forwarded IPv6 would bypass client isolation, the egress allow-list and
+# the reverse-admin gate.
 #===============================================================================
 net.ipv4.ip_forward = 1
-net.ipv6.conf.all.forwarding = 1
 
 #===============================================================================
 # UDP Optimizations (OpenVPN uses UDP primarily)
@@ -442,10 +445,9 @@ install_docker_amazon_linux() {
         log_info "Docker already installed: $(docker --version)"
     fi
 
-    # Compose plugin: distro package first (Amazon Linux 2023 ships
-    # docker-compose-plugin). We do NOT pipe a remote installer into a
-    # shell, ever. If no package exists the LAST resort is a pinned,
-    # checksum-verified binary download - never an unverified fetch.
+    # Compose plugin from the distro package (Amazon Linux 2023 ships
+    # docker-compose-plugin). Where no package exists, install a pinned
+    # binary and check its checksum - do not pipe an installer into a shell.
     if ! docker compose version >/dev/null 2>&1; then
         log_info "Installing Docker Compose plugin from the distro..."
         $PKG_INSTALL docker-compose-plugin \

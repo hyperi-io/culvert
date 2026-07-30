@@ -31,9 +31,8 @@
 # Supply Chain:
 #   All third-party binaries are pulled directly from upstream GitHub releases.
 
-# Base image pinned by digest (ubuntu:24.04 as of 2026-06-06) for
-# reproducible, supply-chain-verified builds. Override BASE_IMAGE to rebuild
-# on a newer base. hadolint ignore=DL3006
+# Base image pinned by digest so builds are reproducible. Override
+# BASE_IMAGE to rebuild on a newer base. hadolint ignore=DL3006
 ARG BASE_IMAGE="ubuntu:24.04@sha256:786a8b558f7be160c6c8c4a54f9a57274f3b4fb1491cf65146521ae77ff1dc54"
 ARG VERSION="dev"
 ARG COMMIT=""
@@ -45,7 +44,7 @@ ARG VERSION
 ARG COMMIT
 
 LABEL maintainer="HyperI <opensource@hyperi.io>"
-LABEL description="Culvert — OpenVPN + WireGuard with DPI bypass, CNSA 2.0, and OIDC SSO"
+LABEL description="Culvert - OpenVPN + WireGuard, optionally tunnelled over HTTPS, with CNSA 2.0 crypto and OIDC SSO"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${COMMIT}"
 LABEL org.opencontainers.image.source="https://github.com/hyperi-io/culvert"
@@ -55,17 +54,15 @@ LABEL openvpn.features="DCO,TLS1.3,AEAD,4G-optimized,OIDC-SSO"
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENVPN_MIN_VERSION="2.7.0"
-# openvpn-auth-oauth2 v1.28.0 (latest as of 2026-06-06), sha256 per arch.
-ARG OPENVPN_AUTH_OAUTH2_VERSION="1.28.0"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="4a4fd97312f6e3adc9baf31d0f009d8abdb3614160003b8f50d4d096f5ae2f34"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="5e39cd6b656f7ccbc94790fd2b61b17f4687c9d69709fa75cc5c10578fe4748d"
+ARG OPENVPN_AUTH_OAUTH2_VERSION="1.28.3"
+ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="f762273dca8fe3449c51b8365cc0fa7dc5ad30d95720e7fde6d16bd17cd6d476"
+ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="f20b7f2ac713540ca996d7a8e522980b158c78f8a970ca9fa3f9c0c5e3b33f5d"
 
-# openvpn: signed apt repo (install ladder rung 1). The repo key is fetched
-# over pinned-TLS, its fingerprint verified FAIL-CLOSED against the recorded
-# value before use, then dearmored to a binary keyring; apt verifies every
-# openvpn package AND update against it. Key 30EB F4E7 3CCE 63EE E124 DD27
-# 8E6D A8B4 E158 C569 (Samuli Seppanen, exp 2030), cross-checked vs the live
-# vendor endpoint + OpenVPN's published fingerprint. Re-pin if it rotates.
+# openvpn from the project's signed apt repo. The repo key's fingerprint is
+# checked against the pinned value and the build fails if it does not match,
+# so a substituted key cannot reach the keyring. Key 30EB F4E7 3CCE 63EE
+# E124 DD27 8E6D A8B4 E158 C569 (Samuli Seppanen, expires 2030) - re-pin here
+# if it rotates.
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -104,12 +101,11 @@ RUN apt-get update \
         dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
-# openvpn-auth-oauth2: pinned release .deb + per-arch SHA256 we hold (ladder
-# rung 3), fetched over pinned-TLS, verified FAIL-CLOSED before dpkg. The
-# project's apt repo points at releases/latest (Suites ./) so it is NOT
-# version-pinnable - a signed-repo switch would make the image non-reproducible,
-# so the pinned artefact is the deliberate choice here. Version + SHA are
-# renovate-bumped (see .github/workflows/dependency-check.yml).
+# openvpn-auth-oauth2 from a pinned release .deb, checksum-checked before
+# dpkg. Its apt repo serves releases/latest (Suites ./) and cannot be pinned
+# to a version, which would make the image non-reproducible - hence the
+# artefact fetch. Version + SHA are bumped by
+# .github/workflows/dependency-check.yml.
 # Source: https://github.com/jkroepke/openvpn-auth-oauth2
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
@@ -126,13 +122,12 @@ RUN ARCH=$(dpkg --print-architecture) \
     && rm /tmp/openvpn-auth-oauth2.deb \
     && openvpn-auth-oauth2 --version
 
-# Python dependencies (scalo + full transitive tree) via pip (a package
-# manager, ladder rung 1) but installed FAIL-CLOSED with --require-hashes
-# from a lockfile whose SHA256s WE HOLD (requirements-docker.txt, exported
-# from uv.lock). Every transitive dep is pinned + hash-verified, so a
-# compromised or drifted PyPI release fails the build instead of shipping.
-# Granular secrets extras (file core, openbao=secrets-vault, aws=secrets-aws)
-# + otel are baked into the lockfile; regenerate on any uv.lock change with:
+# Python dependencies from requirements-docker.txt, a hash-pinned lockfile
+# exported from uv.lock. --require-hashes means every transitive dep must
+# match its recorded SHA256, so a drifted or compromised PyPI release fails
+# the build rather than shipping. The granular secrets extras (file backend
+# is core, openbao=secrets-vault, aws=secrets-aws) plus otel are baked into
+# the lockfile; regenerate on any uv.lock change with:
 #   uv export --frozen --no-dev --no-emit-project --extra otel \
 #     --format requirements-txt -o requirements-docker.txt
 COPY requirements-docker.txt /tmp/requirements-docker.txt
@@ -143,14 +138,13 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # scalo config cascade reads CULVERT_* env vars
 ENV ENV_PREFIX=CULVERT
 
-# wstunnel: pinned release tarball + per-arch SHA256 we hold (ladder rung 3),
-# fetched over pinned-TLS, verified FAIL-CLOSED before extract. No apt repo
-# exists; the GHCR image binary is linked against a newer (trixie) glibc than
-# this noble base, so the release tarball is the deliberate choice. BSD-3-Clause
-# Rust binary; version + SHA renovate-bumped.
-ARG WSTUNNEL_VERSION="10.5.5"
-ARG WSTUNNEL_SHA256_AMD64="b20ffa02e945ec0c0d6b153ba69a290593f0957ed2892aee8f987f715ccd95d6"
-ARG WSTUNNEL_SHA256_ARM64="db85183da9732f26c110a08e3fffdfcfc4a44d544035d01eeefa708ed23874bb"
+# wstunnel from a pinned release tarball, checksum-checked before extract.
+# There is no apt repo, and the upstream container image's binary links
+# against a newer glibc than this noble base, so the tarball is the only
+# option that runs here. BSD-3-Clause Rust binary.
+ARG WSTUNNEL_VERSION="10.6.2"
+ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e19241311e34868e6e"
+ARG WSTUNNEL_SHA256_ARM64="26bb36b856948255bec7cd71a39df5f8912acdd7a47a9ccd4044a9b80ced108d"
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
          amd64) WSTUNNEL_SHA256="${WSTUNNEL_SHA256_AMD64}" ;; \
@@ -217,9 +211,10 @@ VOLUME ["/etc/vpn/pki", "/etc/vpn/server/ccd", "/etc/vpn/clients", "/var/log/vpn
 
 # UDP 1194 - OpenVPN (best performance with DCO)
 # TCP 1194 - OpenVPN TCP fallback
-# TCP 443  - OpenVPN HTTPS tunneling (stunnel DPI bypass)
+# TCP 443  - OpenVPN inside a TLS tunnel (stunnel), for networks that only
+#            pass HTTPS
 # UDP 51820 - WireGuard
-# TCP 4443 - WireGuard DPI bypass (wstunnel)
+# TCP 4443 - WireGuard inside a WebSocket/TLS tunnel (wstunnel), same purpose
 # TCP 9000-9002 - OAuth2 callback servers
 # TCP 9090 - Observability (health probes + Prometheus /metrics)
 EXPOSE 1194/udp 1194/tcp 443/tcp 51820/udp 4443/tcp 9000/tcp 9001/tcp 9002/tcp 9090/tcp

@@ -26,7 +26,7 @@ import pytest
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("OPENBAO_ADDR"),
-    reason="OPENBAO_ADDR not set — no OpenBao access",
+    reason="OPENBAO_ADDR not set - no OpenBao access",
 )
 
 FAKE_CA = (

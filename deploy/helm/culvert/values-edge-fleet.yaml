@@ -37,6 +37,9 @@ resources:
 # Set the CIDRs to your real networks (example values shown):
 #   ALLOWED_DESTINATIONS  - what appliances may reach (the receiver)
 #   DOWNSTREAM_ADMIN_CIDRS - who may reach back down to appliances
+#   PUSH_ROUTES - must list the receiver AND the admin CIDR. An appliance can
+#     only reply to an admin-initiated connection if it has a route back up
+#     the tunnel for it; receiver-only here makes reverse admin one-way.
 # CGNAT tunnel addressing (100.64/10) because the operator controls both
 # ends - do NOT use for laptops on carrier/Starlink links.
 env:
@@ -46,7 +49,7 @@ env:
   CULVERT_ROUTING_CONTROL_ENABLED: "true"
   CULVERT_CLIENT_ISOLATION: "true"
   CULVERT_ALLOWED_DESTINATIONS: "10.20.0.0/16"
-  CULVERT_PUSH_ROUTES: "10.20.0.0/16"
+  CULVERT_PUSH_ROUTES: "10.20.0.0/16,10.10.0.0/16"
   CULVERT_DOWNSTREAM_ADMIN_CIDRS: "10.10.0.0/16"
 
 # Fleet CA / secrets from an out-of-band Secret (see docs). Never inline.

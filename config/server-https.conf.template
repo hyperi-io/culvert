@@ -1,12 +1,12 @@
 # Culvert Server Configuration - HTTPS Tunnel (via stunnel)
-# OpenVPN 2.6.15+ with CNSA 2.0 Security Settings
+# OpenVPN 2.7+ with CNSA 2.0 Security Settings
 #
 # This is a TEMPLATE file - variables are substituted by envsubst at runtime.
 # Do not use this file directly - use the generated server-https.conf instead.
 #
 # Architecture: Client -> stunnel(TLS:443) -> OpenVPN(TCP:1195)
-# stunnel terminates TLS on port 443 and forwards to this OpenVPN instance
-# This makes traffic indistinguishable from regular HTTPS to DPI
+# stunnel terminates TLS on port 443 and forwards to this OpenVPN instance,
+# so the VPN travels as an ordinary HTTPS session on a web port
 # Shares PKI with the primary UDP instance
 
 #===============================================================================
@@ -105,8 +105,9 @@ client-config-dir /etc/vpn/server/ccd
 user nobody
 group nogroup
 
-# Persist keys and tun across restarts
-persist-key
+# Keep the tun device across restarts. persist-key is not set: OpenVPN 2.7
+# always persists keys and logs a deprecation warning if it is given. It stays
+# in the push list below, where clients may still be on 2.6.
 persist-tun
 
 # Limit concurrent clients per instance

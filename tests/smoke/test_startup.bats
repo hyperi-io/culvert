@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #  Project:      culvert
 #  File:         test_startup.bats
-#  Purpose:      Mandatory startup smoke test — container boots with defaults
+#  Purpose:      Mandatory startup smoke test - container boots with defaults
 #  Language:     Bash
 #
 #  License:      Apache-2.0

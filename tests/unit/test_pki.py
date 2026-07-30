@@ -217,7 +217,7 @@ class TestFetchExternalPki:
         assert not (pki / "crl.pem").exists()
 
     def test_fallback_to_local_certs(self, pki_env):
-        """Provider fails but local certs exist — init_pki succeeds."""
+        """Provider fails but local certs exist - init_pki succeeds."""
         from lib.pki import init_pki
 
         cfg, pki, _ = pki_env
@@ -233,12 +233,12 @@ class TestFetchExternalPki:
         cfg.secrets_server_cert_path = "/nonexistent/server.crt"
         cfg.secrets_server_key_path = "/nonexistent/server.key"
 
-        # Should not exit — falls back to local certs
+        # Should not exit - falls back to local certs
         init_pki(cfg)
         assert "FAKE_CA" in (pki / "ca.crt").read_text()
 
     def test_no_local_no_provider_exits(self, pki_env):
-        """Provider fails AND no local certs — init_pki exits."""
+        """Provider fails AND no local certs - init_pki exits."""
         from lib.pki import init_pki
 
         cfg, pki, _ = pki_env

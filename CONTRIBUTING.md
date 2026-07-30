@@ -176,8 +176,8 @@ This happens automatically - no manual intervention required.
 ### Environment variables
 
 All runtime configuration is namespaced under `CULVERT_*` and is
-read by `scalo` via a 7-layer cascade (CLI → env → `.env` →
-`settings.{env}.yaml` → `settings.yaml` → `defaults.yaml` →
+read by `scalo` via a 7-layer cascade (CLI -> env -> `.env` ->
+`settings.{env}.yaml` -> `settings.yaml` -> `defaults.yaml` ->
 hard-coded), with profile YAML as an additional config source.
 When adding a config field:
 

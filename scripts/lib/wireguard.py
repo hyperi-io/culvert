@@ -293,7 +293,7 @@ def generate_dpi_client_config(
     allowed_ips: str = "0.0.0.0/0, ::/0",
     wstunnel_port: int = 443,
 ) -> str:
-    """Generate a WireGuard client config for DPI bypass via wstunnel."""
+    """Generate a WireGuard client config that runs over HTTPS via wstunnel."""
     private_key_value = client_private_key or "YOUR_PRIVATE_KEY_HERE"
 
     dns_line = ", ".join(dns_servers)
@@ -301,7 +301,7 @@ def generate_dpi_client_config(
         dns_line = f"{dns_line}, {dns_domain}"
 
     header = [
-        "# DPI Bypass Configuration (wstunnel required)",
+        "# WireGuard over HTTPS (wstunnel required)",
         "#",
         "# Start wstunnel before activating this WireGuard config:",
         f"#   wstunnel client"
@@ -309,7 +309,8 @@ def generate_dpi_client_config(
         f" wss://{server_endpoint}:{wstunnel_port}",
         "#",
         "# The WireGuard Endpoint below connects to the local wstunnel listener.",
-        "# wstunnel wraps UDP in WebSocket to bypass DPI firewalls.",
+        "# wstunnel carries the UDP tunnel inside WebSocket/TLS, so it travels",
+        "# as ordinary HTTPS on a web port.",
         "",
     ]
 

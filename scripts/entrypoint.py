@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #  Project:      culvert
 #  File:         entrypoint.py
-#  Purpose:      Container entrypoint — thin orchestrator delegating to lib/ modules
+#  Purpose:      Container entrypoint - thin orchestrator delegating to lib/ modules
 #  Language:     Python
 #
 #  License:      Apache-2.0
@@ -165,7 +165,7 @@ def main() -> None:
             # off-host reach is possible.
             # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             req = urllib.request.urlopen(
-                f"http://localhost:{health_port}/health/live", timeout=3
+                f"http://localhost:{health_port}/livez", timeout=3
             )
             sys.exit(0 if req.status == 200 else 1)
         except Exception:

@@ -15,9 +15,9 @@
 #
 # Directory structure (auto-created by entrypoint):
 #   ${SHARED_STORAGE_PATH}/
-#   ├── pki/          # CA, server cert, client certs, CRL, tls-crypt-v2 key
-#   ├── clients/      # Generated .ovpn files (split + full for each client)
-#   └── ccd/          # Client-specific configs (optional)
+#   |-- pki/          # CA, server cert, client certs, CRL, tls-crypt-v2 key
+#   |-- clients/      # Generated .ovpn files (split + full for each client)
+#   `-- ccd/          # Client-specific configs (optional)
 #
 # What MUST be shared (for scale-out to work):
 #   - pki/ca.crt           - Certificate Authority (same CA for all clients)

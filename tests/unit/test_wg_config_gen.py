@@ -294,7 +294,7 @@ class TestGenerateDpiClientConfig:
             dns_servers=["10.8.0.1"],
         )
 
-        assert "# DPI Bypass Configuration" in config
+        assert "# WireGuard over HTTPS" in config
         assert "wstunnel client" in config
         assert "wss://vpn.example.com" in config
 

@@ -10,18 +10,22 @@
 """
 Generate OpenVPN and WireGuard client configurations.
 
-Generates shared client configs for multi-user access via OAuth2/OIDC.
-All users share the same certificate - user identity is via OIDC SSO.
-Optimized for OpenVPN 2.6.15+ with DCO and 4G/mobile networks.
+Each run issues material for ONE named client: its own certificate and its
+own tls-crypt-v2 key, so a client can be revoked individually. Pass --name
+per user or per device; with OIDC SSO enabled, a live IdP login is required
+on top of the certificate.
+
+Tuned for OpenVPN 2.7+ with DCO, and for 4G/mobile links.
 
 Usage: generate-client [options]
 
-The client name is automatically derived from server CN:
-  vpn.example.com → vpn-example-com
+Without --name the client name derives from the server CN:
+  vpn.example.com -> vpn-example-com
 
 Outputs vary by --protocol flag:
-  openvpn:   6 .ovpn files (3 protocols x 2 tunnel modes)
-  wireguard: 2-4 .conf files (split/full, optionally DPI bypass)
+  openvpn:   6 .ovpn files (3 listeners x 2 tunnel modes)
+  wireguard: 2-4 .conf files (split/full, plus the HTTPS-tunnelled pair
+             when WireGuard-over-HTTPS is enabled)
   all:       both sets of files
 """
 
@@ -381,7 +385,8 @@ def generate_wireguard_configs(
 ) -> None:
     """Generate WireGuard client configuration files.
 
-    Creates split and full tunnel configs, plus DPI bypass variants if enabled.
+    Creates split and full tunnel configs, plus the HTTPS-tunnelled variants
+    when WireGuard-over-HTTPS is enabled.
     If pubkey is provided, uses client-side key generation mode (no private key
     embedded in config).
     """
@@ -457,7 +462,7 @@ def generate_wireguard_configs(
     )
     configs_to_write.append((f"{client_name}-wg-full.conf", full_conf))
 
-    # DPI bypass variants
+    # HTTPS-tunnelled variants (WireGuard inside WebSocket/TLS)
     if cfg.wg_dpi_bypass_enabled:
         dpi_split_conf = wireguard.generate_dpi_client_config(
             client_private_key=client_private,
@@ -523,19 +528,19 @@ def main() -> None:
         description="Generate VPN client configurations (OpenVPN and/or WireGuard)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
-OpenVPN output files (6 total - 3 protocols x 2 tunnel modes):
+OpenVPN output files (6 total - 3 listeners x 2 tunnel modes):
   {{name}}-udp-split.ovpn   - UDP, split tunnel (fastest)
   {{name}}-udp-full.ovpn    - UDP, full tunnel
   {{name}}-tcp-split.ovpn   - TCP {cfg.tcp_port}, split tunnel (proxy fallback)
   {{name}}-tcp-full.ovpn    - TCP {cfg.tcp_port}, full tunnel
-  {{name}}-https-split.ovpn - TCP {cfg.https_port}, split tunnel (DPI bypass)
-  {{name}}-https-full.ovpn  - TCP {cfg.https_port}, full tunnel
+  {{name}}-https-split.ovpn - TCP {cfg.https_port} over TLS, split tunnel
+  {{name}}-https-full.ovpn  - TCP {cfg.https_port} over TLS, full tunnel
 
 WireGuard output files (2-4 total):
   {{name}}-wg-split.conf     - Split tunnel
   {{name}}-wg-full.conf      - Full tunnel
-  {{name}}-wg-dpi-split.conf - DPI bypass, split tunnel (if enabled)
-  {{name}}-wg-dpi-full.conf  - DPI bypass, full tunnel (if enabled)
+  {{name}}-wg-dpi-split.conf - Over HTTPS, split tunnel (if enabled)
+  {{name}}-wg-dpi-full.conf  - Over HTTPS, full tunnel (if enabled)
 
 Protocol Configuration (from environment):
   Server CN:  {cfg.server_cn}
@@ -751,9 +756,7 @@ Examples:
         logger.info(f"    {cfg.output_dir}/{client_name}-tcp-split.ovpn")
         logger.info(f"    {cfg.output_dir}/{client_name}-tcp-full.ovpn")
         logger.info("")
-        logger.info(
-            f"  TCP {cfg.https_port} HTTPS tunnel (DPI bypass, corporate networks):"
-        )
+        logger.info(f"  TCP {cfg.https_port} over TLS (networks that only pass HTTPS):")
         logger.info(f"    {cfg.output_dir}/{client_name}-https-split.ovpn")
         logger.info(f"    {cfg.output_dir}/{client_name}-https-full.ovpn")
 
@@ -781,13 +784,13 @@ Examples:
     if generate_openvpn:
         logger.info("  1. Try UDP first (fastest, lowest latency)")
         logger.info(f"  2. If UDP blocked, try TCP on port {cfg.tcp_port}")
-        logger.info(f"  3. If still blocked, try HTTPS tunnel (TCP {cfg.https_port})")
+        logger.info(f"  3. If still blocked, try over TLS (TCP {cfg.https_port})")
         logger.info("  4. Split = VPN routes only, Full = all traffic through VPN")
     if generate_wg:
         logger.info("  WireGuard: Import .conf into WireGuard client app")
         if cfg.wg_dpi_bypass_enabled:
             logger.info(
-                "  DPI bypass: Run wstunnel first, then activate the -dpi- config"
+                "  Over HTTPS: run wstunnel first, then activate the -dpi- config"
             )
 
 

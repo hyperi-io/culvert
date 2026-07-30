@@ -1,5 +1,5 @@
 # Culvert Server Configuration - TCP 1194 (Proxy Fallback)
-# OpenVPN 2.6.15+ with CNSA 2.0 Security Settings
+# OpenVPN 2.7+ with CNSA 2.0 Security Settings
 #
 # This is a TEMPLATE file - variables are substituted by envsubst at runtime.
 # Do not use this file directly - use the generated server-tcp.conf instead.
@@ -103,8 +103,9 @@ client-config-dir /etc/vpn/server/ccd
 user nobody
 group nogroup
 
-# Persist keys and tun across restarts
-persist-key
+# Keep the tun device across restarts. persist-key is not set: OpenVPN 2.7
+# always persists keys and logs a deprecation warning if it is given. It stays
+# in the push list below, where clients may still be on 2.6.
 persist-tun
 
 # Limit concurrent clients per instance

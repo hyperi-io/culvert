@@ -106,7 +106,7 @@ def _fetch_one(
         result = manager.get_sync(secret_ref, provider=provider_name)
         data = result.data
         if not _validate_pem(data, name):
-            logger.warning(f"Skipping {name} — invalid PEM from '{secret_ref}'")
+            logger.warning(f"Skipping {name} - invalid PEM from '{secret_ref}'")
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
@@ -264,12 +264,12 @@ def init_pki(cfg) -> None:
 
         if ca_crt.exists() and server_crt.exists() and server_key.exists():
             if not fetched:
-                logger.warning("Provider unavailable — using cached local certs")
+                logger.warning("Provider unavailable - using cached local certs")
             else:
                 logger.info("External PKI certs synced successfully")
         else:
             logger.error(
-                "No PKI material available —"
+                "No PKI material available -"
                 " provider failed and no local certs cached."
                 " Ensure the provider is reachable or mount"
                 " certs to the PKI directory."

@@ -10,6 +10,7 @@ import http.client
 import json
 from typing import Any
 
+import lib.health as lib_health
 import pytest
 from lib.health import health, start_observability
 
@@ -40,20 +41,16 @@ def _get(port: int, path: str) -> tuple[int, Any]:
 
 
 class TestObservabilityEndpoints:
-    """The single port serves probes on canonical routes AND aliases."""
+    """The single port serves /livez, /readyz and /metrics - nothing else."""
 
     def test_liveness_ok_before_started(self, obs_server):
         """Liveness passes during init (VPN processes not yet expected)."""
-        status, body = _get(obs_server, "/health/live")
+        status, body = _get(obs_server, "/livez")
         assert status == 200
         assert body["status"] == "alive"
 
-    def test_liveness_canonical_healthz(self, obs_server):
-        status, _ = _get(obs_server, "/healthz")
-        assert status == 200
-
     def test_readiness_503_when_not_ready(self, obs_server):
-        status, body = _get(obs_server, "/health/ready")
+        status, body = _get(obs_server, "/readyz")
         assert status == 503
         assert body["status"] == "not_ready"
 
@@ -63,16 +60,41 @@ class TestObservabilityEndpoints:
         assert status == 200
         assert body["status"] == "ready"
 
-    def test_startup_503_when_not_started(self, obs_server):
-        status, body = _get(obs_server, "/health/startup")
-        assert status == 503
-        assert body["status"] == "starting"
+    @pytest.mark.parametrize(
+        "path",
+        ["/healthz", "/health/live", "/health/ready", "/health/startup"],
+    )
+    def test_retired_paths_404(self, obs_server, path):
+        """A retired probe path must 404, not quietly keep answering 200.
 
-    def test_startup_200_when_started(self, obs_server):
+        An alias that still answers lets a chart probe a name the app no
+        longer serves, and the mismatch stays invisible until something
+        else breaks.
+        """
+        status, _ = _get(obs_server, path)
+        assert status == 404
+
+    def test_startup_state_readable_without_a_route(self, obs_server):
+        """Startup has no endpoint of its own; the state lives on the manager."""
+        assert health.is_started() is False
         health.set_started()
-        status, body = _get(obs_server, "/health/startup")
+        assert health.is_started() is True
+
+    def test_liveness_200_once_started_with_vpn_alive(self, obs_server, monkeypatch):
+        """After set_started, liveness reflects the VPN process check."""
+        monkeypatch.setattr(lib_health, "_check_vpn_alive", lambda: True)
+        health.set_started()
+        status, body = _get(obs_server, "/livez")
         assert status == 200
-        assert body["status"] == "started"
+        assert body["status"] == "alive"
+
+    def test_liveness_503_once_started_with_vpn_dead(self, obs_server, monkeypatch):
+        """A dead VPN after startup must fail liveness so the pod restarts."""
+        monkeypatch.setattr(lib_health, "_check_vpn_alive", lambda: False)
+        health.set_started()
+        status, body = _get(obs_server, "/livez")
+        assert status == 503
+        assert body["status"] == "not_alive"
 
     def test_404_on_unknown_path(self, obs_server):
         status, _ = _get(obs_server, "/unknown")
@@ -84,15 +106,15 @@ class TestObservabilityEndpoints:
         assert status == 404
 
     def test_readiness_transitions(self, obs_server):
-        status1, _ = _get(obs_server, "/health/ready")
+        status1, _ = _get(obs_server, "/readyz")
         assert status1 == 503
 
         health.set_ready()
-        status2, _ = _get(obs_server, "/health/ready")
+        status2, _ = _get(obs_server, "/readyz")
         assert status2 == 200
 
         health.set_ready(False)
-        status3, _ = _get(obs_server, "/health/ready")
+        status3, _ = _get(obs_server, "/readyz")
         assert status3 == 503
 
 
