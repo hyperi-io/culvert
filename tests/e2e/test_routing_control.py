@@ -28,9 +28,9 @@ import pytest
 COMPOSE_DIR = Path(__file__).parent
 COMPOSE_FILE = COMPOSE_DIR / "docker-compose.routing.yml"
 PROJECT = "culvert-rc-e2e"
-RECEIVER_URL = "http://172.32.1.20/"
+RECEIVER_URL = "http://172.29.1.20/"
 TARGET_RESPONSE = "culvert-e2e-target-ok"
-ADMIN_ROUTE_GW = "172.32.2.10"
+ADMIN_ROUTE_GW = "172.29.2.10"
 TUN_SUBNET = "10.8.0.0/24"
 
 

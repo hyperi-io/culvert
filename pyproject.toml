@@ -70,4 +70,13 @@ markers = [
     "e2e: end-to-end tests requiring Docker (deselect with -m 'not e2e')",
     "k8s: tests that install the Helm chart on a real cluster; needs a kubeconfig and CULVERT_K8S_* settings, never runs in CI (deselect with -m 'not k8s')",
 ]
-filterwarnings = ["ignore::DeprecationWarning"]
+# A deprecation in our own code is a defect, so it fails the suite rather than
+# accumulating unseen - the previous blanket ignore hid the signal entirely.
+# Third-party ones are surfaced but not fatal: we cannot fix them here and a hard
+# failure would block on someone else's release. Add a namespace below when a new
+# dependency starts warning; the failure names the module.
+filterwarnings = [
+    "error::DeprecationWarning",
+    "default::DeprecationWarning:scalo.*",
+    "default::DeprecationWarning:dynaconf.*",
+]

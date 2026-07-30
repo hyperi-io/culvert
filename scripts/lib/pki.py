@@ -203,14 +203,24 @@ def fetch_external_pki(cfg) -> bool:
         # key, and a client config only works against the server that issued it.
         # Supply it here to run more than one server behind one address.
         if cfg.secrets_tc_key_path:
-            _fetch_one(
+            # Required once configured. Asking for a shared key and silently
+            # getting a locally minted one is worse than not asking: the install
+            # comes up healthy and rejects clients at random, which is the exact
+            # failure the setting exists to prevent.
+            if not _fetch_one(
                 manager,
                 provider_name,
                 cfg.secrets_tc_key_path,
                 cfg.pki_dir / "tc.key",
                 0o600,
                 "tls-crypt-v2 server key",
-            )
+            ):
+                logger.error(
+                    "CULVERT_SECRETS_TC_KEY_PATH is set but the key could not be"
+                    f" fetched from '{cfg.secrets_tc_key_path}'. Refusing to mint"
+                    " a local one - siblings would reject each other's clients."
+                )
+                required_ok = False
         else:
             logger.info("  tls-crypt-v2 key: not configured (minted locally)")
 
@@ -297,7 +307,9 @@ def init_pki(cfg) -> None:
             )
             sys.exit(1)
 
-        # tls-crypt-v2 key is always local
+        # Mint a tls-crypt-v2 key only if the provider did not supply one. A
+        # locally minted key is fine for a single server and wrong for several:
+        # a client's key derives from it, so siblings reject each other's clients.
         tc_key = cfg.pki_dir / "tc.key"
         if not tc_key.exists():
             generate_tc_key(cfg.pki_dir)

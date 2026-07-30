@@ -19,9 +19,11 @@ RUN apt-get update \
     && mkdir -p /etc/apt/keyrings \
     && curl --proto '=https' --tlsv1.2 -fsSL --max-time 30 \
          https://swupdate.openvpn.net/repos/repo-public.gpg -o /tmp/openvpn-repo.gpg \
-    && gpg --show-keys --with-colons /tmp/openvpn-repo.gpg \
-       | awk -F: '$1=="fpr"{print $10}' \
-       | grep -qx 30EBF4E73CCE63EEE124DD278E6DA8B4E158C569 \
+    && gpg --show-keys --with-colons /tmp/openvpn-repo.gpg > /tmp/openvpn-repo.keys \
+    && [ "$(grep -c '^pub:' /tmp/openvpn-repo.keys)" = "1" ] \
+    && [ "$(awk -F: '/^pub:/{p=1;next} /^fpr:/&&p{print $10;exit}' /tmp/openvpn-repo.keys)" \
+         = "30EBF4E73CCE63EEE124DD278E6DA8B4E158C569" ] \
+    && rm /tmp/openvpn-repo.keys \
     && gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg /tmp/openvpn-repo.gpg \
     && rm /tmp/openvpn-repo.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/openvpn.gpg] https://build.openvpn.net/debian/openvpn/stable $(lsb_release -cs) main" \

@@ -526,19 +526,31 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "{{- $env := default dict .Values.env }}\n"
         '{{- $external := or .Values.pkiSecret (eq (default "local"'
         ' $env.CULVERT_PKI_MODE) "external") }}\n'
+        "{{- /* A tc-key path only does anything in external PKI mode - local mode\n"
+        "     never consults the secrets provider - so it counts as shared only\n"
+        "     there. Otherwise the guard would accept a setting the runtime\n"
+        "     ignores and pass a multi-replica install straight through. */}}\n"
         "{{- $sharedTcKey := or .Values.pkiSecret"
-        " $env.CULVERT_SECRETS_TC_KEY_PATH }}\n"
+        " (and $external $env.CULVERT_SECRETS_TC_KEY_PATH) }}\n"
         "{{- $replicas := .Values.replicaCount }}\n"
         "{{- if .Values.autoscaling.enabled }}"
-        "{{- $replicas = .Values.autoscaling.minReplicas }}{{- end }}\n"
+        "{{- $replicas = .Values.autoscaling.maxReplicas }}{{- end }}\n"
         "{{- if .Values.keda.enabled }}{{- $replicas = 2 }}{{- end }}\n"
-        "{{- if and (not $external) (not .Values.persistence.enabled)"
-        " (gt (int $replicas) 1) }}\n"
-        '{{- fail (printf "culvert: %d replicas with local PKI and no'
-        " persistence. Each replica would mint its own CA, so clients would"
-        " trust whichever pod answered first. Either supply shared PKI material"
-        " (pkiSecret), or set persistence.enabled=true and stay at one"
-        ' replica." (int $replicas)) }}\n'
+        "{{- /* maxReplicas, not minReplicas: the guards below are about what the\n"
+        "     autoscaler CAN reach, not where it starts. minReplicas defaults to 1,\n"
+        "     so checking the floor let an HPA scale to 10 single-CA replicas with\n"
+        "     no complaint. KEDA counts as 2 - enough to trip the guard - because\n"
+        "     its ceiling lives in the ScaledObject, not here. */}}\n"
+        "{{- /* Persistence does NOT excuse this. A PVC keeps ONE replica's CA\n"
+        "     across restarts; it is ReadWriteOnce, and several replicas sharing\n"
+        "     one PKI directory is not a supported shape. The message always said\n"
+        '     "stay at one replica" - the condition now agrees with it. */}}\n'
+        "{{- if and (not $external) (gt (int $replicas) 1) }}\n"
+        '{{- fail (printf "culvert: %d replicas with local PKI. Each replica'
+        " mints its own CA, so clients would trust whichever pod answered first."
+        " Either supply shared PKI material (pkiSecret), or stay at one replica"
+        " - persistence.enabled keeps that one replica's CA across restarts.\""
+        " (int $replicas)) }}\n"
         "{{- end }}\n"
         "{{- if and (gt (int $replicas) 1) (not $sharedTcKey) }}\n"
         '{{- fail (printf "culvert: %d replicas with no shared tls-crypt-v2'

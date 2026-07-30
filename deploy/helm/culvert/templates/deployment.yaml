@@ -1,11 +1,24 @@
 {{- $env := default dict .Values.env }}
 {{- $external := or .Values.pkiSecret (eq (default "local" $env.CULVERT_PKI_MODE) "external") }}
-{{- $sharedTcKey := or .Values.pkiSecret $env.CULVERT_SECRETS_TC_KEY_PATH }}
+{{- /* A tc-key path only does anything in external PKI mode - local mode
+     never consults the secrets provider - so it counts as shared only
+     there. Otherwise the guard would accept a setting the runtime
+     ignores and pass a multi-replica install straight through. */}}
+{{- $sharedTcKey := or .Values.pkiSecret (and $external $env.CULVERT_SECRETS_TC_KEY_PATH) }}
 {{- $replicas := .Values.replicaCount }}
-{{- if .Values.autoscaling.enabled }}{{- $replicas = .Values.autoscaling.minReplicas }}{{- end }}
+{{- if .Values.autoscaling.enabled }}{{- $replicas = .Values.autoscaling.maxReplicas }}{{- end }}
 {{- if .Values.keda.enabled }}{{- $replicas = 2 }}{{- end }}
-{{- if and (not $external) (not .Values.persistence.enabled) (gt (int $replicas) 1) }}
-{{- fail (printf "culvert: %d replicas with local PKI and no persistence. Each replica would mint its own CA, so clients would trust whichever pod answered first. Either supply shared PKI material (pkiSecret), or set persistence.enabled=true and stay at one replica." (int $replicas)) }}
+{{- /* maxReplicas, not minReplicas: the guards below are about what the
+     autoscaler CAN reach, not where it starts. minReplicas defaults to 1,
+     so checking the floor let an HPA scale to 10 single-CA replicas with
+     no complaint. KEDA counts as 2 - enough to trip the guard - because
+     its ceiling lives in the ScaledObject, not here. */}}
+{{- /* Persistence does NOT excuse this. A PVC keeps ONE replica's CA
+     across restarts; it is ReadWriteOnce, and several replicas sharing
+     one PKI directory is not a supported shape. The message always said
+     "stay at one replica" - the condition now agrees with it. */}}
+{{- if and (not $external) (gt (int $replicas) 1) }}
+{{- fail (printf "culvert: %d replicas with local PKI. Each replica mints its own CA, so clients would trust whichever pod answered first. Either supply shared PKI material (pkiSecret), or stay at one replica - persistence.enabled keeps that one replica's CA across restarts." (int $replicas)) }}
 {{- end }}
 {{- if and (gt (int $replicas) 1) (not $sharedTcKey) }}
 {{- fail (printf "culvert: %d replicas with no shared tls-crypt-v2 server key. Each replica mints its own, and a client config only works against the replica that issued it, so connections would fail at random. Set pkiSecret to a Secret carrying tc.key, or point env.CULVERT_SECRETS_TC_KEY_PATH at a shared one in your secrets backend." (int $replicas)) }}

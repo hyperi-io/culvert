@@ -153,10 +153,11 @@ def helm_values() -> list[str]:
     if pull_secret:
         args += ["--set", f"imagePullSecrets[0].name={pull_secret}"]
 
-    # The chart no longer requests net.ipv4.ip_forward by default - it is an
-    # unsafe sysctl and a kubelet without --allowed-unsafe-sysctls rejects the
-    # pod, so the entrypoint sets it at runtime instead. Where the cluster does
-    # permit it, ask for it declaratively and cover that path too.
+    # The chart does not request net.ipv4.ip_forward by default - it is an unsafe
+    # sysctl and a kubelet without --allowed-unsafe-sysctls rejects the pod, so a
+    # privileged init container sets it in the pod's network namespace instead.
+    # Where the cluster does permit the sysctl, ask for it declaratively and cover
+    # that path too.
     if os.environ.get("CULVERT_K8S_ALLOW_UNSAFE_SYSCTLS", "").lower() == "true":
         args += [
             "--set-json",

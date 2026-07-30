@@ -203,6 +203,23 @@ class TestFlowAffinity:
 class TestSharedPkiMaterial:
     """More than one replica only works when every one holds the same material."""
 
+    def test_guard_counts_the_autoscaler_ceiling_not_its_floor(self):
+        """minReplicas defaults to 1, so a floor check waves an HPA straight past.
+
+        `--set autoscaling.enabled=true` alone rendered a Deployment plus an HPA
+        that could reach 10 local-PKI replicas, each minting its own CA - the
+        exact failure the guard's message describes preventing.
+        """
+        text = (CHART_DIR / "templates" / "deployment.yaml").read_text(encoding="utf-8")
+        assert "autoscaling.maxReplicas" in text, (
+            "the replica guard does not read autoscaling.maxReplicas, so an HPA"
+            " can scale past it unchecked"
+        )
+        assert "autoscaling.minReplicas" not in text, (
+            "the replica guard still reads minReplicas, which is the floor and"
+            " not what the autoscaler can reach"
+        )
+
     def test_pki_secret_is_off_by_default(self, values):
         """The five-minute path is a single server minting its own PKI."""
         assert values["pkiSecret"] == ""

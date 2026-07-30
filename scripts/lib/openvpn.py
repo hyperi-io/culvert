@@ -23,6 +23,11 @@ from scalo.logger import logger
 from lib.network import cidr_to_netmask
 from lib.process import run, write_secret
 
+# Each listener's template names its own log file (openvpn.log, openvpn-tcp.log,
+# openvpn-https.log), so the log-mode rewrite matches the directive rather than
+# any one path.
+_LOG_APPEND = re.compile(r"^log-append\s+(\S+)\s*$", re.MULTILINE)
+
 
 def generate_config(template_path: Path, output_path: Path, variables: dict) -> None:
     """Generate config from template using simple variable substitution."""
@@ -54,6 +59,41 @@ def _common_variables(cfg) -> dict:
         "OPENVPN_VERB": cfg.verb,
         "OPENVPN_MUTE": cfg.mute,
     }
+
+
+def _apply_log_mode(content: str, cfg, listener: str = "") -> str:
+    """Point a listener's OpenVPN log at stdout, a file, or both.
+
+    Every listener writes to its own log file, so the rewrite matches whatever
+    ``log-append`` line the template carries rather than one hardcoded path. Done
+    per listener because a stdout-only deployment that still sent the TCP and
+    HTTPS listeners to a file would hide their failures completely: the file is
+    inside a container nobody can reach once it has exited.
+
+    Args:
+        content: Rendered server config.
+        cfg: Runtime config carrying ``log_mode`` and ``log_dir``.
+        listener: Name for the log line ("" for the default UDP listener).
+
+    Returns:
+        The config with its logging destination applied.
+    """
+    prefix = f"{listener}: " if listener else ""
+    match = _LOG_APPEND.search(content)
+
+    if cfg.log_mode == "stdout":
+        if match:
+            content = _LOG_APPEND.sub("# log-append disabled (stdout mode)", content)
+        logger.info(f"{prefix}Logging mode: stdout (K8s)")
+    elif cfg.log_mode == "both":
+        if not match:
+            content += f"\nlog-append {cfg.log_dir}/openvpn.log\n"
+        logger.info(f"{prefix}Logging mode: stdout + file")
+    else:
+        target = match.group(1) if match else f"{cfg.log_dir}/openvpn.log"
+        logger.info(f"{prefix}Logging mode: file ({target})")
+
+    return content
 
 
 def _apply_common_options(content: str, cfg, listener: str = "") -> str:
@@ -112,18 +152,7 @@ def configure_server_udp(cfg) -> None:
         generate_config(template, tmp_path, variables)
 
         content = tmp_path.read_text()
-        if cfg.log_mode == "stdout":
-            content = content.replace(
-                "log-append /var/log/vpn/openvpn.log",
-                "# log-append disabled (stdout mode)",
-            )
-            logger.info("Logging mode: stdout (K8s)")
-        elif cfg.log_mode == "both":
-            content += "\nlog-append /var/log/vpn/openvpn.log\n"
-            logger.info("Logging mode: stdout + file")
-        else:
-            logger.info(f"Logging mode: file ({cfg.log_dir}/openvpn.log)")
-
+        content = _apply_log_mode(content, cfg)
         content = _apply_common_options(content, cfg)
         if cfg.full_tunnel:
             logger.info("Full tunnel mode enabled")
