@@ -13,7 +13,8 @@ import time
 from pathlib import Path
 
 COMPOSE_DIR = Path(__file__).parent
-TARGET_URL = "http://172.30.0.20/"
+TARGET_IP = "172.30.0.20"
+TARGET_URL = f"http://{TARGET_IP}/"
 TARGET_RESPONSE = "culvert-e2e-target-ok"
 
 # The server as the client sees it, on the shared external network.
@@ -49,6 +50,41 @@ def curl_target(timeout: int = 5) -> str | None:
     if result.returncode == 0:
         return result.stdout.strip()
     return None
+
+
+def assert_tunnel_mode(interface: str, mode: str) -> None:
+    """Check the tunnel routes the way the requested mode says it should.
+
+    Without this the two modes are indistinguishable from a connectivity test: a
+    split config that accidentally pulled a default route down would still reach
+    the target and still pass, and so would a full config that only routed the
+    pushed prefix.
+
+    Args:
+        interface: tun0 or wg0.
+        mode: "split" or "full".
+    """
+    to_target = docker_exec(
+        "e2e-vpn-client", f"ip route get {TARGET_IP}", check=False
+    ).stdout
+    assert f"dev {interface}" in to_target, (
+        f"{mode} tunnel does not route the target through {interface}:\n{to_target}"
+    )
+
+    # 1.1.1.1 stands in for "anywhere else". Nothing is sent to it.
+    elsewhere = docker_exec(
+        "e2e-vpn-client", "ip route get 1.1.1.1", check=False
+    ).stdout
+    if mode == "full":
+        assert f"dev {interface}" in elsewhere, (
+            "full tunnel is not carrying the default route - traffic outside the"
+            f" pushed prefixes still leaves directly:\n{elsewhere}"
+        )
+    else:
+        assert f"dev {interface}" not in elsewhere, (
+            "split tunnel has captured the default route, so it is behaving as a"
+            f" full tunnel and this test is not covering split at all:\n{elsewhere}"
+        )
 
 
 def wait_for_tunnel(interface: str = "tun0", timeout: int = 30) -> str:

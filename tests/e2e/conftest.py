@@ -96,9 +96,12 @@ def compose_stack():
     # on their absence would let a broken generator look green.
     expected = [
         f"{CLIENT_NAME}-udp-split.ovpn",
+        f"{CLIENT_NAME}-udp-full.ovpn",
         f"{CLIENT_NAME}-tcp-split.ovpn",
         f"{CLIENT_NAME}-https-split.ovpn",
         f"{CLIENT_NAME}-stunnel.conf",
+        f"{CLIENT_NAME}-wg-split.conf",
+        f"{CLIENT_NAME}-wg-full.conf",
         f"{CLIENT_NAME}-wg-https-split.conf",
     ]
     result = subprocess.run(
@@ -126,6 +129,18 @@ def openvpn_udp_connection():
     from helpers import connect_openvpn, disconnect_openvpn
 
     connect_openvpn(f"{CLIENT_NAME}-udp-split.ovpn")
+    try:
+        yield
+    finally:
+        disconnect_openvpn()
+
+
+@pytest.fixture
+def openvpn_udp_full_connection():
+    """Connect OpenVPN UDP in FULL-tunnel mode, yield, then disconnect."""
+    from helpers import connect_openvpn, disconnect_openvpn
+
+    connect_openvpn(f"{CLIENT_NAME}-udp-full.ovpn")
     try:
         yield
     finally:
@@ -168,6 +183,19 @@ def wireguard_connection():
     from helpers import connect_wireguard, disconnect_wireguard
 
     config_name = f"{CLIENT_NAME}-wg-split.conf"
+    connect_wireguard(config_name)
+    try:
+        yield
+    finally:
+        disconnect_wireguard(config_name)
+
+
+@pytest.fixture
+def wireguard_full_connection():
+    """Connect WireGuard in FULL-tunnel mode, yield, then disconnect."""
+    from helpers import connect_wireguard, disconnect_wireguard
+
+    config_name = f"{CLIENT_NAME}-wg-full.conf"
     connect_wireguard(config_name)
     try:
         yield

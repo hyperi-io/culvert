@@ -345,6 +345,63 @@ def _connect_openvpn(kubectl: Kubectl, pod: str, config: str) -> None:
     )
 
 
+def _write_wireguard_config(kubectl: Kubectl, pod: str, config: str) -> None:
+    """Install a generated WireGuard config where wg-quick expects it.
+
+    The DNS line goes: wg-quick shells out to resolvconf for it and the image
+    has no resolvconf. Everything else is used as issued.
+    """
+    subprocess.run(
+        [
+            "kubectl",
+            "--context",
+            kubectl.context,
+            "-n",
+            kubectl.namespace,
+            "exec",
+            "-i",
+            pod,
+            "--",
+            "bash",
+            "-c",
+            "mkdir -p /etc/wireguard && sed '/^DNS/d' > /etc/wireguard/wg0.conf",
+        ],
+        input=config,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+
+
+def _assert_tunnel_mode(
+    kubectl: Kubectl, pod: str, iface: str, mode: str, target: str
+) -> None:
+    """Check the tunnel routes the way the requested mode says it should.
+
+    Without this the two modes are indistinguishable: a split config that
+    accidentally pulled a default route down would still reach the target and
+    still pass, and so would a full config that only routed the pushed prefix.
+    """
+    to_target = _exec(kubectl, pod, f"ip route get {target}", check=False).stdout
+    assert f"dev {iface}" in to_target, (
+        f"{mode} tunnel does not route the target through {iface}:\n{to_target}"
+    )
+
+    # 1.1.1.1 stands in for "anywhere else". Nothing is sent to it.
+    elsewhere = _exec(kubectl, pod, "ip route get 1.1.1.1", check=False).stdout
+    if mode == "full":
+        assert f"dev {iface}" in elsewhere, (
+            "full tunnel is not carrying the default route - traffic outside the"
+            f" pushed prefixes still leaves directly:\n{elsewhere}"
+        )
+    else:
+        assert f"dev {iface}" not in elsewhere, (
+            "split tunnel has captured the default route, so it is behaving as a"
+            f" full tunnel and this test is not covering split at all:\n{elsewhere}"
+        )
+
+
 def _wait_for_tun(kubectl: Kubectl, pod: str, timeout: int = 60) -> str:
     """Poll for a tun0 address, returning it, or fail with the OpenVPN log."""
     deadline = time.monotonic() + timeout
@@ -387,17 +444,25 @@ class TestOpenVPNTunnelLocalPKI:
             " Does this cluster's CNI implement NetworkPolicy?"
         )
 
+    @pytest.mark.parametrize("mode", ["split", "full"])
     def test_openvpn_tunnel_carries_traffic(
-        self, kubectl, client_pod, target, deployed
+        self, kubectl, client_pod, target, deployed, mode
     ):
-        """Issue a config, connect, and require the target to answer over tun0."""
-        config = _issue_and_fetch_config(kubectl, release_name(), "udp-full.ovpn")
+        """Issue a config, connect, and require the target to answer over tun0.
+
+        Both tunnel modes, because they route by different means and only one of
+        them was ever exercised here: full tunnel pulls a default route down
+        (``redirect-gateway``), while split tunnel carries only the routes the
+        server pushes. A bug in either is invisible from the other.
+        """
+        config = _issue_and_fetch_config(kubectl, release_name(), f"udp-{mode}.ovpn")
         _connect_openvpn(kubectl, client_pod, config)
         try:
             addr = _wait_for_tun(kubectl, client_pod)
             assert addr.startswith("10.8.0."), (
                 f"tun0 address {addr} is not from the UDP listener's pool"
             )
+            _assert_tunnel_mode(kubectl, client_pod, "tun0", mode, target)
 
             result = _exec(
                 kubectl,
@@ -407,22 +472,29 @@ class TestOpenVPNTunnelLocalPKI:
             )
             log = _exec(kubectl, client_pod, "cat /tmp/openvpn.log", check=False).stdout
             assert TARGET_RESPONSE in result.stdout, (
-                f"target did not answer through the tunnel. curl: {result.stdout!r}"
-                f" {result.stderr!r}\nOpenVPN log:\n{log}"
+                f"target did not answer through the {mode} tunnel."
+                f" curl: {result.stdout!r} {result.stderr!r}\nOpenVPN log:\n{log}"
             )
         finally:
-            # The same client pod is reused for the external-PKI tunnel, so this
-            # connection has to be gone before that one comes up.
+            # The client pod is reused by every tunnel test here, so this
+            # connection has to be gone before the next one comes up.
             _exec(kubectl, client_pod, "pkill openvpn", check=False)
 
 
 class TestWireGuardTunnel:
     """The WireGuard path, same standard: real handshake, real traffic."""
 
+    @pytest.mark.parametrize("mode", ["split", "full"])
     def test_wireguard_tunnel_carries_traffic(
-        self, kubectl, client_pod, target, deployed
+        self, kubectl, client_pod, target, deployed, mode
     ):
-        """Bring wg0 up from a generated config and reach the target."""
+        """Bring wg0 up from a generated config and reach the target.
+
+        Both modes: the split config's AllowedIPs is built from the pushed
+        routes plus the WireGuard subnet, the full config's is 0.0.0.0/0, and
+        wg-quick routes the two completely differently - a plain route for split,
+        an fwmark and a policy rule for full.
+        """
         protocol = os.environ.get("CULVERT_K8S_PROTOCOL", "both").strip() or "both"
         if protocol not in ("both", "wireguard"):
             pytest.skip(
@@ -430,49 +502,34 @@ class TestWireGuardTunnel:
                 " 'both' or 'wireguard' to cover this path"
             )
 
-        config = _issue_and_fetch_config(kubectl, release_name(), "wg-full.conf")
-        subprocess.run(
-            [
-                "kubectl",
-                "--context",
-                kubectl.context,
-                "-n",
-                kubectl.namespace,
-                "exec",
-                "-i",
-                client_pod,
-                "--",
-                "bash",
-                "-c",
-                "mkdir -p /etc/wireguard && sed '/^DNS/d' > /etc/wireguard/wg0.conf",
-            ],
-            input=config,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=60,
-        )
+        config = _issue_and_fetch_config(kubectl, release_name(), f"wg-{mode}.conf")
+        _write_wireguard_config(kubectl, client_pod, config)
         up = _exec(kubectl, client_pod, "wg-quick up wg0", check=False, timeout=120)
         if up.returncode != 0:
             pytest.skip(
                 "wg-quick could not bring the interface up - the node kernel may"
                 f" lack the wireguard module:\n{up.stdout}\n{up.stderr}"
             )
-        # The pod's init container should have set this. Assert it, because
-        # without it the handshake still succeeds and only the data path fails,
-        # which reads as a server fault when it is not one.
-        mark = _exec(
-            kubectl,
-            client_pod,
-            "cat /proc/sys/net/ipv4/conf/all/src_valid_mark",
-            check=False,
-        ).stdout.strip()
-        assert mark == "1", (
-            "net.ipv4.conf.all.src_valid_mark is not set in the client pod, so"
-            " rp_filter will drop the tunnel's return traffic and this test"
-            " would fail for a reason that has nothing to do with the server"
-        )
         try:
+            if mode == "full":
+                # Only the full config routes by fwmark, and only that needs the
+                # sysctl. Assert it, because without it the handshake still
+                # succeeds and only the data path fails, which reads as a server
+                # fault when it is not one.
+                mark = _exec(
+                    kubectl,
+                    client_pod,
+                    "cat /proc/sys/net/ipv4/conf/all/src_valid_mark",
+                    check=False,
+                ).stdout.strip()
+                assert mark == "1", (
+                    "net.ipv4.conf.all.src_valid_mark is not set in the client"
+                    " pod, so rp_filter will drop the tunnel's return traffic and"
+                    " this test would fail for a reason that has nothing to do"
+                    " with the server"
+                )
+            _assert_tunnel_mode(kubectl, client_pod, "wg0", mode, target)
+
             result = _exec(
                 kubectl,
                 client_pod,
@@ -480,7 +537,7 @@ class TestWireGuardTunnel:
                 check=False,
             )
             assert TARGET_RESPONSE in result.stdout, (
-                "target did not answer over WireGuard."
+                f"target did not answer over the {mode} WireGuard tunnel."
                 f" wg: {_exec(kubectl, client_pod, 'wg show', check=False).stdout}"
             )
         finally:

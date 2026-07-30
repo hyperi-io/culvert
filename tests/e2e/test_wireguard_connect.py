@@ -11,6 +11,7 @@
 import pytest
 from helpers import (
     TARGET_RESPONSE,
+    assert_tunnel_mode,
     curl_target,
     docker_exec,
     has_wireguard_module,
@@ -43,6 +44,33 @@ class TestWireGuard:
         """Client connects via WireGuard and reaches target."""
         ip = wait_for_tunnel("wg0", timeout=15)
         assert ip.startswith("10.8.3."), f"Expected IP in 10.8.3.0/24, got {ip}"
+        assert_tunnel_mode("wg0", "split")
+
+        body = curl_target()
+        assert body == TARGET_RESPONSE, f"Expected '{TARGET_RESPONSE}', got '{body}'"
+
+    def test_full_tunnel_connect_and_reach_target(self, wireguard_full_connection):
+        """The full-tunnel config, which wg-quick routes a different way.
+
+        Split gets a plain route for the pushed prefixes; full gets an fwmark and
+        a policy rule, which is also the path that needs
+        net.ipv4.conf.all.src_valid_mark - requested on the client in the compose
+        file, because wg-quick's own attempt to set it fails inside a container.
+        """
+        ip = wait_for_tunnel("wg0", timeout=15)
+        assert ip.startswith("10.8.3."), f"Expected IP in 10.8.3.0/24, got {ip}"
+
+        mark = docker_exec(
+            "e2e-vpn-client",
+            "cat /proc/sys/net/ipv4/conf/all/src_valid_mark",
+            check=False,
+        ).stdout.strip()
+        assert mark == "1", (
+            "net.ipv4.conf.all.src_valid_mark is not 1 in the client container,"
+            " so rp_filter may drop the tunnel's return traffic and a failure"
+            " here would say nothing about the server"
+        )
+        assert_tunnel_mode("wg0", "full")
 
         body = curl_target()
         assert body == TARGET_RESPONSE, f"Expected '{TARGET_RESPONSE}', got '{body}'"

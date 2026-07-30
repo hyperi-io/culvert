@@ -176,6 +176,13 @@ def helm_values() -> list[str]:
             'extraPorts=[{"name":"wireguard","port":51820,"protocol":"UDP"}]',
         ]
 
+    # A split-tunnel client routes only what the server pushes. Pushing the pod
+    # CIDR is what lets it reach the target pod through the tunnel instead of
+    # around it; the full-tunnel configs do not need it and are unaffected.
+    pod_cidr = os.environ.get("CULVERT_K8S_POD_CIDR", "").strip()
+    if pod_cidr:
+        args += ["--set", f"env.CULVERT_PUSH_ROUTES={pod_cidr}"]
+
     return args
 
 

@@ -60,6 +60,13 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun
+    # wg-quick routes a full tunnel (AllowedIPs 0.0.0.0/0) with an fwmark and a
+    # policy rule, which needs this or strict rp_filter discards the encrypted
+    # return traffic. wg-quick sets it itself and the write fails silently in a
+    # container, so it is requested declaratively here - the same reason the Helm
+    # chart uses a privileged init container for it.
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: "1"
     volumes:
       - vpn-clients:/etc/vpn/clients:ro
     depends_on:

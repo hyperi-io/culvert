@@ -11,6 +11,7 @@
 import pytest
 from helpers import (
     TARGET_RESPONSE,
+    assert_tunnel_mode,
     connect_openvpn,
     curl_target,
     disconnect_openvpn,
@@ -43,6 +44,25 @@ class TestOpenVPNUDP:
         """Client connects via UDP and reaches target through tunnel."""
         ip = wait_for_tunnel("tun0", timeout=30)
         assert ip.startswith("10.8.0."), f"Expected IP in 10.8.0.0/24, got {ip}"
+        assert_tunnel_mode("tun0", "split")
+
+        body = curl_target()
+        assert body == TARGET_RESPONSE, (
+            f"Expected '{TARGET_RESPONSE}', got '{body}'. "
+            f"OpenVPN log:\n{get_openvpn_log()}"
+        )
+
+    def test_full_tunnel_connect_and_reach_target(self, openvpn_udp_full_connection):
+        """The full-tunnel config: same reachability, but via a default route.
+
+        Split and full route by different means - a pushed prefix versus
+        redirect-gateway - so a fault in one is invisible from the other. This
+        pair is also what would have caught the block-outside-dns push, which
+        only breaks a full tunnel.
+        """
+        ip = wait_for_tunnel("tun0", timeout=30)
+        assert ip.startswith("10.8.0."), f"Expected IP in 10.8.0.0/24, got {ip}"
+        assert_tunnel_mode("tun0", "full")
 
         body = curl_target()
         assert body == TARGET_RESPONSE, (
