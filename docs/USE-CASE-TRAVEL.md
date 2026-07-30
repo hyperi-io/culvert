@@ -11,7 +11,7 @@ rely on it.
 
 ## 1. Get a real TLS certificate first
 
-The camouflage is only as convincing as the certificate. Get a real cert
+It is only as convincing as the certificate. Get a real cert
 for your server name (Let's Encrypt is fine). A self-signed cert defeats
 the point - an inspector that hits a self-signed cert on port 443 has
 found you.
@@ -24,11 +24,11 @@ Point culvert at the cert and key:
 ```
 
 Mount the actual files into the container at those paths. The same pair
-covers both camouflage listeners.
+covers both HTTPS-tunnelled listeners.
 
 ## 2. Turn on the profile
 
-`CULVERT_PROFILE=travel` runs both protocols with their HTTPS-camouflage
+`CULVERT_PROFILE=travel` runs both protocols with their HTTPS-tunnelled
 listeners, a full tunnel (a split tunnel on a censored network leaks
 which sites you reach directly), and mobile-tolerant timers:
 
@@ -36,8 +36,8 @@ which sites you reach directly), and mobile-tolerant timers:
   publish `443/tcp`. On the wire this is a TLS session on the HTTPS port
   with a valid certificate.
 - **WireGuard over WebSocket/TLS on 4443** (wstunnel) -
-  `CULVERT_WG_DPI_BYPASS_ENABLED=true`, publish `4443/tcp`. Same
-  camouflage for the WireGuard path (`4443` avoids colliding with
+  `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true`, publish `4443/tcp`. Same
+  treatment for the WireGuard path (`4443` avoids colliding with
   stunnel on `443`).
 
 Publish the ports you use:
@@ -56,9 +56,9 @@ docker exec -it <container> generate-client --name laptop
 For OpenVPN this emits, among the set, `laptop-https-split.ovpn`,
 `laptop-https-full.ovpn`, and a matching `laptop-stunnel.conf`. For
 WireGuard (the profile runs both protocols) it also emits
-`laptop-wg-dpi-split.conf` and `laptop-wg-dpi-full.conf`.
+`laptop-wg-https-split.conf` and `laptop-wg-https-full.conf`.
 
-## 4. Connect through the camouflage
+## 4. Connect through the tunnel
 
 **OpenVPN** - start stunnel, then connect the HTTPS profile through it:
 
@@ -73,17 +73,17 @@ sudo openvpn --config laptop-https-full.ovpn
 stunnel listens on `127.0.0.1:1195` and forwards to your server on
 `443`; the `.ovpn` connects to that local port.
 
-**WireGuard** - start the wstunnel client, then activate the `-dpi-`
+**WireGuard** - start the wstunnel client, then activate the `-wg-https-`
 config:
 
 ```bash
 wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
-# then activate laptop-wg-dpi-full.conf in your WireGuard client
+# then activate laptop-wg-https-full.conf in your WireGuard client
 ```
 
 Full platform detail (install steps, one-liners, wrapper scripts, the
 Windows path) is in
-[VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md#dpi-bypass-china--restricted-networks).
+[VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md#running-the-vpn-over-https).
 
 ## What this does and does not defeat
 
@@ -96,7 +96,8 @@ Be straight about the threat model:
 - **Does not defeat an active-probing or flow-analysis censor.** A censor
   that actively probes your endpoint, or does long-term traffic-flow
   analysis (timing, volume, connection duration), is playing a different
-  game. Camouflage buys you "not obviously a VPN", not invisibility.
+  game. This buys you "indistinguishable from HTTPS at a glance", not
+  invisibility.
 
 Use it where the barrier is protocol fingerprinting. Do not oversell it
 to yourself where the adversary is nation-state grade and paying
@@ -104,7 +105,7 @@ attention to you specifically.
 
 ## See also
 
-- [VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md#dpi-bypass-china--restricted-networks)
+- [VPN-CLIENT-SETUP.md](VPN-CLIENT-SETUP.md#running-the-vpn-over-https)
   - installing stunnel / wstunnel and connecting on each platform
 - [Cryptography and CNSA 2.0 in the README](../README.md#cryptography-and-cnsa-20)
   - what the crypto does and does not give you

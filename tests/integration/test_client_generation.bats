@@ -137,7 +137,7 @@ teardown_file() {
     generate_test_client "configtest4"
 
     config=$(get_client_config "configtest4" "tcp" "split")
-    # Default TCP port is 443 (DPI bypass)
+    # Default TCP port is 443 (over TLS)
     assert_contains "${config}" "remote test-vpn.example.com 443 tcp"
 }
 

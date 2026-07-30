@@ -280,7 +280,7 @@ def generate_client_config(
     return "\n".join(lines)
 
 
-def generate_dpi_client_config(
+def generate_https_tunnel_client_config(
     client_private_key: str | None,
     client_ip: str,
     server_public_key: str,

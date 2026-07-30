@@ -7,8 +7,8 @@
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
 # Culvert Server
-# OpenVPN 2.7+ with DCO and WireGuard in one image - TLS camouflage,
-# OIDC SSO, external PKI
+# OpenVPN 2.7+ with DCO and WireGuard in one image - each optionally
+# tunnelled over HTTPS - plus OIDC SSO and external PKI
 # Drop-in 'just works' docker or k8s scale deploy
 #
 # Build (production):

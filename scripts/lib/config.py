@@ -255,8 +255,8 @@ class Config:
     wg_network: str = "10.8.3.0/24"
     wg_mtu: int = 1420
     wg_persistent_keepalive: int = 25
-    wg_dpi_bypass_enabled: bool = False
-    wg_dpi_bypass_port: int = 4443
+    wg_https_tunnel_enabled: bool = False
+    wg_https_tunnel_port: int = 4443
     wg_post_up: str = ""
     wg_post_down: str = ""
 
@@ -534,8 +534,8 @@ class Config:
             wg_network=s.get("wg_network", "10.8.3.0/24"),
             wg_mtu=_settings_int(s, "wg_mtu", 1420),
             wg_persistent_keepalive=_settings_int(s, "wg_persistent_keepalive", 25),
-            wg_dpi_bypass_enabled=_settings_bool(s, "wg_dpi_bypass_enabled", False),
-            wg_dpi_bypass_port=_settings_int(s, "wg_dpi_bypass_port", 4443),
+            wg_https_tunnel_enabled=_settings_bool(s, "wg_https_tunnel_enabled", False),
+            wg_https_tunnel_port=_settings_int(s, "wg_https_tunnel_port", 4443),
             wg_post_up=s.get("wg_post_up", ""),
             wg_post_down=s.get("wg_post_down", ""),
             # Observability
@@ -681,18 +681,18 @@ class Config:
             )
 
         # wstunnel serves WSS with the same cert pair; without it the
-        # wstunnel server exits at startup and the DPI-bypass port is dead
-        if self.wg_dpi_bypass_enabled and self.protocol in (
+        # wstunnel server exits at startup and the HTTPS-tunnel port is dead
+        if self.wg_https_tunnel_enabled and self.protocol in (
             "wireguard",
             "both",
         ):
             if not self.stunnel_cert:
                 errors.append(
-                    "CULVERT_STUNNEL_CERT is required when WG DPI bypass enabled"
+                    "CULVERT_STUNNEL_CERT is required when WireGuard over HTTPS enabled"
                 )
             if not self.stunnel_key:
                 errors.append(
-                    "CULVERT_STUNNEL_KEY is required when WG DPI bypass enabled"
+                    "CULVERT_STUNNEL_KEY is required when WireGuard over HTTPS enabled"
                 )
 
         # External PKI validation

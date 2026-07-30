@@ -25,11 +25,11 @@ from helpers import (
     block_plain_vpn_ports,
     connect_openvpn,
     connect_openvpn_https,
-    connect_wireguard_dpi,
+    connect_wireguard_https_tunnel,
     curl_target,
     disconnect_openvpn,
     disconnect_openvpn_https,
-    disconnect_wireguard_dpi,
+    disconnect_wireguard_https_tunnel,
     docker_exec,
     get_openvpn_log,
     has_wireguard_module,
@@ -158,8 +158,8 @@ class TestWireGuardOverHTTPS:
 
     def test_connects_and_reaches_target_when_plain_blocked(self, plain_ports_blocked):
         """WireGuard over WebSocket/TLS with UDP 51820 blocked."""
-        config_name = f"{CLIENT_NAME}-wg-dpi-split.conf"
-        connect_wireguard_dpi(config_name)
+        config_name = f"{CLIENT_NAME}-wg-https-split.conf"
+        connect_wireguard_https_tunnel(config_name)
         try:
             body = curl_target()
             assert body == TARGET_RESPONSE, (
@@ -167,4 +167,4 @@ class TestWireGuardOverHTTPS:
                 " blocked - WireGuard over HTTPS did not carry the traffic"
             )
         finally:
-            disconnect_wireguard_dpi(config_name)
+            disconnect_wireguard_https_tunnel(config_name)

@@ -14,14 +14,19 @@
 # state are per-pod). Most cloud L4 LBs are 5-tuple/connection based;
 # do not front this with a per-packet balancer.
 #
-# NOTE: one Service carries every port, so LoadBalancer also publishes the
-# observability port 9090 (/livez, /readyz, /metrics) unauthenticated.
-# Restrict it with loadBalancerSourceRanges (below), or keep the Service
-# ClusterIP and expose only the VPN port via a Gateway API UDPRoute.
+# One Service carries every port, so LoadBalancer also publishes the
+# observability port 9090 (/livez, /readyz, /metrics) with no authentication
+# in front of it. So this starter ships CLOSED: the placeholder below is not a
+# valid CIDR, so the API server rejects the Service until you replace it with
+# your real client CIDRs. Left as a commented-out suggestion, this would have
+# shipped an unauthenticated health and metrics endpoint onto a public LB.
+#
+# If you would rather not expose 9090 at all, set `service.type: ClusterIP`
+# and publish only the VPN port through a Gateway API UDPRoute.
 service:
   type: LoadBalancer
-  # loadBalancerSourceRanges:
-  #   - 203.0.113.0/24   # your client / admin CIDRs only
+  loadBalancerSourceRanges:
+    - "REPLACE-ME/32"   # your client / admin CIDRs only
 
 # Scale on CPU. Each pod is an independent VPN server, so scaling out
 # adds capacity; existing connections stay on their pod (see the LB note).

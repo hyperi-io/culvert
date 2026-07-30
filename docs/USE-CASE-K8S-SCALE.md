@@ -51,7 +51,7 @@ The chart renders one Service carrying the metrics port (`9090/TCP`),
 `ClusterIP` by default. To reach clients from outside, either:
 
 - set `service.type=LoadBalancer` (the cloud LB fronts the UDP port), or
-- put a Gateway API `UDPRoute` (or TLS passthrough for the camouflage
+- put a Gateway API `UDPRoute` (or TLS passthrough for the HTTPS
   listeners) in front of the ClusterIP Service.
 
 One Service carries every port, so `LoadBalancer` also publishes the
@@ -78,7 +78,7 @@ extraPorts:
 
 The commented block in [values.yaml](../deploy/helm/culvert/values.yaml)
 lists every listener (`openvpn-tcp`, `openvpn-https`, `wireguard`,
-`wg-dpi`, the `oauth2-*` callbacks, `client-download`) with the
+`wg-https`, the `oauth2-*` callbacks, `client-download`) with the
 `CULVERT_*` switch each one pairs with.
 
 ## 5. Scale and observe

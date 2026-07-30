@@ -106,13 +106,13 @@ extraPorts: []
   # - name: openvpn-tcp      # CULVERT_TCP_ENABLED=true
   #   port: 1194
   #   protocol: TCP
-  # - name: openvpn-https    # CULVERT_HTTPS_ENABLED=true (stunnel DPI bypass)
+  # - name: openvpn-https    # CULVERT_HTTPS_ENABLED=true (stunnel, OpenVPN over HTTPS)
   #   port: 443
   #   protocol: TCP
   # - name: wireguard        # CULVERT_PROTOCOL=wireguard or both
   #   port: 51820
   #   protocol: UDP
-  # - name: wg-dpi           # CULVERT_WG_DPI_BYPASS_ENABLED=true (wstunnel)
+  # - name: wg-https           # CULVERT_WG_HTTPS_TUNNEL_ENABLED=true (wstunnel)
   #   port: 4443
   #   protocol: TCP
   # - name: oauth2-udp       # CULVERT_OAUTH2_ENABLED=true

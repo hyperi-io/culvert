@@ -113,7 +113,7 @@ def compose_stack():
         f"{CLIENT_NAME}-tcp-split.ovpn",
         f"{CLIENT_NAME}-https-split.ovpn",
         f"{CLIENT_NAME}-stunnel.conf",
-        f"{CLIENT_NAME}-wg-dpi-split.conf",
+        f"{CLIENT_NAME}-wg-https-split.conf",
     ]
     result = subprocess.run(
         ["docker", "exec", "e2e-vpn-client", "ls", "/etc/vpn/clients/"],
@@ -190,13 +190,16 @@ def wireguard_connection():
 
 
 @pytest.fixture
-def wireguard_dpi_connection():
-    """Connect WireGuard via DPI bypass (wstunnel), yield, then disconnect."""
-    from helpers import connect_wireguard_dpi, disconnect_wireguard_dpi
+def wireguard_https_tunnel_connection():
+    """Connect WireGuard over HTTPS (wstunnel), yield, then disconnect."""
+    from helpers import (
+        connect_wireguard_https_tunnel,
+        disconnect_wireguard_https_tunnel,
+    )
 
-    config_name = f"{CLIENT_NAME}-wg-dpi-split.conf"
-    connect_wireguard_dpi(config_name)
+    config_name = f"{CLIENT_NAME}-wg-https-split.conf"
+    connect_wireguard_https_tunnel(config_name)
     try:
         yield
     finally:
-        disconnect_wireguard_dpi(config_name)
+        disconnect_wireguard_https_tunnel(config_name)

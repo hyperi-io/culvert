@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates resolvconf \
     && rm -rf /var/lib/apt/lists/*
 
-# wstunnel client for WireGuard DPI bypass testing. Same pinned version and
+# wstunnel client for WireGuard over HTTPS testing. Same pinned version and
 # checksum check as the server image, so the test exercises what ships.
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \

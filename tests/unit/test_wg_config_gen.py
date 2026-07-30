@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"
 
 from lib.wireguard import (
     generate_client_config,
-    generate_dpi_client_config,
+    generate_https_tunnel_client_config,
     generate_server_config,
 )
 
@@ -266,12 +266,12 @@ class TestGenerateClientConfig:
         assert "Address = 10.8.0.5/32" in config
 
 
-class TestGenerateDpiClientConfig:
-    """Tests for generate_dpi_client_config."""
+class TestGenerateHttpsTunnelClientConfig:
+    """Tests for generate_https_tunnel_client_config."""
 
     def test_endpoint_is_localhost(self) -> None:
-        """DPI config uses 127.0.0.1:51820 as endpoint for wstunnel."""
-        config = generate_dpi_client_config(
+        """HTTPS-tunnel config uses 127.0.0.1:51820 as endpoint for wstunnel."""
+        config = generate_https_tunnel_client_config(
             client_private_key=FAKE_CLIENT_PRIV,
             client_ip="10.8.0.2",
             server_public_key=FAKE_SERVER_PUB,
@@ -284,8 +284,8 @@ class TestGenerateDpiClientConfig:
         assert "vpn.example.com:51820" not in config.split("\n[")[1]
 
     def test_wstunnel_instructions_in_comments(self) -> None:
-        """DPI config has wstunnel instructions as comments at the top."""
-        config = generate_dpi_client_config(
+        """HTTPS-tunnel config has wstunnel instructions as comments at the top."""
+        config = generate_https_tunnel_client_config(
             client_private_key=FAKE_CLIENT_PRIV,
             client_ip="10.8.0.2",
             server_public_key=FAKE_SERVER_PUB,
@@ -300,7 +300,7 @@ class TestGenerateDpiClientConfig:
 
     def test_wstunnel_port_in_command(self) -> None:
         """The wstunnel command uses the specified wstunnel port."""
-        config = generate_dpi_client_config(
+        config = generate_https_tunnel_client_config(
             client_private_key=FAKE_CLIENT_PRIV,
             client_ip="10.8.0.2",
             server_public_key=FAKE_SERVER_PUB,
@@ -312,9 +312,9 @@ class TestGenerateDpiClientConfig:
 
         assert "wss://vpn.example.com:8443" in config
 
-    def test_dpi_config_has_interface_and_peer(self) -> None:
-        """DPI config still contains valid [Interface] and [Peer] sections."""
-        config = generate_dpi_client_config(
+    def test_https_config_has_interface_and_peer(self) -> None:
+        """HTTPS-tunnel config still contains valid [Interface] and [Peer] sections."""
+        config = generate_https_tunnel_client_config(
             client_private_key=FAKE_CLIENT_PRIV,
             client_ip="10.8.0.2",
             server_public_key=FAKE_SERVER_PUB,
@@ -328,9 +328,9 @@ class TestGenerateDpiClientConfig:
         assert f"PrivateKey = {FAKE_CLIENT_PRIV}" in config
         assert f"PublicKey = {FAKE_SERVER_PUB}" in config
 
-    def test_dpi_pubkey_mode(self) -> None:
-        """DPI config uses placeholder when private key is None."""
-        config = generate_dpi_client_config(
+    def test_https_config_pubkey_mode(self) -> None:
+        """HTTPS-tunnel config uses placeholder when private key is None."""
+        config = generate_https_tunnel_client_config(
             client_private_key=None,
             client_ip="10.8.0.2",
             server_public_key=FAKE_SERVER_PUB,
@@ -341,9 +341,9 @@ class TestGenerateDpiClientConfig:
 
         assert "PrivateKey = YOUR_PRIVATE_KEY_HERE" in config
 
-    def test_dpi_dns_domain(self) -> None:
-        """DPI config appends DNS domain when provided."""
-        config = generate_dpi_client_config(
+    def test_https_config_dns_domain(self) -> None:
+        """HTTPS-tunnel config appends DNS domain when provided."""
+        config = generate_https_tunnel_client_config(
             client_private_key=FAKE_CLIENT_PRIV,
             client_ip="10.8.0.2",
             server_public_key=FAKE_SERVER_PUB,

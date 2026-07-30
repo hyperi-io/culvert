@@ -103,7 +103,7 @@ section of [.env.example](../.env.example).
   (OpenVPN Connect 3.4.0+ / OpenVPN GUI) and provider setup
 - [USE-CASE-K8S-SCALE.md](USE-CASE-K8S-SCALE.md) - running this shape on
   the Helm chart with external PKI and metrics
-- [USE-CASE-TRAVEL.md](USE-CASE-TRAVEL.md) - add HTTPS camouflage for
+- [USE-CASE-TRAVEL.md](USE-CASE-TRAVEL.md) - run the VPN over HTTPS for
   users on networks that block VPNs outright
 - [ADDRESSING.md](ADDRESSING.md) - check the `10.8.0.0/22` default
   against your corporate addressing plan

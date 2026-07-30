@@ -38,8 +38,8 @@ These clients support the web-based OAuth2 authentication flow required for SSO.
 | `*-udp-full.ovpn` | UDP 1194 | All traffic through VPN |
 | `*-tcp-split.ovpn` | TCP 1194 | Fallback when UDP blocked |
 | `*-tcp-full.ovpn` | TCP 1194 | All traffic, TCP fallback |
-| `*-https-split.ovpn` | TCP 443 (stunnel) | DPI bypass, VPN routes only |
-| `*-https-full.ovpn` | TCP 443 (stunnel) | DPI bypass, all traffic |
+| `*-https-split.ovpn` | TCP 443 (stunnel) | over HTTPS, VPN routes only |
+| `*-https-full.ovpn` | TCP 443 (stunnel) | over HTTPS, all traffic |
 | `*-stunnel.conf` | - | stunnel config for HTTPS tunnel |
 
 ### WireGuard
@@ -48,14 +48,14 @@ These clients support the web-based OAuth2 authentication flow required for SSO.
 |------|----------|----------|
 | `*-wg-split.conf` | UDP 51820 | **Recommended** - VPN routes only |
 | `*-wg-full.conf` | UDP 51820 | All traffic through VPN |
-| `*-wg-dpi-split.conf` | WSS 4443 (wstunnel) | DPI bypass, VPN routes only |
-| `*-wg-dpi-full.conf` | WSS 4443 (wstunnel) | DPI bypass, all traffic |
+| `*-wg-https-split.conf` | WSS 4443 (wstunnel) | over HTTPS, VPN routes only |
+| `*-wg-https-full.conf` | WSS 4443 (wstunnel) | over HTTPS, all traffic |
 
 **Which to use:**
 1. Try **WireGuard** first (best performance, simplest setup)
 2. If WireGuard is blocked, try **OpenVPN UDP** (UDP 1194)
 3. If UDP blocked, try **OpenVPN TCP** (TCP 1194)
-4. If still blocked, use **DPI bypass** - WireGuard via wstunnel (WSS 4443) or OpenVPN via stunnel (TCP 443)
+4. If still blocked, run the VPN **over HTTPS** - WireGuard via wstunnel (WSS 4443) or OpenVPN via stunnel (TCP 443)
 
 ---
 
@@ -134,15 +134,15 @@ sudo wg-quick up ./alice-wg-split.conf
 
 ---
 
-## DPI Bypass (China / Restricted Networks)
+## Running the VPN over HTTPS
 
-### OpenVPN DPI Bypass
+### OpenVPN over HTTPS (stunnel)
 
 The `*-https-*.ovpn` configs use stunnel to wrap OpenVPN in real TLS on port 443. Most OpenVPN clients handle this automatically. See the OpenVPN HTTPS tunnel sections below for platform-specific instructions.
 
-### WireGuard DPI Bypass (wstunnel)
+### WireGuard over HTTPS (wstunnel)
 
-For networks that block WireGuard (e.g. China GFW), use the DPI bypass configs (`*-wg-dpi-*.conf`). These require wstunnel on your machine.
+For networks that block WireGuard (e.g. China GFW), use the HTTPS-tunnel configs (`*-wg-https-*.conf`). These require wstunnel on your machine.
 
 #### Installing wstunnel
 
@@ -158,7 +158,7 @@ For networks that block WireGuard (e.g. China GFW), use the DPI bypass configs (
    ```
    (Replace `vpn.example.com` with your VPN server hostname)
 
-2. Then import and activate the `*-wg-dpi-*.conf` config in your WireGuard client
+2. Then import and activate the `*-wg-https-*.conf` config in your WireGuard client
 
 3. The VPN traffic is tunnelled over WebSocket/TLS on port 4443, which looks like normal HTTPS to firewalls
 
@@ -168,16 +168,16 @@ For networks that block WireGuard (e.g. China GFW), use the DPI bypass configs (
 #!/usr/bin/env bash
 # Start wstunnel + WireGuard in one command
 VPN_SERVER="vpn.example.com"
-DPI_PORT="4443"
+WS_PORT="4443"
 
-wstunnel client "wss://${VPN_SERVER}:${DPI_PORT}" -L udp://51820:127.0.0.1:51820 &
+wstunnel client "wss://${VPN_SERVER}:${WS_PORT}" -L udp://51820:127.0.0.1:51820 &
 WSTUNNEL_PID=$!
 sleep 2
 
-sudo wg-quick up ./your-config-wg-dpi-split.conf
+sudo wg-quick up ./your-config-wg-https-split.conf
 
 # Cleanup on exit
-trap 'sudo wg-quick down ./your-config-wg-dpi-split.conf; kill $WSTUNNEL_PID' EXIT
+trap 'sudo wg-quick down ./your-config-wg-https-split.conf; kill $WSTUNNEL_PID' EXIT
 wait
 ```
 
@@ -231,7 +231,7 @@ sudo killall openvpn  # To disconnect
 
 #### HTTPS Tunnel (stunnel + OpenVPN)
 
-The HTTPS tunnel wraps OpenVPN in TLS on port 443, making it indistinguishable from regular HTTPS traffic. This bypasses deep packet inspection (DPI) on restrictive networks.
+The HTTPS tunnel wraps OpenVPN in TLS on port 443, so on the wire it is an ordinary HTTPS session. That is what gets it through networks which only permit web traffic - and past filters that block VPN protocols by signature.
 
 **Install stunnel:**
 
@@ -508,10 +508,10 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 
 ### WireGuard Issues
 
-- **"Handshake did not complete"** - check that the server is reachable on port 51820 (or 4443 for DPI bypass)
+- **"Handshake did not complete"** - check that the server is reachable on port 51820 (or 4443 for the HTTPS tunnel)
 - **DNS not working** - check DNS settings in the `.conf` file
 - **Connected but no internet** - try the split tunnel config instead of full tunnel
-- **wstunnel connection refused** - ensure DPI bypass is enabled on the server (`CULVERT_WG_DPI_BYPASS_ENABLED=true`)
+- **wstunnel connection refused** - ensure WireGuard over HTTPS is enabled on the server (`CULVERT_WG_HTTPS_TUNNEL_ENABLED=true`)
 
 ### Split vs Full Tunnel
 
@@ -529,7 +529,7 @@ Use split tunnel for normal work; use full tunnel for maximum security.
 - tls-crypt-v2 provides metadata protection and DoS mitigation
 - HTTPS tunnel adds an additional layer of TLS 1.3 encryption
 - WireGuard uses ChaCha20-Poly1305 encryption with Curve25519 key exchange
-- WireGuard DPI bypass (wstunnel) adds a WebSocket/TLS layer on port 4443
+- WireGuard over HTTPS (wstunnel) adds a WebSocket/TLS layer on port 4443
 
 ---
 

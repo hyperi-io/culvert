@@ -83,7 +83,7 @@ Opt-ins, each with its own port publish:
 | WireGuard (alongside or instead) | `CULVERT_PROTOCOL=both` (or `wireguard`) | `51820/udp` |
 | TCP fallback listener | `CULVERT_TCP_ENABLED=true` | `1194/tcp` |
 | OpenVPN over HTTPS (TLS on a web port) | `CULVERT_HTTPS_ENABLED=true` + stunnel certs | `443/tcp` |
-| WireGuard over HTTPS (WebSocket/TLS) | `CULVERT_WG_DPI_BYPASS_ENABLED=true` | `4443/tcp` |
+| WireGuard over HTTPS (WebSocket/TLS) | `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true` | `4443/tcp` |
 | OIDC SSO | `CULVERT_OAUTH2_ENABLED=true` + IdP config | `9000-9002/tcp` |
 | Prometheus metrics | `CULVERT_METRICS_ENABLED=true` | served on `9090/tcp` (already published) |
 

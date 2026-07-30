@@ -85,8 +85,8 @@ services:
       # - "${CULVERT_HTTPS_PORT:-443}:${CULVERT_HTTPS_PORT:-443}/tcp"
       # WireGuard - UDP primary (CULVERT_PROTOCOL=wireguard or both)
       # - "${CULVERT_WG_PORT:-51820}:${CULVERT_WG_PORT:-51820}/udp"
-      # WireGuard over HTTPS via wstunnel (CULVERT_WG_DPI_BYPASS_ENABLED=true)
-      # - "${CULVERT_WG_DPI_BYPASS_PORT:-4443}:${CULVERT_WG_DPI_BYPASS_PORT:-4443}/tcp"
+      # WireGuard over HTTPS via wstunnel (CULVERT_WG_HTTPS_TUNNEL_ENABLED=true)
+      # - "${CULVERT_WG_HTTPS_TUNNEL_PORT:-4443}:${CULVERT_WG_HTTPS_TUNNEL_PORT:-4443}/tcp"
       # OAuth2 callback servers, one per enabled OpenVPN listener
       # (CULVERT_OAUTH2_ENABLED=true; each listener needs its own instance)
       # - "${CULVERT_OAUTH2_UDP_PORT:-9000}:${CULVERT_OAUTH2_UDP_PORT:-9000}/tcp"
@@ -147,8 +147,8 @@ services:
       # - CULVERT_WG_MTU=${CULVERT_WG_MTU:-1420}
       # - CULVERT_WG_PERSISTENT_KEEPALIVE=${CULVERT_WG_PERSISTENT_KEEPALIVE:-25}
       # WireGuard over HTTPS via wstunnel (a further opt-in on top of WireGuard)
-      # - CULVERT_WG_DPI_BYPASS_ENABLED=${CULVERT_WG_DPI_BYPASS_ENABLED:-false}
-      # - CULVERT_WG_DPI_BYPASS_PORT=${CULVERT_WG_DPI_BYPASS_PORT:-4443}
+      # - CULVERT_WG_HTTPS_TUNNEL_ENABLED=${CULVERT_WG_HTTPS_TUNNEL_ENABLED:-false}
+      # - CULVERT_WG_HTTPS_TUNNEL_PORT=${CULVERT_WG_HTTPS_TUNNEL_PORT:-4443}
 
       # Network profile: "default" (fast internet) or "wireless" (4G/mobile optimized)
       - CULVERT_NETWORK_PROFILE=${CULVERT_NETWORK_PROFILE:-default}

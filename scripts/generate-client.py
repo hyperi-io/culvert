@@ -75,8 +75,8 @@ class Config:
         self.wg_port = vpn.wg_port
         self.wg_mtu = vpn.wg_mtu
         self.wg_persistent_keepalive = vpn.wg_persistent_keepalive
-        self.wg_dpi_bypass_enabled = vpn.wg_dpi_bypass_enabled
-        self.wg_dpi_bypass_port = vpn.wg_dpi_bypass_port
+        self.wg_https_tunnel_enabled = vpn.wg_https_tunnel_enabled
+        self.wg_https_tunnel_port = vpn.wg_https_tunnel_port
 
         # DNS/routing
         self.dns_servers = [vpn.dns1, vpn.dns2]
@@ -463,8 +463,8 @@ def generate_wireguard_configs(
     configs_to_write.append((f"{client_name}-wg-full.conf", full_conf))
 
     # HTTPS-tunnelled variants (WireGuard inside WebSocket/TLS)
-    if cfg.wg_dpi_bypass_enabled:
-        dpi_split_conf = wireguard.generate_dpi_client_config(
+    if cfg.wg_https_tunnel_enabled:
+        https_split_conf = wireguard.generate_https_tunnel_client_config(
             client_private_key=client_private,
             client_ip=client_ip,
             server_public_key=server_public,
@@ -475,11 +475,13 @@ def generate_wireguard_configs(
             mtu=cfg.wg_mtu,
             persistent_keepalive=cfg.wg_persistent_keepalive,
             allowed_ips=split_allowed_ips,
-            wstunnel_port=cfg.wg_dpi_bypass_port,
+            wstunnel_port=cfg.wg_https_tunnel_port,
         )
-        configs_to_write.append((f"{client_name}-wg-dpi-split.conf", dpi_split_conf))
+        configs_to_write.append(
+            (f"{client_name}-wg-https-split.conf", https_split_conf)
+        )
 
-        dpi_full_conf = wireguard.generate_dpi_client_config(
+        https_full_conf = wireguard.generate_https_tunnel_client_config(
             client_private_key=client_private,
             client_ip=client_ip,
             server_public_key=server_public,
@@ -490,9 +492,9 @@ def generate_wireguard_configs(
             mtu=cfg.wg_mtu,
             persistent_keepalive=cfg.wg_persistent_keepalive,
             allowed_ips=full_allowed_ips,
-            wstunnel_port=cfg.wg_dpi_bypass_port,
+            wstunnel_port=cfg.wg_https_tunnel_port,
         )
-        configs_to_write.append((f"{client_name}-wg-dpi-full.conf", dpi_full_conf))
+        configs_to_write.append((f"{client_name}-wg-https-full.conf", https_full_conf))
 
     # Write all config files
     for filename, content in configs_to_write:
@@ -539,8 +541,8 @@ OpenVPN output files (6 total - 3 listeners x 2 tunnel modes):
 WireGuard output files (2-4 total):
   {{name}}-wg-split.conf     - Split tunnel
   {{name}}-wg-full.conf      - Full tunnel
-  {{name}}-wg-dpi-split.conf - Over HTTPS, split tunnel (if enabled)
-  {{name}}-wg-dpi-full.conf  - Over HTTPS, full tunnel (if enabled)
+  {{name}}-wg-https-split.conf - Over HTTPS, split tunnel (if enabled)
+  {{name}}-wg-https-full.conf  - Over HTTPS, full tunnel (if enabled)
 
 Protocol Configuration (from environment):
   Server CN:  {cfg.server_cn}
@@ -771,9 +773,9 @@ Examples:
         logger.info("WireGuard configuration files:")
         logger.info(f"    {cfg.output_dir}/{client_name}-wg-split.conf")
         logger.info(f"    {cfg.output_dir}/{client_name}-wg-full.conf")
-        if cfg.wg_dpi_bypass_enabled:
-            logger.info(f"    {cfg.output_dir}/{client_name}-wg-dpi-split.conf")
-            logger.info(f"    {cfg.output_dir}/{client_name}-wg-dpi-full.conf")
+        if cfg.wg_https_tunnel_enabled:
+            logger.info(f"    {cfg.output_dir}/{client_name}-wg-https-split.conf")
+            logger.info(f"    {cfg.output_dir}/{client_name}-wg-https-full.conf")
         logger.info("")
         logger.info("WireGuard peer key:")
         wg_dir = cfg.pki_dir / "wireguard"
@@ -788,9 +790,9 @@ Examples:
         logger.info("  4. Split = VPN routes only, Full = all traffic through VPN")
     if generate_wg:
         logger.info("  WireGuard: Import .conf into WireGuard client app")
-        if cfg.wg_dpi_bypass_enabled:
+        if cfg.wg_https_tunnel_enabled:
             logger.info(
-                "  Over HTTPS: run wstunnel first, then activate the -dpi- config"
+                "  Over HTTPS: run wstunnel first, then activate the -wg-https- config"
             )
 
 

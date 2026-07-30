@@ -53,22 +53,22 @@ class TestWireGuard:
     "not wireguard_available()",
     reason="WireGuard kernel module not available",
 )
-class TestWireGuardDPIBypass:
-    """WireGuard DPI bypass (wstunnel) connectivity."""
+class TestWireGuardOverHTTPSOpenNetwork:
+    """WireGuard over HTTPS (wstunnel)."""
 
     @pytest.fixture(autouse=True)
-    def _check_dpi_config(self):
-        """Skip if DPI bypass client config was not generated."""
+    def _require_https_tunnel_config(self):
+        """Skip if HTTPS-tunnel client config was not generated."""
         result = docker_exec(
             "e2e-vpn-client",
-            "test -f /etc/vpn/clients/e2e-client-wg-dpi-split.conf",
+            "test -f /etc/vpn/clients/e2e-client-wg-https-split.conf",
             check=False,
         )
         if result.returncode != 0:
-            pytest.skip("WireGuard DPI bypass config not generated")
+            pytest.skip("WireGuard-over-HTTPS config not generated")
 
-    def test_connect_and_reach_target(self, wireguard_dpi_connection):
-        """Client connects via WireGuard DPI bypass and reaches target."""
+    def test_connect_and_reach_target(self, wireguard_https_tunnel_connection):
+        """Client connects via WireGuard over HTTPS and reaches target."""
         ip = wait_for_tunnel("wg0", timeout=15)
         assert ip.startswith("10.8.3."), f"Expected IP in 10.8.3.0/24, got {ip}"
 

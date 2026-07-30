@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate self-signed TLS cert for stunnel (HTTPS DPI bypass)
+# Generate self-signed TLS cert for stunnel (OpenVPN over HTTPS)
 mkdir -p /etc/vpn/oauth2-tls
 if [ ! -f /etc/vpn/oauth2-tls/hyperi-wildcard-fullchain.pem ]; then
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \

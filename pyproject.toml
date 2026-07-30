@@ -68,5 +68,6 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 markers = [
     "e2e: end-to-end tests requiring Docker (deselect with -m 'not e2e')",
+    "k8s: tests that install the Helm chart on a real cluster; needs a kubeconfig and CULVERT_K8S_* settings, never runs in CI (deselect with -m 'not k8s')",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]

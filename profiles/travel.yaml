@@ -18,7 +18,7 @@ https_port: 443
 
 # WireGuard over WebSocket/TLS on 4443 (wstunnel) - the same treatment
 # for the WireGuard path.
-wg_dpi_bypass_enabled: true
+wg_https_tunnel_enabled: true
 
 # Use a REAL certificate for your server name (Let's Encrypt is fine). A
 # self-signed cert works where the client trusts it, but it stands out to

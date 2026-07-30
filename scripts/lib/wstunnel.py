@@ -23,13 +23,13 @@ from scalo.logger import logger
 def _build_wstunnel_command(cfg) -> list[str]:
     """Build the wstunnel server command for WireGuard over HTTPS.
 
-    Serves WSS on the DPI-bypass port and restricts forwarding to the local
+    Serves WSS on the HTTPS-tunnel port and restricts forwarding to the local
     WireGuard listener, so the tunnel can only reach wg, not arbitrary hosts.
     """
     return [
         "wstunnel",
         "server",
-        f"wss://0.0.0.0:{cfg.wg_dpi_bypass_port}",
+        f"wss://0.0.0.0:{cfg.wg_https_tunnel_port}",
         "--restrict-to",
         f"127.0.0.1:{cfg.wg_port}",
         "--tls-certificate",
@@ -45,8 +45,8 @@ def start_wstunnel(cfg, proc_manager) -> subprocess.Popen | None:
     Runs under ProcessManager supervision (daemon mode), which also routes
     its output to a log file instead of an undrained PIPE.
     """
-    if not cfg.wg_dpi_bypass_enabled:
+    if not cfg.wg_https_tunnel_enabled:
         return None
 
-    logger.info(f"Starting WireGuard-over-HTTPS on port {cfg.wg_dpi_bypass_port}")
+    logger.info(f"Starting WireGuard-over-HTTPS on port {cfg.wg_https_tunnel_port}")
     return proc_manager.start("wstunnel", _build_wstunnel_command(cfg), daemon=True)

@@ -444,7 +444,7 @@ class TestShippedProfiles:
         )
         assert cfg.protocol == "both"
         assert cfg.https_enabled is True
-        assert cfg.wg_dpi_bypass_enabled is True
+        assert cfg.wg_https_tunnel_enabled is True
         assert cfg.network_profile == "wireless"
 
     def test_edge_fleet(self, clean_env, monkeypatch):
@@ -487,40 +487,42 @@ class TestStunnelValidation:
         cfg = Config.from_settings()
         cfg.validate()  # should not raise
 
-    def test_wg_dpi_without_stunnel_fails(self, clean_env, monkeypatch):
+    def test_wg_https_tunnel_without_stunnel_fails(self, clean_env, monkeypatch):
         """wstunnel serves WSS with the stunnel cert pair - require it."""
         import pytest
 
         monkeypatch.setenv("CULVERT_PROTOCOL", "wireguard")
-        monkeypatch.setenv("CULVERT_WG_DPI_BYPASS_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
         monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
         cfg = Config.from_settings()
         with pytest.raises(SystemExit):
             cfg.validate()
 
-    def test_wg_dpi_with_stunnel_passes(self, clean_env, monkeypatch):
+    def test_wg_https_tunnel_with_stunnel_passes(self, clean_env, monkeypatch):
         monkeypatch.setenv("CULVERT_PROTOCOL", "wireguard")
-        monkeypatch.setenv("CULVERT_WG_DPI_BYPASS_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
         monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
         monkeypatch.setenv("CULVERT_STUNNEL_CERT", "/path/to/fullchain.pem")
         monkeypatch.setenv("CULVERT_STUNNEL_KEY", "/path/to/server.key")
         cfg = Config.from_settings()
         cfg.validate()  # should not raise
 
-    def test_wg_dpi_openvpn_only_no_stunnel_ok(self, clean_env, monkeypatch):
-        """DPI-bypass flag is inert when WireGuard is not running."""
+    def test_wg_https_tunnel_openvpn_only_no_stunnel_ok(self, clean_env, monkeypatch):
+        """HTTPS-tunnel flag is inert when WireGuard is not running."""
         monkeypatch.setenv("CULVERT_PROTOCOL", "openvpn")
-        monkeypatch.setenv("CULVERT_WG_DPI_BYPASS_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
         monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
         cfg = Config.from_settings()
         cfg.validate()  # should not raise
 
-    def test_wg_dpi_protocol_both_without_stunnel_fails(self, clean_env, monkeypatch):
-        """protocol=both with WG DPI bypass still requires the cert pair."""
+    def test_wg_https_tunnel_protocol_both_without_stunnel_fails(
+        self, clean_env, monkeypatch
+    ):
+        """protocol=both with WireGuard over HTTPS still requires the cert pair."""
         import pytest
 
         monkeypatch.setenv("CULVERT_PROTOCOL", "both")
-        monkeypatch.setenv("CULVERT_WG_DPI_BYPASS_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
         monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
         cfg = Config.from_settings()
         with pytest.raises(SystemExit):
@@ -624,7 +626,7 @@ class TestProtocolAwareValidation:
         monkeypatch.setenv("CULVERT_UDP_ENABLED", "true")
         monkeypatch.setenv("CULVERT_TCP_ENABLED", "true")
         monkeypatch.setenv("CULVERT_HTTPS_ENABLED", "true")
-        monkeypatch.setenv("CULVERT_WG_DPI_BYPASS_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
         monkeypatch.setenv("CULVERT_STUNNEL_CERT", "/etc/vpn/tls/fullchain.pem")
         monkeypatch.setenv("CULVERT_STUNNEL_KEY", "/etc/vpn/tls/server.key")
         cfg = Config.from_settings()

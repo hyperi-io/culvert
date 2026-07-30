@@ -158,10 +158,10 @@ def disconnect_wireguard(config_name: str) -> None:  # noqa: ARG001
     )
 
 
-def connect_wireguard_dpi(config_name: str) -> None:
-    """Start wstunnel client + WireGuard for DPI bypass mode.
+def connect_wireguard_https_tunnel(config_name: str) -> None:
+    """Start wstunnel client + WireGuard for WireGuard-over-HTTPS mode.
 
-    The DPI client config points Endpoint at 127.0.0.1:51820 (local wstunnel).
+    The HTTPS-tunnel client config points Endpoint at 127.0.0.1:51820 (local wstunnel).
     wstunnel client tunnels that UDP over WebSocket/TLS to the server.
     """
     src = f"/etc/vpn/clients/{config_name}"
@@ -191,7 +191,7 @@ def connect_wireguard_dpi(config_name: str) -> None:
     )
 
 
-def disconnect_wireguard_dpi(config_name: str) -> None:  # noqa: ARG001
+def disconnect_wireguard_https_tunnel(config_name: str) -> None:  # noqa: ARG001
     """Stop WireGuard and wstunnel client."""
     docker_exec(
         "e2e-vpn-client",

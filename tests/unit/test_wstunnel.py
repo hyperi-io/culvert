@@ -1,6 +1,6 @@
 #  Project:      culvert
 #  File:         test_wstunnel.py
-#  Purpose:      Tests for wstunnel WireGuard DPI-bypass module
+#  Purpose:      Tests for wstunnel WireGuard-over-HTTPS module
 #  Language:     Python
 #
 #  License:      Apache-2.0
@@ -14,8 +14,8 @@ from lib.wstunnel import _build_wstunnel_command, start_wstunnel
 
 @dataclass
 class FakeWstunnelCfg:
-    wg_dpi_bypass_enabled: bool = True
-    wg_dpi_bypass_port: int = 4443
+    wg_https_tunnel_enabled: bool = True
+    wg_https_tunnel_port: int = 4443
     wg_port: int = 51820
     stunnel_cert: str = "/etc/vpn/pki/stunnel.pem"
     stunnel_key: str = "/etc/vpn/pki/stunnel.key"
@@ -25,17 +25,17 @@ class TestStartWstunnel:
     """start_wstunnel side-effect gate."""
 
     def test_returns_none_when_disabled(self):
-        """No process is started when DPI bypass is disabled."""
-        cfg = FakeWstunnelCfg(wg_dpi_bypass_enabled=False)
+        """No process is started when the HTTPS tunnel is disabled."""
+        cfg = FakeWstunnelCfg(wg_https_tunnel_enabled=False)
         assert start_wstunnel(cfg, ProcessManager()) is None
 
 
 class TestBuildWstunnelCommand:
     """Command construction for the wstunnel server."""
 
-    def test_serves_wss_on_dpi_bypass_port(self):
-        """The server listens with WSS on the configured DPI-bypass port."""
-        cmd = _build_wstunnel_command(FakeWstunnelCfg(wg_dpi_bypass_port=8443))
+    def test_serves_wss_on_https_tunnel_port(self):
+        """The server listens with WSS on the configured HTTPS-tunnel port."""
+        cmd = _build_wstunnel_command(FakeWstunnelCfg(wg_https_tunnel_port=8443))
         assert cmd[:2] == ["wstunnel", "server"]
         assert "wss://0.0.0.0:8443" in cmd
 

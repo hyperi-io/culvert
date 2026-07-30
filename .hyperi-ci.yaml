@@ -47,6 +47,12 @@ test:
       enabled: false
       # E2E tests need Docker + TUN devices and a running dual-container stack.
       # Run locally with: pytest tests/e2e/ -m e2e -v
+    k8s:
+      enabled: false
+      # Cluster tests install the Helm chart on a real cluster, so they need a
+      # kubeconfig and site-specific settings that deliberately live outside
+      # this repo (tests/k8s/.env, gitignored). They skip without it.
+      # Run against your own cluster with: pytest tests/k8s/ -m k8s -v
 
 # Top-level container section gates whether the Container job runs in CI
 # (python-ci.yml reads container.enabled) and selects build mode.
