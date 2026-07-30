@@ -84,23 +84,9 @@ def compose_stack():
             timeout=120,
         )
 
-    # generate-client writes updated server config to /etc/vpn/pki/wireguard/wg0.conf
-    # but the running server uses /etc/vpn/server/wg0.conf - copy and reload
-    subprocess.run(
-        [
-            "docker",
-            "exec",
-            "e2e-vpn-server",
-            "bash",
-            "-c",
-            "cp /etc/vpn/pki/wireguard/wg0.conf /etc/vpn/server/wg0.conf"
-            " && wg-quick strip /etc/vpn/server/wg0.conf > /tmp/wg0-stripped.conf"
-            " && wg syncconf wg0 /tmp/wg0-stripped.conf"
-            " && rm /tmp/wg0-stripped.conf",
-        ],
-        check=False,
-        timeout=10,
-    )
+    # No wg0 reload here on purpose. generate-client writes the server config to
+    # the path the server uses and pushes the peer into the running interface
+    # itself; doing it again from the test would hide a regression in that.
 
     # Small delay for configs to sync via shared volume
     time.sleep(1)

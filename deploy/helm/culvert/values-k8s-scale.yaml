@@ -3,7 +3,14 @@
 #
 #   helm install culvert deploy/helm/culvert -n vpn \
 #     -f deploy/helm/culvert/values-k8s-scale.yaml \
-#     --set env.CULVERT_SERVER_CN=vpn.example.com
+#     --set env.CULVERT_SERVER_CN=vpn.example.com \
+#     --set pkiSecret=culvert-pki
+#
+# pkiSecret is REQUIRED here, not optional. This shape runs more than one
+# replica, and both the CA and the tls-crypt-v2 server key have to be the same
+# on every one of them or clients fail against whichever pod they land on. The
+# chart refuses to render without it. See the pkiSecret comment in values.yaml
+# for the keys that Secret needs.
 #
 # The namespace must permit the VPN pod (NET_ADMIN, /dev/net/tun,
 # net.ipv4.ip_forward):
@@ -12,7 +19,11 @@
 # Expose UDP 1194 to clients. A connection-based LB is REQUIRED: a single
 # VPN flow must stay pinned to one pod (client IP allocation and cert
 # state are per-pod). Most cloud L4 LBs are 5-tuple/connection based;
-# do not front this with a per-packet balancer.
+# do not front this with a per-packet balancer. Because this starter runs more
+# than one replica, it also asks Kubernetes for that pinning directly:
+# sessionAffinity ClientIP keeps a client on the pod that accepted it, and
+# externalTrafficPolicy Local preserves the client's real source IP instead of
+# SNATing every client to a node address.
 #
 # One Service carries every port, so LoadBalancer also publishes the
 # observability port 9090 (/livez, /readyz, /metrics) with no authentication
@@ -27,6 +38,8 @@ service:
   type: LoadBalancer
   loadBalancerSourceRanges:
     - "REPLACE-ME/32"   # your client / admin CIDRs only
+  sessionAffinity: ClientIP
+  externalTrafficPolicy: Local
 
 # Scale on CPU. Each pod is an independent VPN server, so scaling out
 # adds capacity; existing connections stay on their pod (see the LB note).

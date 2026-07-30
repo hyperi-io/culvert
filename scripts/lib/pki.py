@@ -32,11 +32,16 @@ from lib.process import run
 
 
 def _validate_pem(data: bytes, name: str) -> bool:
-    """Check that data starts with a PEM header.
+    """Check that data contains a PEM block.
+
+    Anywhere in the file, not only at the start: Easy-RSA and `openssl x509`
+    write a human-readable dump of the certificate above the BEGIN line, and
+    OpenVPN reads such a file quite happily. Requiring the header first rejected
+    the output of the CA culvert itself ships with.
 
     Non-fragile: logs a warning on failure but never crashes.
     """
-    if data.strip().startswith(b"-----BEGIN "):
+    if b"-----BEGIN " in data:
         return True
     logger.error(
         f"Fetched content for '{name}' is not valid PEM (starts with: {data[:40]!r})"
@@ -192,6 +197,22 @@ def fetch_external_pki(cfg) -> bool:
             )
         else:
             logger.info("  CRL: not configured (optional)")
+
+        # The tls-crypt-v2 server key. Optional, and minted locally when the
+        # provider does not carry one - but then every server has a different
+        # key, and a client config only works against the server that issued it.
+        # Supply it here to run more than one server behind one address.
+        if cfg.secrets_tc_key_path:
+            _fetch_one(
+                manager,
+                provider_name,
+                cfg.secrets_tc_key_path,
+                cfg.pki_dir / "tc.key",
+                0o600,
+                "tls-crypt-v2 server key",
+            )
+        else:
+            logger.info("  tls-crypt-v2 key: not configured (minted locally)")
 
         return required_ok
     finally:

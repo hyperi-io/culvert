@@ -5,13 +5,31 @@ ARG WSTUNNEL_VERSION="10.6.2"
 ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e19241311e34868e6e"
 ARG WSTUNNEL_SHA256_ARM64="26bb36b856948255bec7cd71a39df5f8912acdd7a47a9ccd4044a9b80ced108d"
 
+# OpenVPN comes from the upstream repo, the same one the server image uses, so
+# the client under test is 2.7 rather than the 2.6 in Ubuntu 24.04. It matters:
+# 2.7 treats an option it does not recognise in a PUSH_REPLY as fatal, where 2.6
+# ignores it, so a 2.6-only client cannot catch a bad server push.
+#
 # iptables lets a test block its own egress to the plain VPN ports, so the
 # HTTPS-tunnelled listeners can be proven to work when nothing else gets out.
 # openssl is for asserting the web ports really terminate TLS.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    openvpn stunnel4 wireguard-tools curl iproute2 iputils-ping \
-    iptables openssl \
-    ca-certificates resolvconf \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         ca-certificates curl gnupg lsb-release \
+    && mkdir -p /etc/apt/keyrings \
+    && curl --proto '=https' --tlsv1.2 -fsSL --max-time 30 \
+         https://swupdate.openvpn.net/repos/repo-public.gpg -o /tmp/openvpn-repo.gpg \
+    && gpg --show-keys --with-colons /tmp/openvpn-repo.gpg \
+       | awk -F: '$1=="fpr"{print $10}' \
+       | grep -qx 30EBF4E73CCE63EEE124DD278E6DA8B4E158C569 \
+    && gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg /tmp/openvpn-repo.gpg \
+    && rm /tmp/openvpn-repo.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/openvpn.gpg] https://build.openvpn.net/debian/openvpn/stable $(lsb_release -cs) main" \
+       > /etc/apt/sources.list.d/openvpn.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+         openvpn stunnel4 wireguard-tools iproute2 iputils-ping \
+         iptables openssl resolvconf \
     && rm -rf /var/lib/apt/lists/*
 
 # wstunnel client for WireGuard over HTTPS testing. Same pinned version and

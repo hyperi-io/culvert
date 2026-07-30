@@ -62,6 +62,18 @@ def setup_network(cfg) -> None:
         )
         logger.info(f"{name} NAT rule added")
 
+    # WireGuard needs the same rule. Its subnet is already a CIDR, and wg-quick
+    # adds no NAT of its own unless the operator supplies a PostUp - so without
+    # this a WireGuard client completes its handshake and then reaches nothing
+    # off the server, which looks like a client problem and is not.
+    if cfg.protocol in ("wireguard", "both"):
+        run(
+            f"iptables -t nat -A POSTROUTING"
+            f" -s {cfg.wg_network} -o {iface} -j MASQUERADE",
+            check=False,
+        )
+        logger.info("WireGuard NAT rule added")
+
     logger.info(f"Network configured (NAT via {iface})")
 
 

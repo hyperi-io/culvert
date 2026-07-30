@@ -372,6 +372,53 @@ def setup_wireguard(cfg) -> None:
     logger.info(f"WireGuard config written to {cfg.wg_conf}")
 
 
+def sync_running_interface(conf_path: Path) -> bool:
+    """Apply a changed wg0.conf to the live interface.
+
+    The kernel holds the peer list, not the file, so writing a new peer into
+    wg0.conf does nothing by itself - a freshly issued client would fail to
+    connect, with no error anywhere, until the container was restarted.
+
+    Returns False when there is no interface to sync, which is the normal case
+    for issuing a config before the server has started.
+    """
+    if subprocess.run(["wg", "show", "wg0"], capture_output=True).returncode != 0:
+        logger.info("WireGuard interface wg0 is not up - nothing to sync")
+        return False
+
+    stripped = subprocess.run(
+        ["wg-quick", "strip", str(conf_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if stripped.returncode != 0:
+        logger.warning(f"Could not read {conf_path}: {stripped.stderr.strip()}")
+        return False
+
+    # syncconf takes a path, and the stripped form still carries the server
+    # private key, so it goes to a 0600 file beside the config and is removed.
+    tmp_path = conf_path.with_suffix(".syncconf")
+    write_secret(tmp_path, stripped.stdout)
+    try:
+        result = subprocess.run(
+            ["wg", "syncconf", "wg0", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    if result.returncode != 0:
+        logger.warning(f"Could not apply peers to wg0: {result.stderr.strip()}")
+        return False
+    logger.info("Applied peer list to the running wg0 interface")
+    return True
+
+
 def start_wireguard(cfg) -> None:
     """Start the WireGuard interface using wg-quick."""
     logger.info(f"Starting WireGuard on port {cfg.wg_port}")

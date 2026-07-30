@@ -108,6 +108,66 @@ class TestVpnInterfaces:
         assert _vpn_interfaces(FakeCfg(protocol="both")) == ["tun+", "wg0"]
 
 
+class FakeNatCfg:
+    """Minimal cfg carrying the fields setup_network masquerades on."""
+
+    def __init__(self, protocol="openvpn"):
+        self.protocol = protocol
+        self.udp_enabled = True
+        self.udp_network = "10.8.0.0"
+        self.udp_netmask = "255.255.255.0"
+        self.https_enabled = False
+        self.https_network = "10.8.2.0"
+        self.https_netmask = "255.255.255.0"
+        self.tcp_enabled = False
+        self.tcp_network = "10.8.1.0"
+        self.tcp_netmask = "255.255.255.0"
+        self.wg_network = "10.8.3.0/24"
+
+
+class TestNatRules:
+    """Every tunnel subnet that carries clients has to be masqueraded.
+
+    A missing rule is invisible at connect time: the client gets an address and
+    a handshake, and only then finds it can reach nothing.
+    """
+
+    def _capture(self, monkeypatch):
+        calls = []
+
+        class FakeResult:
+            stdout = "eth0\n"
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            return FakeResult()
+
+        monkeypatch.setattr(network, "run", fake_run)
+        return calls
+
+    def test_openvpn_only_does_not_masquerade_wireguard(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        network.setup_network(FakeNatCfg(protocol="openvpn"))
+        assert not any("10.8.3.0/24" in c for c in calls)
+
+    @pytest.mark.parametrize("protocol", ["wireguard", "both"])
+    def test_wireguard_subnet_is_masqueraded(self, monkeypatch, protocol):
+        calls = self._capture(monkeypatch)
+        network.setup_network(FakeNatCfg(protocol=protocol))
+        assert any(
+            "-t nat -A POSTROUTING -s 10.8.3.0/24" in c and "MASQUERADE" in c
+            for c in calls
+        ), f"no MASQUERADE for the WireGuard subnet with protocol={protocol}: {calls}"
+
+    def test_openvpn_udp_subnet_is_masqueraded(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        network.setup_network(FakeNatCfg(protocol="both"))
+        assert any(
+            "-t nat -A POSTROUTING -s 10.8.0.0/24" in c and "MASQUERADE" in c
+            for c in calls
+        )
+
+
 class TestRoutingControl:
     """FORWARD-chain rule generation (run() captured, not executed)."""
 

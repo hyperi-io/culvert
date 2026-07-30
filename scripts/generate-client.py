@@ -70,10 +70,16 @@ class Config:
         self.key_type = vpn.key_type
         self.key_size = vpn.key_size
 
-        # WireGuard
+        # WireGuard. wg_conf and the PostUp/PostDown hooks are needed because
+        # issuing a client rewrites the server's own config: writing it anywhere
+        # but wg_conf leaves the running server unaware of the peer, and dropping
+        # the hooks would silently discard the operator's own firewall rules.
         self.wg_network = vpn.wg_network
         self.wg_port = vpn.wg_port
         self.wg_mtu = vpn.wg_mtu
+        self.wg_conf = vpn.wg_conf
+        self.wg_post_up = vpn.wg_post_up
+        self.wg_post_down = vpn.wg_post_down
         self.wg_persistent_keepalive = vpn.wg_persistent_keepalive
         self.wg_https_tunnel_enabled = vpn.wg_https_tunnel_enabled
         self.wg_https_tunnel_port = vpn.wg_https_tunnel_port
@@ -277,6 +283,11 @@ http-proxy-retry"""
 # Full Tunnel Mode - ALL traffic through VPN
 #===============================================================================
 redirect-gateway def1 bypass-dhcp
+
+# WINDOWS ONLY: stops applications querying a DNS server outside the tunnel.
+# Uncomment on Windows. Leave it commented everywhere else - OpenVPN 2.7 on
+# Linux and macOS does not know the option and refuses to start.
+#block-outside-dns
 """
     else:
         tunnel_section = """\
@@ -502,7 +513,10 @@ def generate_wireguard_configs(
         write_secret(out_path, content)
         logger.info(f"Created WireGuard config: {out_path}")
 
-    # Regenerate server wg0.conf with the new peer
+    # Regenerate the server config with the new peer, at the path the server
+    # itself uses, and push the peer list into the running interface. Written
+    # anywhere else it is a file nothing reads, and left unsynced the client
+    # cannot connect until the container restarts.
     alloc_file = wg_dir / "allocations.json"
     server_conf = wireguard.generate_server_config(
         private_key=server_private,
@@ -511,10 +525,12 @@ def generate_wireguard_configs(
         mtu=cfg.wg_mtu,
         peers_dir=peers_dir,
         alloc_file=alloc_file,
+        post_up=cfg.wg_post_up,
+        post_down=cfg.wg_post_down,
     )
-    wg0_path = wg_dir / "wg0.conf"
-    write_secret(wg0_path, server_conf)
-    logger.info("Regenerated WireGuard server config", path=str(wg0_path))
+    write_secret(cfg.wg_conf, server_conf)
+    logger.info("Regenerated WireGuard server config", path=str(cfg.wg_conf))
+    wireguard.sync_running_interface(cfg.wg_conf)
 
 
 # ===============================================================================

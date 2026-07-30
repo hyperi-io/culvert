@@ -119,31 +119,55 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
   # net.ipv4.ip_forward has to be on for client traffic to route through the
-  # pod, and the entrypoint sets it at runtime because it holds NET_ADMIN. It is
-  # NOT requested here by default: it is an unsafe sysctl, so a kubelet without
-  # `--allowed-unsafe-sysctls net.ipv4.ip_forward` rejects the pod outright, and
-  # most clusters do not set that. Declaring it here instead is tidier where
-  # your kubelet does allow it - uncomment then.
+  # pod. It is NOT requested here by default: it is an unsafe sysctl, so a
+  # kubelet without `--allowed-unsafe-sysctls net.ipv4.ip_forward` rejects the
+  # pod outright, and most clusters do not set that. The `ipForward` init
+  # container below handles it instead, on any cluster. Uncomment this and set
+  # ipForward.enabled=false where your kubelet does allow the sysctl.
   #sysctls:
   #  - name: net.ipv4.ip_forward
   #    value: "1"
 
-# -- culvert VPN overlay: container hardening. Everything dropped except
-# NET_ADMIN, which opens and configures the tun device, iptables NAT and
-# routing. Add SYS_MODULE too if the host offers OpenVPN DCO kernel offload.
-# readOnlyRootFilesystem is NOT set: in local-PKI mode the server mints its CA
-# and keys onto the container filesystem. Put that state on a volume first, then
-# add `readOnlyRootFilesystem: true` here.
+# -- culvert VPN overlay: container hardening. Everything is dropped except the
+# four capabilities the VPN data plane needs:
+#   NET_ADMIN  opens and configures the tun device, iptables NAT and routing
+#   SETUID     OpenVPN drops to `user nobody` once the sockets are bound
+#   SETGID     and to `group nogroup`
+#   SETPCAP    retains NET_ADMIN across that drop
+# Without SETPCAP/SETUID/SETGID, OpenVPN cannot complete the privilege drop and
+# exits 1 during startup. Add SYS_MODULE too if the host offers OpenVPN DCO
+# kernel offload. readOnlyRootFilesystem is NOT set: in local-PKI mode the
+# server mints its CA and keys onto the container filesystem. Put that state on
+# a volume first, then add `readOnlyRootFilesystem: true` here.
 securityContext:
   capabilities:
     drop:
       - ALL
     add:
       - NET_ADMIN
+      - SETPCAP
+      - SETGID
+      - SETUID
   allowPrivilegeEscalation: false
 """
 
 _VALUES_VPN = """
+# -- culvert VPN overlay: enable net.ipv4.ip_forward in the pod's own network
+# namespace, via a short privileged init container.
+#
+# Client traffic does not leave the pod without it. It cannot be done from the
+# server container: a container's /proc/sys is mounted read-only regardless of
+# capabilities, so NET_ADMIN is not enough. The init container runs `sysctl -w`
+# and exits, and only the pod's namespace is affected - not the node's.
+#
+# Turn it off only if you are setting the sysctl another way, e.g.
+# podSecurityContext.sysctls on a kubelet started with
+# `--allowed-unsafe-sysctls net.ipv4.ip_forward`. IPv6 forwarding is left off
+# deliberately: culvert's routing controls are iptables-only, so forwarded IPv6
+# would bypass client isolation and the egress allow-list.
+ipForward:
+  enabled: true
+
 # -- culvert VPN overlay: /dev/net/tun host passthrough. Required for OpenVPN
 # and WireGuard. On a cluster with a TUN device plugin, disable this and request
 # the device resource instead.
@@ -179,6 +203,10 @@ persistence:
 # these render as plaintext into the Deployment. Secrets go via existingSecret.
 env:
   CULVERT_SERVER_CN: vpn.example.com
+  # OpenVPN's own log goes to stdout so `kubectl logs` shows why a pod failed.
+  # The image default writes it to /var/log/vpn/openvpn.log instead, which is
+  # unreachable once the container has exited.
+  CULVERT_LOG_MODE: stdout
 
 # -- culvert VPN overlay: name of a pre-created Secret to load as environment
 # (envFrom). This is where the SENSITIVE CULVERT_* values belong -- OIDC client
@@ -187,6 +215,29 @@ env:
 # Operator, sealed-secrets, or kubectl) with keys like CULVERT_OAUTH2_CLIENT_SECRET;
 # empty string disables the envFrom.
 existingSecret: ""
+
+# -- culvert VPN overlay: PKI material for external-PKI mode, delivered as a
+# Secret rather than fetched over the network.
+#
+# Name a Secret carrying the server's identity and the chart mounts it read-only
+# and points CULVERT_SECRETS_* at the mount, so the container copies it into the
+# writable PKI directory on start. Keys:
+#
+#   ca.crt      REQUIRED  the CA clients must trust
+#   server.crt  REQUIRED  the server certificate
+#   server.key  REQUIRED  its private key
+#   crl.pem     optional  revocation list
+#   tc.key      optional for one replica, REQUIRED for more than one -- a
+#               client's tls-crypt-v2 key is derived from this server key, so
+#               replicas that each mint their own reject each other's clients
+#
+# This is the only way to run more than one replica: every replica then presents
+# the same CA and the same tls-crypt-v2 key, so any of them can serve any client.
+# Leave it empty to use local PKI (the single-server default), or set
+# CULVERT_SECRETS_PROVIDER to openbao/aws in `env` to fetch over the network
+# instead.
+pkiSecret: ""
+pkiSecretMountPath: /etc/vpn/pki-external
 
 # -- culvert VPN overlay: opt-in listener ports, beyond the always-on OpenVPN
 # UDP (1194/udp) and the observability port (9090/tcp). Uncomment the ones whose
@@ -278,6 +329,35 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         f"{_VALUES_VPN}\n",
     )
 
+    # values.yaml: the generator's service block only knows type and port. A VPN
+    # published on a LoadBalancer needs the rest, and an operator reading this
+    # file has no other way to discover the knobs exist.
+    _replace_once(
+        values,
+        "# -- Metrics and health endpoint service\nservice:\n"
+        "  type: ClusterIP\n  port: 9090\n",
+        "# -- Metrics and health endpoint service. This one Service also carries\n"
+        "# the VPN listener ports, so a LoadBalancer publishes :9090 with it.\n"
+        "service:\n"
+        "  type: ClusterIP\n"
+        "  port: 9090\n"
+        "  # -- culvert VPN overlay: CIDRs allowed to reach the LB. Leaving this\n"
+        "  # empty on a LoadBalancer exposes /livez, /readyz and /metrics\n"
+        "  # unauthenticated to everything the LB is reachable from.\n"
+        "  loadBalancerSourceRanges: []\n"
+        "  # -- culvert VPN overlay: pin the LB address clients dial.\n"
+        '  loadBalancerIP: ""\n'
+        "  # -- culvert VPN overlay: `Local` preserves the client's real source\n"
+        "  # IP, which per-client routing rules and the connection log need.\n"
+        "  # `Cluster` (the Kubernetes default) SNATs every client to a node IP.\n"
+        '  externalTrafficPolicy: ""\n'
+        "  # -- culvert VPN overlay: `ClientIP` keeps a client on the pod that\n"
+        "  # accepted it. Set this whenever more than one replica is behind the\n"
+        "  # Service: tunnel state is per-pod, so a flow that lands elsewhere\n"
+        "  # is a dropped connection.\n"
+        '  sessionAffinity: ""\n',
+    )
+
     # deployment.yaml: the generator emits both securityContext blocks, wired to
     # the values the overlay just replaced, so only the token opt-out is added.
     _replace_once(
@@ -286,6 +366,33 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         '      serviceAccountName: {{ include "culvert.serviceAccountName" . }}\n'
         "      # culvert VPN overlay: the VPN never calls the K8s API.\n"
         "      automountServiceAccountToken: false\n",
+    )
+
+    # deployment.yaml: turn on IP forwarding inside the pod's own network
+    # namespace. A container's /proc/sys is mounted read-only whatever
+    # capabilities it holds, so the entrypoint cannot do this itself, and without
+    # it the server completes handshakes and then forwards nothing. A privileged
+    # init container can, and needs no cluster-level configuration - unlike
+    # podSecurityContext.sysctls, which most kubelets reject for this sysctl.
+    _replace_once(
+        deployment,
+        "      containers:\n        - name: {{ .Chart.Name }}\n",
+        "      # culvert VPN overlay: IP forwarding in the pod network namespace.\n"
+        "      {{- if .Values.ipForward.enabled }}\n"
+        "      initContainers:\n"
+        "        - name: enable-ip-forward\n"
+        '          image: "{{ .Values.image.repository }}:'
+        '{{ .Values.image.tag | default .Chart.AppVersion }}"\n'
+        "          imagePullPolicy: {{ .Values.image.pullPolicy }}\n"
+        '          command: ["sysctl", "-w", "net.ipv4.ip_forward=1"]\n'
+        "          securityContext:\n"
+        "            privileged: true\n"
+        "          resources:\n"
+        "            requests:\n"
+        "              cpu: 10m\n"
+        "              memory: 16Mi\n"
+        "      {{- end }}\n"
+        "      containers:\n        - name: {{ .Chart.Name }}\n",
     )
 
     # deployment.yaml: opt-in extraPorts + CULVERT_* env after the fixed ports.
@@ -305,11 +412,32 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         '              protocol: {{ .protocol | default "TCP" }}\n'
         "            {{- end }}\n"
         "          # culvert VPN overlay: CULVERT_* env (set CULVERT_SERVER_CN).\n"
-        "          {{- with .Values.env }}\n"
+        "          {{- $env := default dict .Values.env }}\n"
+        "          {{- if or $env .Values.pkiSecret }}\n"
         "          env:\n"
-        "            {{- range $k, $v := . }}\n"
+        "            {{- range $k, $v := $env }}\n"
         "            - name: {{ $k }}\n"
         "              value: {{ $v | quote }}\n"
+        "            {{- end }}\n"
+        "            # culvert VPN overlay: point external PKI at the mounted\n"
+        "            # Secret. Anything set in `env` above wins, so an operator\n"
+        "            # can fetch from openbao/aws instead.\n"
+        "            {{- if .Values.pkiSecret }}\n"
+        "            {{- $mount := .Values.pkiSecretMountPath }}\n"
+        "            {{- range $k, $v := dict"
+        ' "CULVERT_PKI_MODE" "external"'
+        ' "CULVERT_SECRETS_PROVIDER" "file"'
+        ' "CULVERT_SECRETS_CA_CERT_PATH" (printf "%s/ca.crt" $mount)'
+        ' "CULVERT_SECRETS_SERVER_CERT_PATH" (printf "%s/server.crt" $mount)'
+        ' "CULVERT_SECRETS_SERVER_KEY_PATH" (printf "%s/server.key" $mount)'
+        ' "CULVERT_SECRETS_CRL_PATH" (printf "%s/crl.pem" $mount)'
+        ' "CULVERT_SECRETS_TC_KEY_PATH" (printf "%s/tc.key" $mount)'
+        " }}\n"
+        "            {{- if not (hasKey $env $k) }}\n"
+        "            - name: {{ $k }}\n"
+        "              value: {{ $v | quote }}\n"
+        "            {{- end }}\n"
+        "            {{- end }}\n"
         "            {{- end }}\n"
         "          {{- end }}\n"
         "          # culvert VPN overlay: SENSITIVE CULVERT_* from a pre-created Secret.\n"
@@ -341,6 +469,12 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "            {{- if .Values.persistence.enabled }}\n"
         "            - name: pki\n"
         "              mountPath: /etc/vpn/pki\n"
+        "            {{- end }}\n"
+        "            # culvert VPN overlay: external PKI material (file provider).\n"
+        "            {{- if .Values.pkiSecret }}\n"
+        "            - name: pki-external\n"
+        "              mountPath: {{ .Values.pkiSecretMountPath }}\n"
+        "              readOnly: true\n"
         "            {{- end }}\n",
     )
 
@@ -368,18 +502,32 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "          persistentVolumeClaim:\n"
         "            claimName: {{ .Values.persistence.existingClaim"
         ' | default (printf "%s-pki" (include "culvert.fullname" .)) }}\n'
+        "        {{- end }}\n"
+        "        # culvert VPN overlay: external PKI material (file provider).\n"
+        "        {{- if .Values.pkiSecret }}\n"
+        "        - name: pki-external\n"
+        "          secret:\n"
+        "            secretName: {{ .Values.pkiSecret }}\n"
+        "            defaultMode: 0400\n"
         "        {{- end }}\n",
     )
 
-    # deployment.yaml: refuse local PKI across replicas. Each replica would mint
-    # its own CA behind one Service, so a client would trust whichever pod
-    # happened to answer first. Fail at template time with the fix named,
-    # rather than let it be discovered from client-side TLS errors in production.
+    # deployment.yaml: refuse the replica counts that cannot work. Two separate
+    # pieces of per-server state break a multi-replica install, and both surface
+    # only as client-side failures long after the deploy looks fine, so the chart
+    # fails at template time with the fix named:
+    #   * the CA - each local-PKI replica mints its own, so a client trusts
+    #     whichever pod answered first;
+    #   * the tls-crypt-v2 server key - a client's key is derived from it, so a
+    #     replica that minted a different one rejects that client outright.
     _replace_once(
         deployment,
         "apiVersion: apps/v1\nkind: Deployment\n",
-        '{{- $external := eq (default "local" .Values.env.CULVERT_PKI_MODE)'
-        ' "external" }}\n'
+        "{{- $env := default dict .Values.env }}\n"
+        '{{- $external := or .Values.pkiSecret (eq (default "local"'
+        ' $env.CULVERT_PKI_MODE) "external") }}\n'
+        "{{- $sharedTcKey := or .Values.pkiSecret"
+        " $env.CULVERT_SECRETS_TC_KEY_PATH }}\n"
         "{{- $replicas := .Values.replicaCount }}\n"
         "{{- if .Values.autoscaling.enabled }}"
         "{{- $replicas = .Values.autoscaling.minReplicas }}{{- end }}\n"
@@ -388,10 +536,17 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         " (gt (int $replicas) 1) }}\n"
         '{{- fail (printf "culvert: %d replicas with local PKI and no'
         " persistence. Each replica would mint its own CA, so clients would"
-        " trust whichever pod answered first. Either set"
-        " env.CULVERT_PKI_MODE=external (the way to scale out), or"
-        ' persistence.enabled=true and stay at one replica." (int $replicas))'
-        " }}\n"
+        " trust whichever pod answered first. Either supply shared PKI material"
+        " (pkiSecret), or set persistence.enabled=true and stay at one"
+        ' replica." (int $replicas)) }}\n'
+        "{{- end }}\n"
+        "{{- if and (gt (int $replicas) 1) (not $sharedTcKey) }}\n"
+        '{{- fail (printf "culvert: %d replicas with no shared tls-crypt-v2'
+        " server key. Each replica mints its own, and a client config only"
+        " works against the replica that issued it, so connections would fail"
+        " at random. Set pkiSecret to a Secret carrying tc.key, or point"
+        " env.CULVERT_SECRETS_TC_KEY_PATH at a shared one in your secrets"
+        ' backend." (int $replicas)) }}\n'
         "{{- end }}\n"
         "apiVersion: apps/v1\nkind: Deployment\n",
     )
@@ -439,7 +594,8 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
 
     # service.yaml: culvert VPN overlay. One Service carries the VPN port AND
     # the unauthenticated observability port (9090), so a LoadBalancer would
-    # publish 9090 too. Let operators clamp the source ranges.
+    # publish 9090 too. Let operators clamp the source ranges, pin the address,
+    # and steer a VPN flow at one pod.
     _replace_once(
         service,
         "spec:\n  type: {{ .Values.service.type }}\n",
@@ -448,6 +604,19 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "  # culvert VPN overlay: restrict who can reach the LB (incl. :9090).\n"
         "  loadBalancerSourceRanges:\n"
         "    {{- toYaml . | nindent 4 }}\n"
+        "  {{- end }}\n"
+        "  {{- with .Values.service.loadBalancerIP }}\n"
+        "  # culvert VPN overlay: clients dial a fixed address, so pin it.\n"
+        "  loadBalancerIP: {{ . }}\n"
+        "  {{- end }}\n"
+        "  {{- with .Values.service.externalTrafficPolicy }}\n"
+        "  # culvert VPN overlay: Local keeps the client's real source IP and\n"
+        "  # steers each flow at a pod on the receiving node.\n"
+        "  externalTrafficPolicy: {{ . }}\n"
+        "  {{- end }}\n"
+        "  {{- with .Values.service.sessionAffinity }}\n"
+        "  # culvert VPN overlay: pin a client to the pod that accepted it.\n"
+        "  sessionAffinity: {{ . }}\n"
         "  {{- end }}\n",
     )
 

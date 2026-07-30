@@ -7,8 +7,10 @@
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import lib.openvpn as openvpn_mod
+import pytest
 from lib.config import Config
 from lib.openvpn import (
     _apply_common_options,
@@ -16,6 +18,34 @@ from lib.openvpn import (
     configure_server_udp,
     generate_config,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SERVER_TEMPLATES = (
+    "server.conf.template",
+    "server-tcp.conf.template",
+    "server-https.conf.template",
+)
+
+
+class TestShippedServerTemplates:
+    """Assertions against the templates that actually ship in the image."""
+
+    @pytest.mark.parametrize("name", SERVER_TEMPLATES)
+    def test_no_windows_only_option_is_pushed(self, name):
+        """block-outside-dns is fatal to a non-Windows OpenVPN 2.7 client.
+
+        An option the client does not recognise in a PUSH_REPLY aborts the whole
+        option import, so pushing this to everyone means no Linux or macOS client
+        on a current OpenVPN can bring the tunnel up at all. It belongs in the
+        client config, commented, where a Windows user can enable it.
+        """
+        text = (REPO_ROOT / "config" / name).read_text(encoding="utf-8")
+        pushes = [
+            line
+            for line in text.splitlines()
+            if line.strip().startswith("push ") and "block-outside-dns" in line
+        ]
+        assert not pushes, f"{name} pushes a Windows-only option: {pushes}"
 
 
 class TestGenerateConfig:

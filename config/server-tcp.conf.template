@@ -90,8 +90,10 @@ duplicate-cn
 push "dhcp-option DNS ${OPENVPN_DNS1}"
 push "dhcp-option DNS ${OPENVPN_DNS2}"
 
-# Block DNS leaks on Windows
-push "block-outside-dns"
+# block-outside-dns is NOT pushed. It is a Windows-only option, and an OpenVPN
+# 2.7 client on Linux or macOS treats an unrecognised pushed option as fatal -
+# it rejects the whole PUSH_REPLY and the tunnel never comes up. The generated
+# client config carries it as a commented line for Windows users instead.
 
 # Client-specific config directory (shared with UDP)
 client-config-dir /etc/vpn/server/ccd

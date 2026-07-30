@@ -53,13 +53,17 @@ def _require_lb_config() -> tuple[str, str | None]:
 class TestStarterShipsFailClosed:
     """The opinionated LB values must not create an open LB by accident."""
 
-    def test_unreplaced_placeholder_is_rejected(self, kubectl, helm_values):
+    def test_unreplaced_placeholder_is_rejected(self, kubectl, helm_values, pki_secret):
         """Installing the starter untouched must FAIL, not expose :9090.
 
         The starter sets loadBalancerSourceRanges to an invalid placeholder
         precisely so this install cannot succeed. If it ever does, the guard has
         been softened and an unauthenticated health/metrics endpoint is one
         `helm install` away from a public address.
+
+        pkiSecret is supplied so the multi-replica guard is satisfied and the
+        source range is the ONLY thing that can reject this install - otherwise
+        the test would pass on a template error and prove nothing.
         """
         _require_lb_config()
         result = _helm(
@@ -73,6 +77,8 @@ class TestStarterShipsFailClosed:
             "--timeout",
             "90s",
             *helm_values,
+            "--set",
+            f"pkiSecret={pki_secret}",
             context=kubectl.context,
             namespace=kubectl.namespace,
             check=False,
@@ -88,10 +94,14 @@ class TestStarterShipsFailClosed:
             "the k8s-scale starter installed with its placeholder source range"
             " still in place - the fail-closed guard is not working"
         )
+        assert "REPLACE-ME" in result.stderr, (
+            "the install failed for some other reason than the placeholder"
+            f" source range, so this proves nothing:\n{result.stderr}"
+        )
 
 
 @pytest.fixture(scope="module")
-def lb_deployed(kubectl, helm_values):
+def lb_deployed(kubectl, helm_values, pki_secret):
     """Install the scale starter with real source ranges, yield, tear down."""
     ranges, pinned_ip = _require_lb_config()
     context, namespace = kubectl.context, kubectl.namespace
@@ -121,6 +131,10 @@ def lb_deployed(kubectl, helm_values):
     args = [
         "--set-json",
         f"service.loadBalancerSourceRanges={json.dumps(ranges.split(','))}",
+        # The starter runs more than one replica, so the chart requires shared
+        # PKI material - CA and tls-crypt-v2 key identical on every pod.
+        "--set",
+        f"pkiSecret={pki_secret}",
     ]
     if pinned_ip:
         # Pin the address so a test cannot claim one something else wants.
@@ -221,9 +235,17 @@ class TestConnectionAffinity:
         result = lb_deployed("get", "svc", RELEASE, "-o", "json")
         spec = json.loads(result.stdout)["spec"]
 
+        # The HPA's floor, not the Deployment's live spec.replicas: with an HPA
+        # attached the Deployment omits replicas and reads as 1 until the
+        # autoscaler first acts, which would make this skip on a shape that is
+        # multi-replica by definition.
         replicas = lb_deployed(
-            "get", "deploy", RELEASE, "-o", "jsonpath={.spec.replicas}"
+            "get", "hpa", RELEASE, "-o", "jsonpath={.spec.minReplicas}", check=False
         ).stdout.strip()
+        if not replicas:
+            replicas = lb_deployed(
+                "get", "deploy", RELEASE, "-o", "jsonpath={.spec.replicas}"
+            ).stdout.strip()
         if replicas in ("", "0", "1"):
             pytest.skip(f"only {replicas or 0} replica(s) - affinity is moot")
 

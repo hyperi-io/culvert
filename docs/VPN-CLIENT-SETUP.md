@@ -513,6 +513,34 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 - **Connected but no internet** - try the split tunnel config instead of full tunnel
 - **wstunnel connection refused** - ensure WireGuard over HTTPS is enabled on the server (`CULVERT_WG_HTTPS_TUNNEL_ENABLED=true`)
 
+#### Handshake succeeds but nothing flows, in a container
+
+Running the client inside a container or a Kubernetes pod, on a full tunnel
+(`AllowedIPs = 0.0.0.0/0`)? Look for this line in the `wg-quick up` output:
+
+```
+[#] sysctl -q net.ipv4.conf.all.src_valid_mark=1
+sysctl: setting key "net.ipv4.conf.all.src_valid_mark", ignoring: Read-only file system
+```
+
+wg-quick routes a full tunnel with an fwmark and a policy rule, and that needs
+`src_valid_mark=1` or strict reverse-path filtering discards every encrypted
+packet coming back. A container's `/proc/sys` is read-only however many
+capabilities it holds, so wg-quick's own attempt fails - and it fails quietly,
+leaving a tunnel that shows a recent handshake and carries no data. `wg show`
+gives it away: a few hundred bytes sent, ~92 bytes received, and nothing more.
+
+Two ways out:
+
+- Set the sysctl from a privileged container in the same network namespace
+  before the client starts. In Kubernetes that is an init container:
+  `command: ["sysctl", "-w", "net.ipv4.conf.all.src_valid_mark=1"]` with
+  `securityContext.privileged: true`.
+- Or use the split tunnel config, which routes normally and needs no sysctl.
+
+This is a client-side container limitation, not a server setting - the same
+config works unchanged on a normal host.
+
 ### Split vs Full Tunnel
 
 - **Split tunnel:** Only routes to your site's internal networks go through the VPN

@@ -354,3 +354,39 @@ class TestGenerateHttpsTunnelClientConfig:
         )
 
         assert "DNS = 10.8.0.1, corp.example.com" in config
+
+
+class TestGenerateClientConfigWrapper:
+    """generate-client's own Config wrapper, which is easy to leave incomplete.
+
+    It copies selected fields off lib.config.Config rather than subclassing it,
+    so a field the script uses but never copies shows up only as an
+    AttributeError at the moment someone issues a client.
+    """
+
+    @staticmethod
+    def _wrapper_class():
+        import importlib.util
+
+        path = Path(__file__).resolve().parents[2] / "scripts" / "generate-client.py"
+        spec = importlib.util.spec_from_file_location("generate_client_script", path)
+        assert spec is not None and spec.loader is not None, f"cannot load {path}"
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.Config
+
+    def test_carries_every_field_the_wireguard_path_uses(self) -> None:
+        """Issuing a WireGuard client rewrites AND reloads the server config."""
+        cfg = self._wrapper_class()()
+        for field in (
+            "wg_conf",
+            "wg_post_up",
+            "wg_post_down",
+            "wg_network",
+            "wg_port",
+            "wg_mtu",
+        ):
+            assert hasattr(cfg, field), (
+                f"generate-client's Config wrapper does not copy {field}, so"
+                " generate_wireguard_configs raises AttributeError"
+            )

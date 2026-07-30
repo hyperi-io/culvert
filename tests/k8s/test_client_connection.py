@@ -33,7 +33,7 @@ import subprocess
 import time
 
 import pytest
-from conftest import CHART_DIR, Kubectl, release_name
+from conftest import CHART_DIR, Kubectl, ready_pod, release_name
 
 pytestmark = pytest.mark.k8s
 
@@ -41,6 +41,34 @@ CLIENT_POD = "culvert-test-client"
 TARGET_POD = "culvert-test-target"
 TARGET_RESPONSE = "culvert-k8s-target-ok"
 CLIENT_NAME = "k8s-e2e-client"
+TARGET_LABEL = "culvert-e2e-target"
+NETPOL_NAME = "culvert-e2e-target-isolation"
+
+# Pod networks are flat by default, so the client could reach the target without
+# any tunnel and every connectivity assertion below would prove nothing. This
+# policy admits the culvert pod only. Traffic that arrives through the tunnel is
+# masqueraded to the server's pod IP, so it passes; the client's own packets do
+# not.
+_TARGET_NETWORK_POLICY = {
+    "apiVersion": "networking.k8s.io/v1",
+    "kind": "NetworkPolicy",
+    "metadata": {"name": NETPOL_NAME},
+    "spec": {
+        "podSelector": {"matchLabels": {"culvert-e2e": TARGET_LABEL}},
+        "policyTypes": ["Ingress"],
+        "ingress": [
+            {
+                "from": [
+                    {
+                        "podSelector": {
+                            "matchLabels": {"app.kubernetes.io/name": "culvert"}
+                        }
+                    }
+                ]
+            }
+        ],
+    },
+}
 
 
 def _client_image() -> str:
@@ -55,32 +83,56 @@ def _client_image() -> str:
 
 
 def _server_pod(kubectl: Kubectl, release: str) -> str:
-    result = kubectl(
-        "get",
-        "pod",
-        "-l",
-        f"app.kubernetes.io/instance={release}",
-        "-o",
-        "jsonpath={.items[0].metadata.name}",
-    )
-    name = result.stdout.strip()
-    assert name, f"no server pod for release {release}"
-    return name
+    return ready_pod(kubectl, release)
 
 
-def _run_pod(kubectl: Kubectl, name: str, image: str, pull_secret: str | None) -> None:
+def _run_pod(
+    kubectl: Kubectl,
+    name: str,
+    image: str,
+    pull_secret: str | None,
+    labels: dict[str, str] | None = None,
+) -> None:
     """Start a long-lived pod with the capabilities a VPN client needs."""
     spec = {
         "apiVersion": "v1",
         "kind": "Pod",
-        "metadata": {"name": name},
+        "metadata": {"name": name, "labels": labels or {}},
         "spec": {
             "restartPolicy": "Never",
+            # A VPN client opens a tun device just as the server does, so it
+            # needs the same host device passed through - without it OpenVPN
+            # completes the whole handshake and then fails to create tun0.
+            "volumes": [
+                {
+                    "name": "tun",
+                    "hostPath": {"path": "/dev/net/tun", "type": "CharDevice"},
+                }
+            ],
+            # wg-quick routes an AllowedIPs=0.0.0.0/0 tunnel with an fwmark and
+            # a policy rule, which needs net.ipv4.conf.all.src_valid_mark=1 or
+            # strict rp_filter drops every encrypted packet coming back. It sets
+            # that sysctl itself and the write fails silently in a container
+            # (read-only /proc/sys), leaving a tunnel that handshakes and then
+            # carries nothing. Only a privileged container can set it.
+            "initContainers": [
+                {
+                    "name": "sysctl",
+                    "image": image,
+                    "command": [
+                        "sysctl",
+                        "-w",
+                        "net.ipv4.conf.all.src_valid_mark=1",
+                    ],
+                    "securityContext": {"privileged": True},
+                }
+            ],
             "containers": [
                 {
                     "name": "main",
                     "image": image,
                     "command": ["sleep", "infinity"],
+                    "volumeMounts": [{"name": "tun", "mountPath": "/dev/net/tun"}],
                     "securityContext": {
                         "capabilities": {"add": ["NET_ADMIN"]},
                         "allowPrivilegeEscalation": True,
@@ -123,12 +175,40 @@ def _exec(
     )
 
 
+def _apply(kubectl: Kubectl, manifest: dict) -> subprocess.CompletedProcess[str]:
+    """Apply a manifest given as a dict."""
+    return subprocess.run(
+        [
+            "kubectl",
+            "--context",
+            kubectl.context,
+            "-n",
+            kubectl.namespace,
+            "apply",
+            "-f",
+            "-",
+        ],
+        input=json.dumps(manifest),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
+    )
+
+
 @pytest.fixture(scope="module")
 def target(kubectl):
-    """A pod serving a known string, reachable only from inside the cluster."""
+    """A pod serving a known string, reachable only through the tunnel."""
     image = _client_image()
     pull_secret = os.environ.get("CULVERT_K8S_PULL_SECRET", "").strip() or None
-    _run_pod(kubectl, TARGET_POD, image, pull_secret)
+    _apply(kubectl, _TARGET_NETWORK_POLICY)
+    _run_pod(
+        kubectl,
+        TARGET_POD,
+        image,
+        pull_secret,
+        labels={"culvert-e2e": TARGET_LABEL},
+    )
     # Tiny HTTP responder - python3 is already in the image.
     _exec(
         kubectl,
@@ -148,6 +228,7 @@ def target(kubectl):
     assert ip, "target pod has no IP"
     yield ip
     kubectl("delete", "pod", TARGET_POD, "--wait=false", check=False)
+    kubectl("delete", "networkpolicy", NETPOL_NAME, "--wait=false", check=False)
 
 
 @pytest.fixture(scope="module")
@@ -160,21 +241,28 @@ def client_pod(kubectl):
     kubectl("delete", "pod", CLIENT_POD, "--wait=false", check=False)
 
 
-def _issue_and_fetch_config(kubectl: Kubectl, release: str, suffix: str) -> str:
+def _issue_and_fetch_config(
+    kubectl: Kubectl, release: str, suffix: str, dial: str | None = None
+) -> str:
     """Generate a client config on the server pod and return its contents.
 
     Proves the real issuance path works against whatever PKI the server is
-    using, rather than assuming a config can be produced.
+    using, rather than assuming a config can be produced. ``dial`` points the
+    finished config at a different release's Service, which is how a config
+    issued once is used against a second server sharing the same PKI.
     """
     server = _server_pod(kubectl, release)
-    result = _exec(
-        kubectl,
-        server,
-        f"generate-client --name {CLIENT_NAME} --protocol all"
-        " --output /etc/vpn/clients",
-        check=False,
-        timeout=300,
+    issue = (
+        f"generate-client --name {CLIENT_NAME} --protocol all --output /etc/vpn/clients"
     )
+    result = _exec(kubectl, server, issue, check=False, timeout=300)
+    if result.returncode != 0:
+        # A certificate for this name already exists, either from an earlier test
+        # or from a sibling server sharing the CA. Re-cut the configs against it
+        # rather than revoking and reissuing.
+        result = _exec(
+            kubectl, server, f"{issue} --config-only", check=False, timeout=300
+        )
     assert result.returncode == 0, (
         f"generate-client failed on the server pod:\n{result.stdout}\n{result.stderr}"
     )
@@ -183,7 +271,46 @@ def _issue_and_fetch_config(kubectl: Kubectl, release: str, suffix: str) -> str:
         kubectl, server, f"cat /etc/vpn/clients/{CLIENT_NAME}-{suffix}"
     ).stdout
     assert content.strip(), f"{CLIENT_NAME}-{suffix} is empty"
-    return content
+    return _point_at_service(kubectl, dial or release, content)
+
+
+def _service_dns(kubectl: Kubectl, release: str) -> str:
+    """In-cluster DNS name of the release's Service."""
+    name = kubectl(
+        "get",
+        "svc",
+        "-l",
+        f"app.kubernetes.io/instance={release}",
+        "-o",
+        "jsonpath={.items[0].metadata.name}",
+    ).stdout.strip()
+    assert name, f"no Service for release {release}"
+    return f"{name}.{kubectl.namespace}.svc.cluster.local"
+
+
+def _point_at_service(kubectl: Kubectl, release: str, config: str) -> str:
+    """Redirect a client config at the in-cluster Service.
+
+    The config the server issues names CULVERT_SERVER_CN, which is the public
+    DNS name clients dial and does not resolve from inside the cluster. Swapping
+    the destination for the Service name is what an operator does when the same
+    server answers on more than one address, and it means the connection is made
+    through the Service rather than straight at a pod IP.
+    """
+    dns = _service_dns(kubectl, release)
+    lines = []
+    for line in config.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("remote "):
+            parts = stripped.split()
+            lines.append(" ".join(["remote", dns, *parts[2:]]))
+        elif stripped.startswith("Endpoint"):
+            _, _, value = stripped.partition("=")
+            port = value.strip().rsplit(":", 1)[-1]
+            lines.append(f"Endpoint = {dns}:{port}")
+        else:
+            lines.append(line)
+    return "\n".join(lines) + "\n"
 
 
 def _connect_openvpn(kubectl: Kubectl, pod: str, config: str) -> None:
@@ -242,8 +369,10 @@ class TestOpenVPNTunnelLocalPKI:
     def test_target_unreachable_before_the_tunnel(self, kubectl, client_pod, target):
         """Baseline: without the tunnel the client must NOT reach the target.
 
-        Without this the connectivity assertion below proves nothing - in a flat
-        cluster network the client can usually reach any pod directly.
+        Without this the connectivity assertion below proves nothing - a flat
+        pod network lets the client reach any pod directly, so the target
+        fixture puts a NetworkPolicy in front of it that admits only the culvert
+        pod. This asserts that policy is actually in force.
         """
         result = _exec(
             kubectl,
@@ -251,13 +380,12 @@ class TestOpenVPNTunnelLocalPKI:
             f"curl -sf --connect-timeout 5 http://{target}:8080/ || echo BLOCKED",
             check=False,
         )
-        if TARGET_RESPONSE in result.stdout:
-            pytest.skip(
-                "the client pod reaches the target directly (flat pod network),"
-                " so a post-tunnel success would not prove the tunnel carried"
-                " it. Give the target a NetworkPolicy denying the client, or run"
-                " this against a target outside the pod CIDR."
-            )
+        assert TARGET_RESPONSE not in result.stdout, (
+            "the client pod reached the target WITHOUT the tunnel, so the"
+            f" NetworkPolicy {NETPOL_NAME} is not being enforced. Every"
+            " connectivity assertion in this module would pass vacuously."
+            " Does this cluster's CNI implement NetworkPolicy?"
+        )
 
     def test_openvpn_tunnel_carries_traffic(
         self, kubectl, client_pod, target, deployed
@@ -265,22 +393,27 @@ class TestOpenVPNTunnelLocalPKI:
         """Issue a config, connect, and require the target to answer over tun0."""
         config = _issue_and_fetch_config(kubectl, release_name(), "udp-full.ovpn")
         _connect_openvpn(kubectl, client_pod, config)
-        addr = _wait_for_tun(kubectl, client_pod)
-        assert addr.startswith("10.8.0."), (
-            f"tun0 address {addr} is not from the UDP listener's pool"
-        )
+        try:
+            addr = _wait_for_tun(kubectl, client_pod)
+            assert addr.startswith("10.8.0."), (
+                f"tun0 address {addr} is not from the UDP listener's pool"
+            )
 
-        result = _exec(
-            kubectl,
-            client_pod,
-            f"curl -sf --connect-timeout 10 http://{target}:8080/",
-            check=False,
-        )
-        log = _exec(kubectl, client_pod, "cat /tmp/openvpn.log", check=False).stdout
-        assert TARGET_RESPONSE in result.stdout, (
-            f"target did not answer through the tunnel. curl: {result.stdout!r}"
-            f" {result.stderr!r}\nOpenVPN log:\n{log}"
-        )
+            result = _exec(
+                kubectl,
+                client_pod,
+                f"curl -sf --connect-timeout 10 http://{target}:8080/",
+                check=False,
+            )
+            log = _exec(kubectl, client_pod, "cat /tmp/openvpn.log", check=False).stdout
+            assert TARGET_RESPONSE in result.stdout, (
+                f"target did not answer through the tunnel. curl: {result.stdout!r}"
+                f" {result.stderr!r}\nOpenVPN log:\n{log}"
+            )
+        finally:
+            # The same client pod is reused for the external-PKI tunnel, so this
+            # connection has to be gone before that one comes up.
+            _exec(kubectl, client_pod, "pkill openvpn", check=False)
 
 
 class TestWireGuardTunnel:
@@ -290,9 +423,10 @@ class TestWireGuardTunnel:
         self, kubectl, client_pod, target, deployed
     ):
         """Bring wg0 up from a generated config and reach the target."""
-        if "wireguard" not in os.environ.get("CULVERT_K8S_PROTOCOL", "both"):
+        protocol = os.environ.get("CULVERT_K8S_PROTOCOL", "both").strip() or "both"
+        if protocol not in ("both", "wireguard"):
             pytest.skip(
-                "server not running WireGuard - set CULVERT_K8S_PROTOCOL to"
+                f"server is running {protocol} - set CULVERT_K8S_PROTOCOL to"
                 " 'both' or 'wireguard' to cover this path"
             )
 
@@ -324,6 +458,20 @@ class TestWireGuardTunnel:
                 "wg-quick could not bring the interface up - the node kernel may"
                 f" lack the wireguard module:\n{up.stdout}\n{up.stderr}"
             )
+        # The pod's init container should have set this. Assert it, because
+        # without it the handshake still succeeds and only the data path fails,
+        # which reads as a server fault when it is not one.
+        mark = _exec(
+            kubectl,
+            client_pod,
+            "cat /proc/sys/net/ipv4/conf/all/src_valid_mark",
+            check=False,
+        ).stdout.strip()
+        assert mark == "1", (
+            "net.ipv4.conf.all.src_valid_mark is not set in the client pod, so"
+            " rp_filter will drop the tunnel's return traffic and this test"
+            " would fail for a reason that has nothing to do with the server"
+        )
         try:
             result = _exec(
                 kubectl,
@@ -342,29 +490,17 @@ class TestWireGuardTunnel:
 class TestExternalPKI:
     """The documented production path: CA and server keypair from outside.
 
-    Needs PKI material provisioned out of band and referenced by env. The
-    intent is that hyperi-infra provisions reusable objects in the DevEx PKI
-    service so this can run repeatably rather than minting throwaway material
-    each time.
+    The material comes from the ``pki_secret`` fixture - a Secret provisioned out
+    of band where one exists (CULVERT_K8S_PKI_SECRET), otherwise the identity the
+    local-PKI server minted for itself, copied into a Secret. Either way this
+    server is handed PKI it did not create, which is the thing under test, and a
+    tunnel is brought up over it because a server that loads a CA and then
+    refuses connections has not passed.
     """
 
-    def test_server_serves_an_externally_issued_ca(self, kubectl):
-        """The CA the server presents must be the external one, not a fresh mint."""
-        secret = os.environ.get("CULVERT_K8S_PKI_SECRET", "").strip()
-        if not secret:
-            pytest.skip(
-                "CULVERT_K8S_PKI_SECRET is not set - external-PKI coverage needs"
-                " a pre-created Secret holding the CA and server keypair."
-                " Provision it via hyperi-infra and set the name."
-            )
-
-        expected_subject = os.environ.get("CULVERT_K8S_PKI_CA_SUBJECT", "").strip()
-        if not expected_subject:
-            pytest.skip(
-                "CULVERT_K8S_PKI_CA_SUBJECT is not set - without the expected CA"
-                " subject this cannot tell an external CA from a self-minted one"
-            )
-
+    @pytest.fixture(scope="class")
+    def extpki_release(self, kubectl, pki_secret, helm_values):
+        """A second release running entirely on the supplied PKI material."""
         release = release_name() + "-extpki"
         result = subprocess.run(
             [
@@ -380,45 +516,102 @@ class TestExternalPKI:
                 "--wait",
                 "--timeout",
                 "5m",
+                *helm_values,
                 "--set",
-                "env.CULVERT_PKI_MODE=external",
-                "--set",
-                f"existingSecret={secret}",
-                "--set-json",
-                "podSecurityContext.sysctls=[]",
+                f"pkiSecret={pki_secret}",
             ],
             capture_output=True,
             text=True,
             timeout=600,
             check=False,
         )
-        try:
-            assert result.returncode == 0, (
+        if result.returncode != 0:
+            pytest.fail(
                 f"external-PKI install failed:\n{result.stdout}\n{result.stderr}"
             )
-            pod = _server_pod(kubectl, release)
-            subject = _exec(
+        yield release
+        subprocess.run(
+            [
+                "helm",
+                "--kube-context",
+                kubectl.context,
+                "-n",
+                kubectl.namespace,
+                "uninstall",
+                release,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+
+    def test_server_loads_the_supplied_ca(self, kubectl, pki_secret, extpki_release):
+        """The CA on disk must be the one from the Secret, not a fresh mint."""
+        from_secret = kubectl(
+            "get",
+            "secret",
+            pki_secret,
+            "-o",
+            "jsonpath={.data['ca\\.crt']}",
+        ).stdout.strip()
+        assert from_secret, f"{pki_secret} has no ca.crt key"
+
+        pod = _server_pod(kubectl, extpki_release)
+        on_disk = _exec(kubectl, pod, "base64 -w0 /etc/vpn/pki/ca.crt").stdout.strip()
+        assert on_disk == from_secret, (
+            "the server is not using the CA it was given - it has probably"
+            " self-minted one instead, which is what external PKI mode exists"
+            " to avoid"
+        )
+
+    def test_shared_tls_crypt_key_is_the_supplied_one(
+        self, kubectl, pki_secret, extpki_release
+    ):
+        """A locally minted key here would break every sibling replica."""
+        from_secret = kubectl(
+            "get",
+            "secret",
+            pki_secret,
+            "-o",
+            "jsonpath={.data['tc\\.key']}",
+        ).stdout.strip()
+        assert from_secret, f"{pki_secret} has no tc.key key"
+
+        pod = _server_pod(kubectl, extpki_release)
+        on_disk = _exec(kubectl, pod, "base64 -w0 /etc/vpn/pki/tc.key").stdout.strip()
+        assert on_disk == from_secret, (
+            "the server minted its own tls-crypt-v2 key instead of using the"
+            " shared one, so clients issued by a sibling replica would be"
+            " rejected"
+        )
+
+    def test_tunnel_works_on_external_pki(
+        self, kubectl, client_pod, target, deployed, extpki_release
+    ):
+        """Same bar as local PKI: a real tunnel carrying real traffic.
+
+        The config is issued by the server that OWNS the CA and then dialled at
+        the external-PKI server, which never had the CA key and cannot sign
+        anything. That is the property multi-replica depends on: a client issued
+        once is accepted by any server holding the same material.
+        """
+        config = _issue_and_fetch_config(
+            kubectl, release_name(), "udp-full.ovpn", dial=extpki_release
+        )
+        _connect_openvpn(kubectl, client_pod, config)
+        try:
+            _wait_for_tun(kubectl, client_pod)
+            result = _exec(
                 kubectl,
-                pod,
-                "openssl x509 -in /etc/vpn/pki/ca.crt -noout -subject",
-            ).stdout
-            assert expected_subject in subject, (
-                f"server is using CA {subject.strip()!r}, expected the external"
-                f" CA containing {expected_subject!r} - it may have self-minted"
+                client_pod,
+                f"curl -sf --connect-timeout 10 http://{target}:8080/",
+                check=False,
+            )
+            log = _exec(kubectl, client_pod, "cat /tmp/openvpn.log", check=False).stdout
+            assert TARGET_RESPONSE in result.stdout, (
+                "target did not answer through an external-PKI tunnel."
+                f" curl: {result.stdout!r}\nOpenVPN log:\n{log}"
             )
         finally:
-            subprocess.run(
-                [
-                    "helm",
-                    "--kube-context",
-                    kubectl.context,
-                    "-n",
-                    kubectl.namespace,
-                    "uninstall",
-                    release,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=300,
-            )
+            _exec(kubectl, client_pod, "pkill openvpn", check=False)

@@ -87,6 +87,17 @@ class TestValidatePem:
         data = b"  \n-----BEGIN CERTIFICATE-----\ndata\n"
         assert _validate_pem(data, "test") is True
 
+    def test_pem_after_a_certificate_text_dump(self):
+        """Easy-RSA's own issued/server.crt looks exactly like this."""
+        from lib.pki import _validate_pem
+
+        data = (
+            b"Certificate:\n    Data:\n        Version: 3 (0x2)\n"
+            b"        Serial Number: 1 (0x1)\n"
+            b"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n"
+        )
+        assert _validate_pem(data, "server certificate") is True
+
 
 # ---------------------------------------------------------------------------
 # Provider factory

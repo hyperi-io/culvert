@@ -287,6 +287,10 @@ class Config:
     secrets_server_cert_path: str = ""
     secrets_server_key_path: str = ""
     secrets_crl_path: str = ""
+    # The tls-crypt-v2 server key. Optional for one server, REQUIRED to run
+    # more than one: a client's tls-crypt-v2 key is derived from it, so a client
+    # issued by one server cannot reach a sibling that minted a different key.
+    secrets_tc_key_path: str = ""
     secrets_openbao_address: str = ""
     secrets_openbao_auth_method: str = ""
     secrets_openbao_token: str = ""
@@ -560,6 +564,7 @@ class Config:
             secrets_server_cert_path=s.get("secrets_server_cert_path", ""),
             secrets_server_key_path=s.get("secrets_server_key_path", ""),
             secrets_crl_path=s.get("secrets_crl_path", ""),
+            secrets_tc_key_path=s.get("secrets_tc_key_path", ""),
             secrets_openbao_address=s.get("secrets_openbao_address", ""),
             secrets_openbao_auth_method=s.get("secrets_openbao_auth_method", ""),
             secrets_openbao_token=s.get("secrets_openbao_token", ""),

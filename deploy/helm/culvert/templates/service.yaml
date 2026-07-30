@@ -11,6 +11,19 @@ spec:
   loadBalancerSourceRanges:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  {{- with .Values.service.loadBalancerIP }}
+  # culvert VPN overlay: clients dial a fixed address, so pin it.
+  loadBalancerIP: {{ . }}
+  {{- end }}
+  {{- with .Values.service.externalTrafficPolicy }}
+  # culvert VPN overlay: Local keeps the client's real source IP and
+  # steers each flow at a pod on the receiving node.
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.service.sessionAffinity }}
+  # culvert VPN overlay: pin a client to the pod that accepted it.
+  sessionAffinity: {{ . }}
+  {{- end }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: metrics

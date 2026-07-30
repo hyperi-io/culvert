@@ -1,9 +1,14 @@
-{{- $external := eq (default "local" .Values.env.CULVERT_PKI_MODE) "external" }}
+{{- $env := default dict .Values.env }}
+{{- $external := or .Values.pkiSecret (eq (default "local" $env.CULVERT_PKI_MODE) "external") }}
+{{- $sharedTcKey := or .Values.pkiSecret $env.CULVERT_SECRETS_TC_KEY_PATH }}
 {{- $replicas := .Values.replicaCount }}
 {{- if .Values.autoscaling.enabled }}{{- $replicas = .Values.autoscaling.minReplicas }}{{- end }}
 {{- if .Values.keda.enabled }}{{- $replicas = 2 }}{{- end }}
 {{- if and (not $external) (not .Values.persistence.enabled) (gt (int $replicas) 1) }}
-{{- fail (printf "culvert: %d replicas with local PKI and no persistence. Each replica would mint its own CA, so clients would trust whichever pod answered first. Either set env.CULVERT_PKI_MODE=external (the way to scale out), or persistence.enabled=true and stay at one replica." (int $replicas)) }}
+{{- fail (printf "culvert: %d replicas with local PKI and no persistence. Each replica would mint its own CA, so clients would trust whichever pod answered first. Either supply shared PKI material (pkiSecret), or set persistence.enabled=true and stay at one replica." (int $replicas)) }}
+{{- end }}
+{{- if and (gt (int $replicas) 1) (not $sharedTcKey) }}
+{{- fail (printf "culvert: %d replicas with no shared tls-crypt-v2 server key. Each replica mints its own, and a client config only works against the replica that issued it, so connections would fail at random. Set pkiSecret to a Secret carrying tc.key, or point env.CULVERT_SECRETS_TC_KEY_PATH at a shared one in your secrets backend." (int $replicas)) }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -42,6 +47,20 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # culvert VPN overlay: IP forwarding in the pod network namespace.
+      {{- if .Values.ipForward.enabled }}
+      initContainers:
+        - name: enable-ip-forward
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sysctl", "-w", "net.ipv4.ip_forward=1"]
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -64,11 +83,24 @@ spec:
               protocol: {{ .protocol | default "TCP" }}
             {{- end }}
           # culvert VPN overlay: CULVERT_* env (set CULVERT_SERVER_CN).
-          {{- with .Values.env }}
+          {{- $env := default dict .Values.env }}
+          {{- if or $env .Values.pkiSecret }}
           env:
-            {{- range $k, $v := . }}
+            {{- range $k, $v := $env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
+            {{- end }}
+            # culvert VPN overlay: point external PKI at the mounted
+            # Secret. Anything set in `env` above wins, so an operator
+            # can fetch from openbao/aws instead.
+            {{- if .Values.pkiSecret }}
+            {{- $mount := .Values.pkiSecretMountPath }}
+            {{- range $k, $v := dict "CULVERT_PKI_MODE" "external" "CULVERT_SECRETS_PROVIDER" "file" "CULVERT_SECRETS_CA_CERT_PATH" (printf "%s/ca.crt" $mount) "CULVERT_SECRETS_SERVER_CERT_PATH" (printf "%s/server.crt" $mount) "CULVERT_SECRETS_SERVER_KEY_PATH" (printf "%s/server.key" $mount) "CULVERT_SECRETS_CRL_PATH" (printf "%s/crl.pem" $mount) "CULVERT_SECRETS_TC_KEY_PATH" (printf "%s/tc.key" $mount) }}
+            {{- if not (hasKey $env $k) }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- end }}
             {{- end }}
           {{- end }}
           # culvert VPN overlay: SENSITIVE CULVERT_* from a pre-created Secret.
@@ -111,6 +143,12 @@ spec:
             - name: pki
               mountPath: /etc/vpn/pki
             {{- end }}
+            # culvert VPN overlay: external PKI material (file provider).
+            {{- if .Values.pkiSecret }}
+            - name: pki-external
+              mountPath: {{ .Values.pkiSecretMountPath }}
+              readOnly: true
+            {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -131,6 +169,13 @@ spec:
         - name: pki
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.existingClaim | default (printf "%s-pki" (include "culvert.fullname" .)) }}
+        {{- end }}
+        # culvert VPN overlay: external PKI material (file provider).
+        {{- if .Values.pkiSecret }}
+        - name: pki-external
+          secret:
+            secretName: {{ .Values.pkiSecret }}
+            defaultMode: 0400
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -4,7 +4,12 @@
 #
 #   helm install culvert deploy/helm/culvert -n vpn \
 #     -f deploy/helm/culvert/values-edge-fleet.yaml \
-#     --set env.CULVERT_SERVER_CN=vpn.example.com
+#     --set env.CULVERT_SERVER_CN=vpn.example.com \
+#     --set pkiSecret=culvert-fleet-pki
+#
+# pkiSecret is REQUIRED here: this shape runs more than one replica, so the CA
+# and the tls-crypt-v2 server key must be identical across them. The chart
+# refuses to render without it.
 #
 # Namespace must permit the VPN pod (NET_ADMIN, /dev/net/tun,
 # net.ipv4.ip_forward) - see values-k8s-scale.yaml.
@@ -14,9 +19,16 @@
 #   inbound  (admin): admin/repos -> culvert (back down tunnel) -> appliance
 
 # Connection-based LB, same requirement as the k8s-scale case: one flow
-# stays pinned to one pod.
+# stays pinned to one pod, and the same fail-closed source range - one
+# Service carries the VPN ports AND the unauthenticated :9090 observability
+# port, so the placeholder below is an invalid CIDR the API server rejects
+# until you replace it with the CIDRs your appliances dial in from.
 service:
   type: LoadBalancer
+  loadBalancerSourceRanges:
+    - "REPLACE-ME/32"   # appliance egress / admin CIDRs only
+  sessionAffinity: ClientIP
+  externalTrafficPolicy: Local
 
 autoscaling:
   enabled: true
@@ -42,8 +54,13 @@ resources:
 #     the tunnel for it; receiver-only here makes reverse admin one-way.
 # CGNAT tunnel addressing (100.64/10) because the operator controls both
 # ends - do NOT use for laptops on carrier/Starlink links.
+# PKI mode is external for the same reason as k8s-scale: this shape runs more
+# than one replica, and with local PKI each replica mints its own CA, so an
+# appliance would trust whichever pod answered first. The chart refuses that
+# combination at template time.
 env:
   CULVERT_PROFILE: edge-fleet
+  CULVERT_PKI_MODE: external
   CULVERT_LOG_MODE: stdout
   CULVERT_UDP_NETWORK: "100.64.0.0"
   CULVERT_ROUTING_CONTROL_ENABLED: "true"

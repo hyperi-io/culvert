@@ -32,27 +32,35 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
   # net.ipv4.ip_forward has to be on for client traffic to route through the
-  # pod, and the entrypoint sets it at runtime because it holds NET_ADMIN. It is
-  # NOT requested here by default: it is an unsafe sysctl, so a kubelet without
-  # `--allowed-unsafe-sysctls net.ipv4.ip_forward` rejects the pod outright, and
-  # most clusters do not set that. Declaring it here instead is tidier where
-  # your kubelet does allow it - uncomment then.
+  # pod. It is NOT requested here by default: it is an unsafe sysctl, so a
+  # kubelet without `--allowed-unsafe-sysctls net.ipv4.ip_forward` rejects the
+  # pod outright, and most clusters do not set that. The `ipForward` init
+  # container below handles it instead, on any cluster. Uncomment this and set
+  # ipForward.enabled=false where your kubelet does allow the sysctl.
   #sysctls:
   #  - name: net.ipv4.ip_forward
   #    value: "1"
 
-# -- culvert VPN overlay: container hardening. Everything dropped except
-# NET_ADMIN, which opens and configures the tun device, iptables NAT and
-# routing. Add SYS_MODULE too if the host offers OpenVPN DCO kernel offload.
-# readOnlyRootFilesystem is NOT set: in local-PKI mode the server mints its CA
-# and keys onto the container filesystem. Put that state on a volume first, then
-# add `readOnlyRootFilesystem: true` here.
+# -- culvert VPN overlay: container hardening. Everything is dropped except the
+# four capabilities the VPN data plane needs:
+#   NET_ADMIN  opens and configures the tun device, iptables NAT and routing
+#   SETUID     OpenVPN drops to `user nobody` once the sockets are bound
+#   SETGID     and to `group nogroup`
+#   SETPCAP    retains NET_ADMIN across that drop
+# Without SETPCAP/SETUID/SETGID, OpenVPN cannot complete the privilege drop and
+# exits 1 during startup. Add SYS_MODULE too if the host offers OpenVPN DCO
+# kernel offload. readOnlyRootFilesystem is NOT set: in local-PKI mode the
+# server mints its CA and keys onto the container filesystem. Put that state on
+# a volume first, then add `readOnlyRootFilesystem: true` here.
 securityContext:
   capabilities:
     drop:
       - ALL
     add:
       - NET_ADMIN
+      - SETPCAP
+      - SETGID
+      - SETUID
   allowPrivilegeEscalation: false
 
 # -- Pod annotations (Prometheus scrape config included by default)
@@ -71,13 +79,45 @@ resources:
     cpu: "2"
     memory: 1Gi
 
-# -- Metrics and health endpoint service
+# -- Metrics and health endpoint service. This one Service also carries
+# the VPN listener ports, so a LoadBalancer publishes :9090 with it.
 service:
   type: ClusterIP
   port: 9090
+  # -- culvert VPN overlay: CIDRs allowed to reach the LB. Leaving this
+  # empty on a LoadBalancer exposes /livez, /readyz and /metrics
+  # unauthenticated to everything the LB is reachable from.
+  loadBalancerSourceRanges: []
+  # -- culvert VPN overlay: pin the LB address clients dial.
+  loadBalancerIP: ""
+  # -- culvert VPN overlay: `Local` preserves the client's real source
+  # IP, which per-client routing rules and the connection log need.
+  # `Cluster` (the Kubernetes default) SNATs every client to a node IP.
+  externalTrafficPolicy: ""
+  # -- culvert VPN overlay: `ClientIP` keeps a client on the pod that
+  # accepted it. Set this whenever more than one replica is behind the
+  # Service: tunnel state is per-pod, so a flow that lands elsewhere
+  # is a dropped connection.
+  sessionAffinity: ""
 
 # -- Application configuration (mounted as /etc/vpn/profiles/culvert.yaml)
 config: {}
+
+# -- culvert VPN overlay: enable net.ipv4.ip_forward in the pod's own network
+# namespace, via a short privileged init container.
+#
+# Client traffic does not leave the pod without it. It cannot be done from the
+# server container: a container's /proc/sys is mounted read-only regardless of
+# capabilities, so NET_ADMIN is not enough. The init container runs `sysctl -w`
+# and exits, and only the pod's namespace is affected - not the node's.
+#
+# Turn it off only if you are setting the sysctl another way, e.g.
+# podSecurityContext.sysctls on a kubelet started with
+# `--allowed-unsafe-sysctls net.ipv4.ip_forward`. IPv6 forwarding is left off
+# deliberately: culvert's routing controls are iptables-only, so forwarded IPv6
+# would bypass client isolation and the egress allow-list.
+ipForward:
+  enabled: true
 
 # -- culvert VPN overlay: /dev/net/tun host passthrough. Required for OpenVPN
 # and WireGuard. On a cluster with a TUN device plugin, disable this and request
@@ -114,6 +154,10 @@ persistence:
 # these render as plaintext into the Deployment. Secrets go via existingSecret.
 env:
   CULVERT_SERVER_CN: vpn.example.com
+  # OpenVPN's own log goes to stdout so `kubectl logs` shows why a pod failed.
+  # The image default writes it to /var/log/vpn/openvpn.log instead, which is
+  # unreachable once the container has exited.
+  CULVERT_LOG_MODE: stdout
 
 # -- culvert VPN overlay: name of a pre-created Secret to load as environment
 # (envFrom). This is where the SENSITIVE CULVERT_* values belong -- OIDC client
@@ -122,6 +166,29 @@ env:
 # Operator, sealed-secrets, or kubectl) with keys like CULVERT_OAUTH2_CLIENT_SECRET;
 # empty string disables the envFrom.
 existingSecret: ""
+
+# -- culvert VPN overlay: PKI material for external-PKI mode, delivered as a
+# Secret rather than fetched over the network.
+#
+# Name a Secret carrying the server's identity and the chart mounts it read-only
+# and points CULVERT_SECRETS_* at the mount, so the container copies it into the
+# writable PKI directory on start. Keys:
+#
+#   ca.crt      REQUIRED  the CA clients must trust
+#   server.crt  REQUIRED  the server certificate
+#   server.key  REQUIRED  its private key
+#   crl.pem     optional  revocation list
+#   tc.key      optional for one replica, REQUIRED for more than one -- a
+#               client's tls-crypt-v2 key is derived from this server key, so
+#               replicas that each mint their own reject each other's clients
+#
+# This is the only way to run more than one replica: every replica then presents
+# the same CA and the same tls-crypt-v2 key, so any of them can serve any client.
+# Leave it empty to use local PKI (the single-server default), or set
+# CULVERT_SECRETS_PROVIDER to openbao/aws in `env` to fetch over the network
+# instead.
+pkiSecret: ""
+pkiSecretMountPath: /etc/vpn/pki-external
 
 # -- culvert VPN overlay: opt-in listener ports, beyond the always-on OpenVPN
 # UDP (1194/udp) and the observability port (9090/tcp). Uncomment the ones whose

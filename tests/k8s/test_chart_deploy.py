@@ -25,7 +25,7 @@ import json
 import time
 
 import pytest
-from conftest import release_name
+from conftest import ready_pod, release_name
 
 pytestmark = pytest.mark.k8s
 
@@ -33,18 +33,8 @@ RELEASE = release_name()
 
 
 def _pod_name(kubectl) -> str:
-    """Name of the culvert pod."""
-    result = kubectl(
-        "get",
-        "pod",
-        "-l",
-        f"app.kubernetes.io/instance={RELEASE}",
-        "-o",
-        "jsonpath={.items[0].metadata.name}",
-    )
-    name = result.stdout.strip()
-    assert name, "no culvert pod found for the release"
-    return name
+    """Name of the Ready culvert pod."""
+    return ready_pod(kubectl, RELEASE)
 
 
 class TestChartInstalls:
@@ -85,11 +75,33 @@ class TestChartInstalls:
         sec = json.loads(result.stdout) if result.stdout.strip() else {}
         added = (sec.get("capabilities") or {}).get("add") or []
         assert "NET_ADMIN" in added, f"NET_ADMIN not granted: {sec}"
+        # OpenVPN drops to user nobody once its sockets are bound and needs
+        # these to do it. Without them it exits 1 and the chart never starts.
+        for cap in ("SETPCAP", "SETGID", "SETUID"):
+            assert cap in added, (
+                f"{cap} not granted: {sec}. OpenVPN cannot complete its"
+                " privilege drop without it and exits during startup."
+            )
         assert sec.get("allowPrivilegeEscalation") is False, (
             f"allowPrivilegeEscalation should be false: {sec}"
         )
         assert sec.get("runAsNonRoot") is not True, (
             "runAsNonRoot must not be set - OpenVPN and wg-quick need root"
+        )
+
+    def test_ip_forwarding_is_on_in_the_pod(self, deployed):
+        """Without this the server completes handshakes and forwards nothing.
+
+        A container's /proc/sys is read-only however many capabilities it holds,
+        so the entrypoint cannot set this and only the privileged init container
+        can. The pod looks perfectly healthy either way - probes pass, clients
+        connect - and then no traffic reaches anything.
+        """
+        pod = _pod_name(deployed)
+        result = deployed("exec", pod, "--", "cat", "/proc/sys/net/ipv4/ip_forward")
+        assert result.stdout.strip() == "1", (
+            "net.ipv4.ip_forward is off in the pod network namespace - is"
+            " ipForward.enabled set, and did the init container run?"
         )
 
     def test_service_account_token_not_mounted(self, deployed):

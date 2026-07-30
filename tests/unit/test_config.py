@@ -177,6 +177,17 @@ class TestConfigEnvOverride:
         assert cfg.secrets_provider == "openbao"
         assert cfg.secrets_openbao_address == "https://bao.example.com:8200"
 
+    def test_tc_key_path_override(self, clean_env, monkeypatch):
+        """A shared tls-crypt-v2 key is what lets more than one server serve."""
+        monkeypatch.setenv("CULVERT_SECRETS_TC_KEY_PATH", "secret/culvert/tc")
+        cfg = Config.from_settings()
+        assert cfg.secrets_tc_key_path == "secret/culvert/tc"
+
+    def test_tc_key_path_defaults_empty(self, clean_env):
+        """Unset means each server mints its own - fine for a single server."""
+        cfg = Config.from_settings()
+        assert cfg.secrets_tc_key_path == ""
+
 
 class TestConfigNetworkProfiles:
     """Network profile drives performance tuning defaults."""
