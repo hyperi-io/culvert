@@ -27,8 +27,9 @@ It does two things:
    that fail loudly if scalo's output shape changes:
 
    - ``NET_ADMIN`` container capability (tun device, routing, NAT);
-   - ``net.ipv4.ip_forward`` pod sysctl;
    - ``/dev/net/tun`` host-device passthrough (toggle);
+   - an optional PVC for ``/etc/vpn/pki``, plus a guard refusing local PKI
+     across replicas;
    - a ``CULVERT_*`` env map (at least ``CULVERT_SERVER_CN``);
    - opt-in listener ports (TCP, HTTPS/stunnel, WireGuard, wstunnel, OIDC,
      client download) -- default none, so the chart defaults to the simplest
@@ -117,12 +118,15 @@ _VALUES_SECURITY = """# -- culvert VPN overlay: the VPN data plane runs as root 
 podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
-  # ip_forward lets client traffic route through the pod. It is an unsafe
-  # sysctl: allow it on the kubelet (--allowed-unsafe-sysctls net.ipv4.ip_forward)
-  # or let the entrypoint set it at runtime (it holds NET_ADMIN).
-  sysctls:
-    - name: net.ipv4.ip_forward
-      value: "1"
+  # net.ipv4.ip_forward has to be on for client traffic to route through the
+  # pod, and the entrypoint sets it at runtime because it holds NET_ADMIN. It is
+  # NOT requested here by default: it is an unsafe sysctl, so a kubelet without
+  # `--allowed-unsafe-sysctls net.ipv4.ip_forward` rejects the pod outright, and
+  # most clusters do not set that. Declaring it here instead is tidier where
+  # your kubelet does allow it - uncomment then.
+  #sysctls:
+  #  - name: net.ipv4.ip_forward
+  #    value: "1"
 
 # -- culvert VPN overlay: container hardening. Everything dropped except
 # NET_ADMIN, which opens and configures the tun device, iptables NAT and
@@ -146,6 +150,28 @@ _VALUES_VPN = """
 tunDevice:
   enabled: true
   hostPath: /dev/net/tun
+
+# -- culvert VPN overlay: persist the PKI directory.
+#
+# In local PKI mode (the default) the server mints its own CA on first start and
+# writes it to /etc/vpn/pki. Without a volume that lives on the container's
+# writable layer, so EVERY RESTART MINTS A NEW CA and every client config issued
+# against the old one stops working.
+#
+# Off by default because it needs a StorageClass, which not every cluster has,
+# and because the production answer is usually CULVERT_PKI_MODE=external. Turn
+# it on for a durable single-replica local-PKI server.
+#
+# It does not help past one replica: each replica gets its own volume and mints
+# its own CA, so clients would trust whichever pod answered first. The chart
+# refuses that combination rather than letting you find out in production - use
+# external PKI to scale out.
+persistence:
+  enabled: false
+  # storageClass: ""        # "" uses the cluster default
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  # existingClaim: ""       # bring your own PVC instead
 
 # -- culvert VPN overlay: CULVERT_* environment. At minimum set
 # CULVERT_SERVER_CN to the DNS name clients dial. See .env.example for the full
@@ -310,6 +336,11 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "            {{- if .Values.tunDevice.enabled }}\n"
         "            - name: tun\n"
         "              mountPath: /dev/net/tun\n"
+        "            {{- end }}\n"
+        "            # culvert VPN overlay: durable PKI (local-PKI mode).\n"
+        "            {{- if .Values.persistence.enabled }}\n"
+        "            - name: pki\n"
+        "              mountPath: /etc/vpn/pki\n"
         "            {{- end }}\n",
     )
 
@@ -330,7 +361,66 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         "          hostPath:\n"
         "            path: {{ .Values.tunDevice.hostPath }}\n"
         "            type: CharDevice\n"
+        "        {{- end }}\n"
+        "        # culvert VPN overlay: durable PKI (local-PKI mode).\n"
+        "        {{- if .Values.persistence.enabled }}\n"
+        "        - name: pki\n"
+        "          persistentVolumeClaim:\n"
+        "            claimName: {{ .Values.persistence.existingClaim"
+        ' | default (printf "%s-pki" (include "culvert.fullname" .)) }}\n'
         "        {{- end }}\n",
+    )
+
+    # deployment.yaml: refuse local PKI across replicas. Each replica would mint
+    # its own CA behind one Service, so a client would trust whichever pod
+    # happened to answer first. Fail at template time with the fix named,
+    # rather than let it be discovered from client-side TLS errors in production.
+    _replace_once(
+        deployment,
+        "apiVersion: apps/v1\nkind: Deployment\n",
+        '{{- $external := eq (default "local" .Values.env.CULVERT_PKI_MODE)'
+        ' "external" }}\n'
+        "{{- $replicas := .Values.replicaCount }}\n"
+        "{{- if .Values.autoscaling.enabled }}"
+        "{{- $replicas = .Values.autoscaling.minReplicas }}{{- end }}\n"
+        "{{- if .Values.keda.enabled }}{{- $replicas = 2 }}{{- end }}\n"
+        "{{- if and (not $external) (not .Values.persistence.enabled)"
+        " (gt (int $replicas) 1) }}\n"
+        '{{- fail (printf "culvert: %d replicas with local PKI and no'
+        " persistence. Each replica would mint its own CA, so clients would"
+        " trust whichever pod answered first. Either set"
+        " env.CULVERT_PKI_MODE=external (the way to scale out), or"
+        ' persistence.enabled=true and stay at one replica." (int $replicas))'
+        " }}\n"
+        "{{- end }}\n"
+        "apiVersion: apps/v1\nkind: Deployment\n",
+    )
+
+    # A PVC for the PKI directory, rendered only when persistence is on and no
+    # existing claim was supplied. Written rather than patched because the
+    # generic generator has no persistence concept to hook into.
+    (chart_dir / "templates" / "pvc.yaml").write_text(
+        "{{- if and .Values.persistence.enabled"
+        " (not .Values.persistence.existingClaim) }}\n"
+        "# culvert VPN overlay: durable /etc/vpn/pki for local-PKI mode.\n"
+        "apiVersion: v1\n"
+        "kind: PersistentVolumeClaim\n"
+        "metadata:\n"
+        '  name: {{ include "culvert.fullname" . }}-pki\n'
+        "  labels:\n"
+        '    {{- include "culvert.labels" . | nindent 4 }}\n'
+        "spec:\n"
+        "  accessModes:\n"
+        "    - {{ .Values.persistence.accessMode }}\n"
+        "  {{- with .Values.persistence.storageClass }}\n"
+        "  storageClassName: {{ . }}\n"
+        "  {{- end }}\n"
+        "  resources:\n"
+        "    requests:\n"
+        "      storage: {{ .Values.persistence.size }}\n"
+        "{{- end }}\n",
+        encoding="utf-8",
+        newline="\n",
     )
 
     # service.yaml: opt-in extraPorts.

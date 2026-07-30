@@ -31,12 +31,15 @@ serviceAccount:
 podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
-  # ip_forward lets client traffic route through the pod. It is an unsafe
-  # sysctl: allow it on the kubelet (--allowed-unsafe-sysctls net.ipv4.ip_forward)
-  # or let the entrypoint set it at runtime (it holds NET_ADMIN).
-  sysctls:
-    - name: net.ipv4.ip_forward
-      value: "1"
+  # net.ipv4.ip_forward has to be on for client traffic to route through the
+  # pod, and the entrypoint sets it at runtime because it holds NET_ADMIN. It is
+  # NOT requested here by default: it is an unsafe sysctl, so a kubelet without
+  # `--allowed-unsafe-sysctls net.ipv4.ip_forward` rejects the pod outright, and
+  # most clusters do not set that. Declaring it here instead is tidier where
+  # your kubelet does allow it - uncomment then.
+  #sysctls:
+  #  - name: net.ipv4.ip_forward
+  #    value: "1"
 
 # -- culvert VPN overlay: container hardening. Everything dropped except
 # NET_ADMIN, which opens and configures the tun device, iptables NAT and
@@ -82,6 +85,28 @@ config: {}
 tunDevice:
   enabled: true
   hostPath: /dev/net/tun
+
+# -- culvert VPN overlay: persist the PKI directory.
+#
+# In local PKI mode (the default) the server mints its own CA on first start and
+# writes it to /etc/vpn/pki. Without a volume that lives on the container's
+# writable layer, so EVERY RESTART MINTS A NEW CA and every client config issued
+# against the old one stops working.
+#
+# Off by default because it needs a StorageClass, which not every cluster has,
+# and because the production answer is usually CULVERT_PKI_MODE=external. Turn
+# it on for a durable single-replica local-PKI server.
+#
+# It does not help past one replica: each replica gets its own volume and mints
+# its own CA, so clients would trust whichever pod answered first. The chart
+# refuses that combination rather than letting you find out in production - use
+# external PKI to scale out.
+persistence:
+  enabled: false
+  # storageClass: ""        # "" uses the cluster default
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  # existingClaim: ""       # bring your own PVC instead
 
 # -- culvert VPN overlay: CULVERT_* environment. At minimum set
 # CULVERT_SERVER_CN to the DNS name clients dial. See .env.example for the full

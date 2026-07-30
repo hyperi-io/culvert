@@ -46,8 +46,15 @@ resources:
 
 # Non-secret config. CULVERT_SERVER_CN is set on the install command line
 # above; add other non-secret CULVERT_* here.
+#
+# PKI mode is external because this shape scales out. With local PKI each
+# replica mints its own CA, so a client would trust whichever pod answered
+# first - the chart refuses that combination rather than letting you find out
+# from client-side TLS errors. Point CULVERT_SECRETS_* at your backend; see
+# the External PKI section of .env.example.
 env:
   CULVERT_LOG_MODE: stdout
+  CULVERT_PKI_MODE: external
 
 # Sensitive CULVERT_* (OIDC client secret, client-download token, OpenBao
 # token) come from a Secret you create out-of-band (External Secrets

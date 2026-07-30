@@ -1,3 +1,10 @@
+{{- $external := eq (default "local" .Values.env.CULVERT_PKI_MODE) "external" }}
+{{- $replicas := .Values.replicaCount }}
+{{- if .Values.autoscaling.enabled }}{{- $replicas = .Values.autoscaling.minReplicas }}{{- end }}
+{{- if .Values.keda.enabled }}{{- $replicas = 2 }}{{- end }}
+{{- if and (not $external) (not .Values.persistence.enabled) (gt (int $replicas) 1) }}
+{{- fail (printf "culvert: %d replicas with local PKI and no persistence. Each replica would mint its own CA, so clients would trust whichever pod answered first. Either set env.CULVERT_PKI_MODE=external (the way to scale out), or persistence.enabled=true and stay at one replica." (int $replicas)) }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -99,6 +106,11 @@ spec:
             - name: tun
               mountPath: /dev/net/tun
             {{- end }}
+            # culvert VPN overlay: durable PKI (local-PKI mode).
+            {{- if .Values.persistence.enabled }}
+            - name: pki
+              mountPath: /etc/vpn/pki
+            {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -113,6 +125,12 @@ spec:
           hostPath:
             path: {{ .Values.tunDevice.hostPath }}
             type: CharDevice
+        {{- end }}
+        # culvert VPN overlay: durable PKI (local-PKI mode).
+        {{- if .Values.persistence.enabled }}
+        - name: pki
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-pki" (include "culvert.fullname" .)) }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
