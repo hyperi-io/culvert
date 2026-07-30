@@ -71,8 +71,39 @@ jobs:
           BRANCH="deps/openvpn-auth-oauth2-${VERSION}"
           git checkout -b "${BRANCH}"
 
+          # The Dockerfile pins a SHA256 per architecture and verifies it before
+          # dpkg, so bumping the version alone produces a PR whose build always
+          # fails on a checksum mismatch. Compute both from the release the bump
+          # points at, and fail here rather than leaving a dead PR behind.
+          BASE="https://github.com/jkroepke/openvpn-auth-oauth2/releases/download/v${VERSION}"
+          for ARCH in amd64 arm64; do
+            curl --proto '=https' --tlsv1.2 -fsSL --max-time 120 \
+              "${BASE}/openvpn-auth-oauth2_${VERSION}_linux_${ARCH}.deb" \
+              -o "/tmp/oauth2-${ARCH}.deb"
+          done
+          SHA_AMD64=$(sha256sum /tmp/oauth2-amd64.deb | cut -d' ' -f1)
+          SHA_ARM64=$(sha256sum /tmp/oauth2-arm64.deb | cut -d' ' -f1)
+
+          # Cross-check against the release's own checksums.txt where it exists,
+          # so a tampered download cannot be pinned as authoritative.
+          if curl --proto '=https' --tlsv1.2 -fsSL --max-time 60 \
+               "${BASE}/checksums.txt" -o /tmp/oauth2-checksums.txt; then
+            grep -q "${SHA_AMD64}" /tmp/oauth2-checksums.txt
+            grep -q "${SHA_ARM64}" /tmp/oauth2-checksums.txt
+            echo "Checksums match the upstream checksums.txt"
+          else
+            echo "::warning::no checksums.txt for v${VERSION} - SHAs are from the downloads alone"
+          fi
+
           # Update Dockerfile
           sed -i "s/ARG OPENVPN_AUTH_OAUTH2_VERSION=\"${CURRENT}\"/ARG OPENVPN_AUTH_OAUTH2_VERSION=\"${VERSION}\"/" Dockerfile
+          sed -i "s/^ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64=.*/ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64=\"${SHA_AMD64}\"/" Dockerfile
+          sed -i "s/^ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64=.*/ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64=\"${SHA_ARM64}\"/" Dockerfile
+
+          # Both ARGs are what the RUN layer's checksum test reads, so if either
+          # substitution missed, the build would fail later on a stale SHA.
+          grep -q "${SHA_AMD64}" Dockerfile
+          grep -q "${SHA_ARM64}" Dockerfile
 
           # Commit and push
           git config user.name "github-actions[bot]"

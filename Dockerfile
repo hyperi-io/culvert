@@ -58,11 +58,19 @@ ARG OPENVPN_AUTH_OAUTH2_VERSION="1.28.3"
 ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="f762273dca8fe3449c51b8365cc0fa7dc5ad30d95720e7fde6d16bd17cd6d476"
 ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="f20b7f2ac713540ca996d7a8e522980b158c78f8a970ca9fa3f9c0c5e3b33f5d"
 
-# openvpn from the project's signed apt repo. The repo key's fingerprint is
-# checked against the pinned value and the build fails if it does not match,
-# so a substituted key cannot reach the keyring. Key 30EB F4E7 3CCE 63EE
-# E124 DD27 8E6D A8B4 E158 C569 (Samuli Seppanen, expires 2030) - re-pin here
-# if it rotates.
+# openvpn from the project's signed apt repo. The downloaded keyring must carry
+# EXACTLY ONE primary key and its fingerprint must be the pinned one, so neither
+# a substituted key nor a second key smuggled in alongside the real one can
+# reach /etc/apt/keyrings. Counting `pub` records rather than `fpr` records is
+# deliberate: a key with signing subkeys emits an `fpr` line per subkey, all
+# legitimately belonging to the same primary. Key 30EB F4E7 3CCE 63EE E124 DD27
+# 8E6D A8B4 E158 C569 (Samuli Seppanen, expires 2030) - re-pin if it rotates.
+#
+# The installed openvpn is then checked against OPENVPN_MIN_VERSION. The apt
+# repo serves one version per suite so it cannot be pinned, and the server
+# config depends on 2.7 behaviour: persist-key is deprecated there and only 2.7
+# clients reject an unknown pushed option, which is why block-outside-dns is not
+# pushed. Silently building on 2.6 would change both.
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -73,9 +81,11 @@ RUN apt-get update \
     && mkdir -p /etc/apt/keyrings \
     && curl --proto '=https' --tlsv1.2 -fsSL --max-time 30 \
          https://swupdate.openvpn.net/repos/repo-public.gpg -o /tmp/openvpn-repo.gpg \
-    && gpg --show-keys --with-colons /tmp/openvpn-repo.gpg \
-       | awk -F: '$1=="fpr"{print $10}' \
-       | grep -qx 30EBF4E73CCE63EEE124DD278E6DA8B4E158C569 \
+    && gpg --show-keys --with-colons /tmp/openvpn-repo.gpg > /tmp/openvpn-repo.keys \
+    && [ "$(grep -c '^pub:' /tmp/openvpn-repo.keys)" = "1" ] \
+    && [ "$(awk -F: '/^pub:/{p=1;next} /^fpr:/&&p{print $10;exit}' /tmp/openvpn-repo.keys)" \
+         = "30EBF4E73CCE63EEE124DD278E6DA8B4E158C569" ] \
+    && rm /tmp/openvpn-repo.keys \
     && gpg --dearmor -o /etc/apt/keyrings/openvpn.gpg /tmp/openvpn-repo.gpg \
     && rm /tmp/openvpn-repo.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/openvpn.gpg] https://build.openvpn.net/debian/openvpn/stable $(lsb_release -cs) main" \
@@ -99,6 +109,9 @@ RUN apt-get update \
         net-tools \
         tcpdump \
         dnsutils \
+    && INSTALLED_OPENVPN="$(dpkg-query -W openvpn | cut -f2)" \
+    && echo "openvpn ${INSTALLED_OPENVPN} (floor ${OPENVPN_MIN_VERSION})" \
+    && dpkg --compare-versions "${INSTALLED_OPENVPN}" ge "${OPENVPN_MIN_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
 # openvpn-auth-oauth2 from a pinned release .deb, checksum-checked before
