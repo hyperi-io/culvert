@@ -1,5 +1,12 @@
 # Changelog
 
+Rendered by CI and committed back at the end of a release -- do not edit by
+hand. Release notes also appear on the GitHub Releases page, one per tag.
+
+## [2.1.5](https://github.com/hyperi-io/culvert/compare/v2.1.4...v2.1.5) (2026-08-02)
+
+# Changelog
+
 Notable changes, by release. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
