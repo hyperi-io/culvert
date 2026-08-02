@@ -79,3 +79,14 @@ publish:
     platforms:
       - linux/amd64
       - linux/arm64
+    # GHCR and most registry UIs show org.opencontainers.image.description on
+    # the package page. hyperi-ci emits that label on every build and has no
+    # source for its value, so it ships empty unless set here - and because it
+    # arrives as `docker build --label`, a LABEL in the Dockerfile cannot
+    # supply it either: the CLI flag wins.
+    labels:
+      org.opencontainers.image.description: >-
+        The VPN server that installs like a container, because it is one.
+        OpenVPN and WireGuard in a single image, each optionally tunnelled over
+        HTTPS, with OIDC SSO and external PKI -- docker run it standalone or
+        drop it into Kubernetes.
