@@ -12,6 +12,22 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: false
+        default: ""
+        description: "Tag to publish (e.g. v1.3.0)"
+      from-head:
+        type: string
+        required: false
+        default: ""
+        description: "'true' to release/retry the current HEAD."
+      bump:
+        type: string
+        required: false
+        default: "auto"
+        description: "from-head version: auto | patch | minor | X.Y.Z (exact)."
 
 jobs:
   ci:
@@ -20,4 +36,7 @@ jobs:
     # repos, rather than drawing on the org's self-hosted pool.
     with:
       runner-mode: free
+      tag: ${{ inputs.tag || '' }}
+      from-head: ${{ inputs.from-head || '' }}
+      bump: ${{ inputs.bump || 'auto' }}
     secrets: inherit
