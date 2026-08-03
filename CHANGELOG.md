@@ -3,6 +3,8 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.11](https://github.com/hyperi-io/culvert/compare/v2.1.10...v2.1.11) (2026-08-03)
+
 ## [2.1.10](https://github.com/hyperi-io/culvert/compare/v2.1.9...v2.1.10) (2026-08-03)
 
 ## [2.1.9](https://github.com/hyperi-io/culvert/compare/v2.1.8...v2.1.9) (2026-08-03)
