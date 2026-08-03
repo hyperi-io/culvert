@@ -40,7 +40,7 @@
 
 # Base image pinned by digest so builds are reproducible. Override
 # BASE_IMAGE to rebuild on a newer base. hadolint ignore=DL3006
-ARG BASE_IMAGE="ubuntu:24.04@sha256:786a8b558f7be160c6c8c4a54f9a57274f3b4fb1491cf65146521ae77ff1dc54"
+ARG BASE_IMAGE="ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90"
 ARG VERSION="dev"
 ARG COMMIT=""
 
