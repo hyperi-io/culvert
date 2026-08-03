@@ -560,8 +560,16 @@ class TestExternalPKI:
     """
 
     @pytest.fixture(scope="class")
-    def extpki_release(self, kubectl, pki_secret, helm_values):
-        """A second release running entirely on the supplied PKI material."""
+    @classmethod
+    def extpki_release(cls, kubectl, pki_secret, helm_values):
+        """A second release running entirely on the supplied PKI material.
+
+        A classmethod because pytest 9.1 deprecates a class-scoped fixture
+        written as an instance method: the fixture runs once per class while
+        each test gets a fresh instance, so anything set on self would be
+        invisible to the tests. This one only yields a value, but the warning
+        is an error here and would otherwise take the whole class down.
+        """
         release = release_name() + "-extpki"
         result = subprocess.run(
             [
