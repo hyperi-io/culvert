@@ -4,6 +4,13 @@
 
 language: python
 
+# Category 4, general OSS: public repo, Apache-2.0, publishes its container to
+# a public registry. Declared rather than inferred - the repo prefix is a hint
+# and nothing more, and every tool that cares about licence, visibility or
+# publishing reads this. It matches what is already true: public since
+# 2026-08-03, Apache-2.0 in LICENSE, and ghcr.io/hyperi-io/culvert public.
+classification: 4
+
 quality:
   enabled: true
   ignore:
