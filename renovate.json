@@ -2,5 +2,13 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>hyperi-io/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "requirements-docker.txt is a hash-pinned export of uv.lock, not a manifest anyone edits. Renovate bumping it directly desynchronises the two: the image installs one set of versions while the lock - and so every test - keeps another, and the next legitimate regeneration silently reverts the bump. Nothing in CI would catch that, because the tests run from the lock. pyproject.toml stays managed through pep621; transitive versions move when we refresh the lock and re-export.",
+      "matchManagers": ["pip_requirements"],
+      "matchFileNames": ["requirements-docker.txt"],
+      "enabled": false
+    }
   ]
 }
