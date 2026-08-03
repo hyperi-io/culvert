@@ -7,6 +7,7 @@
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -372,3 +373,88 @@ class TestCrlRefresh:
 
         assert refetch_external_crl(cfg) is False
         assert "FAKE_CRL" in (pki / "crl.pem").read_text()
+
+
+class TestLocalPkiNeverDestroysKeyMaterial:
+    """`init_pki_local` must never issue `easyrsa init-pki`, in any spelling.
+
+    That command removes the PKI directory before recreating it, and 3.2.x
+    gives no way to opt out. Two ways it hurts: the directory is a volume
+    mount, so the removal fails and the container will not start, and where it
+    could succeed it takes the CA with it. This function is reached with a
+    HALF-built PKI too, since `init_pki` skips it only when the CA, the server
+    certificate and the tls-crypt key are ALL present - so a CA that lost its
+    tls-crypt key lands here.
+
+    Asserted on the commands actually issued, because that is where the damage
+    would be done. All init-pki creates is three directories we make ourselves.
+    """
+
+    @pytest.fixture
+    def local_cfg(self, tmp_path, clean_env, monkeypatch):
+        from lib.config import Config
+
+        monkeypatch.setenv("CULVERT_PKI_MODE", "local")
+        cfg = Config.from_settings()
+        cfg.pki_dir = tmp_path / "pki"
+        return cfg
+
+    @staticmethod
+    def _run_init(monkeypatch, cfg) -> list[str]:
+        """Run init_pki_local with easy-rsa stubbed out; return its commands."""
+        import lib.pki as pki_mod
+
+        # The easy-rsa install path is hardcoded and absent off-container, so
+        # the function would exit before reaching the decision under test.
+        real_exists = Path.exists
+        monkeypatch.setattr(
+            Path,
+            "exists",
+            lambda self: (
+                True if str(self) == "/usr/share/easy-rsa" else real_exists(self)
+            ),
+        )
+
+        # With easy-rsa stubbed nothing is actually written, so the trailing
+        # permission pass has no files to chmod. Not what is under test.
+        monkeypatch.setattr(Path, "chmod", lambda self, mode: None)
+
+        commands: list[str] = []
+        monkeypatch.setattr(pki_mod, "run", lambda cmd, **kw: commands.append(cmd))
+        monkeypatch.setattr(pki_mod, "generate_tc_key", lambda *a, **kw: None)
+        pki_mod.init_pki_local(cfg)
+        return commands
+
+    def test_init_pki_is_never_issued_on_a_fresh_directory(
+        self, local_cfg, monkeypatch
+    ):
+        """Not even the first start may call it - the mount cannot be removed."""
+        commands = self._run_init(monkeypatch, local_cfg)
+        assert not any("init-pki" in c for c in commands), (
+            "init-pki was issued. easy-rsa 3.2.x removes the PKI directory"
+            " first, which fails outright on a volume mount and stops the"
+            f" container starting: {commands}"
+        )
+
+    def test_init_pki_is_never_issued_over_an_existing_ca(self, local_cfg, monkeypatch):
+        """A CA present means there is something to lose."""
+        local_cfg.pki_dir.mkdir(parents=True)
+        (local_cfg.pki_dir / "ca.crt").write_text("CA")
+
+        commands = self._run_init(monkeypatch, local_cfg)
+        assert not any("init-pki" in c for c in commands), (
+            "init-pki ran over an existing CA. Where the removal succeeds that"
+            f" revokes every client the CA ever signed: {commands}"
+        )
+
+    def test_the_ca_is_still_built(self, local_cfg, monkeypatch):
+        """Dropping init-pki must not stop the PKI being created.
+
+        build-ca needs the three directories, which we now make ourselves.
+        """
+        commands = self._run_init(monkeypatch, local_cfg)
+        assert any("build-ca" in c for c in commands), f"no CA was built: {commands}"
+        for name in ("issued", "private", "reqs"):
+            assert (local_cfg.pki_dir / name).is_dir(), (
+                f"{name}/ was not created, so build-ca has nothing to write into"
+            )

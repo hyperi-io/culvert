@@ -365,14 +365,27 @@ def init_pki_local(cfg) -> None:
 
     os.environ.update(env_vars)
 
-    # Create PKI directories
+    # `easyrsa init-pki` is deliberately NOT run. All it creates is the three
+    # directories below, and it insists on REMOVING the PKI directory first -
+    # unconditionally on 3.2.x, with no opt-out. That is fatal twice over: the
+    # directory is a volume mount, so the removal fails outright ("Device or
+    # resource busy"), and where it could succeed it would take the CA and
+    # every certificate issued from it. This function is reached with a
+    # half-built PKI too, since the caller only skips when the CA, the server
+    # certificate and the tls-crypt key are ALL present.
+    #
+    # 3.1.x's spelling for a non-destructive init, `init-pki soft`, is not a
+    # portable answer either: 3.2.x reads that argument as a curve name and
+    # rejects it, which stops the container starting.
+    #
+    # Creating the directories ourselves works on both, and build-ca still
+    # refuses to overwrite an existing CA - so a half-built PKI fails loudly
+    # rather than being silently replaced.
     cfg.pki_dir.mkdir(parents=True, exist_ok=True)
     (cfg.pki_dir / "issued").mkdir(exist_ok=True)
     (cfg.pki_dir / "private").mkdir(exist_ok=True)
     (cfg.pki_dir / "reqs").mkdir(exist_ok=True)
 
-    # Initialize PKI
-    run(f"cd {easyrsa} && ./easyrsa init-pki soft")
     run(f"cd {easyrsa} && ./easyrsa build-ca nopass")
 
     # Generate server cert
