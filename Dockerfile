@@ -40,7 +40,7 @@
 
 # Base image pinned by digest so builds are reproducible. Override
 # BASE_IMAGE to rebuild on a newer base. hadolint ignore=DL3006
-ARG BASE_IMAGE="ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90"
+ARG BASE_IMAGE="ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb"
 ARG VERSION="dev"
 ARG COMMIT=""
 
@@ -164,7 +164,7 @@ ENV ENV_PREFIX=CULVERT
 
 # wstunnel from a pinned release tarball, checksum-checked before extract.
 # There is no apt repo, and the upstream container image's binary links
-# against a newer glibc than this noble base, so the tarball is the only
+# against a glibc newer than the base image's, so the tarball is the only
 # option that runs here. BSD-3-Clause Rust binary.
 ARG WSTUNNEL_VERSION="10.6.2"
 ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e19241311e34868e6e"
