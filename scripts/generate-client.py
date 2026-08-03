@@ -213,9 +213,44 @@ def generate_ovpn_config(
         # stunnel handles the TLS connection to server:443
         remote_line = "remote 127.0.0.1 1195 tcp"
         proto_desc = f"TCP {cfg.https_port} (HTTPS tunnel via stunnel)"
-        # Generate stunnel client config
+
+        # The proxy belongs HERE, in stunnel, not in the OpenVPN config.
+        # OpenVPN's own remote is loopback, so an http-proxy directive there
+        # would ask the corporate proxy to CONNECT to 127.0.0.1 - which it
+        # refuses. stunnel is the process that actually reaches the server, so
+        # it is the one that has to speak to the proxy.
+        if proxy_server:
+            proxy_host, proxy_port = proxy_server.split(":")
+            stunnel_target = f"""connect = {proxy_host}:{proxy_port}
+
+# Reach the server THROUGH the proxy: stunnel opens the TCP connection to the
+# proxy and asks it to CONNECT onwards to the real endpoint. Corporate proxies
+# generally only permit CONNECT to 443, which is exactly the port the HTTPS
+# listener uses - that is the whole point of tunnelling over it.
+protocol = connect
+protocolHost = {cfg.server_cn}:{cfg.https_port}"""
+            if proxy_auth:
+                stunnel_target += """
+protocolAuthentication = basic
+protocolUsername = CHANGE_ME
+protocolPassword = CHANGE_ME"""
+            else:
+                stunnel_target += """
+
+# Add proxy authentication if needed - uncomment and fill in:
+# protocolAuthentication = basic
+# protocolUsername = your-username
+# protocolPassword = your-password"""
+        else:
+            stunnel_target = f"connect = {cfg.server_cn}:{cfg.https_port}"
+
+        stunnel_name = (
+            f"{client_name}-proxy-stunnel.conf"
+            if proxy_server
+            else (f"{client_name}-stunnel.conf")
+        )
         stunnel_config = f"""# Culvert stunnel Client Configuration
-# Run: stunnel {client_name}-stunnel.conf
+# Run: stunnel {stunnel_name}
 # Then connect with OpenVPN
 
 # Foreground mode
@@ -229,7 +264,7 @@ client = yes
 
 [openvpn-https]
 accept = 127.0.0.1:1195
-connect = {cfg.server_cn}:{cfg.https_port}
+{stunnel_target}
 
 # Verify server certificate
 verifyChain = yes
@@ -243,20 +278,22 @@ checkHost = {cfg.server_cn}
     if protocol == "tcp-https":
         mode_desc += " (HTTPS)"
 
-    # Proxy configuration
+    # Proxy configuration. Note what is NOT here: an http-proxy directive.
+    # OpenVPN connects to the local stunnel, and stunnel is what talks to the
+    # proxy - see the stunnel config built above. Putting it here instead makes
+    # OpenVPN ask the proxy to CONNECT to 127.0.0.1, which cannot work.
     proxy_section = ""
     if proxy_server:
-        proxy_host, proxy_port = proxy_server.split(":")
-        mode_desc = f"{tunnel_mode} tunnel (PROXY)"
-        proto_desc = f"TCP {cfg.tcp_port} via proxy {proxy_server}"
+        mode_desc = f"{tunnel_mode} tunnel (PROXY MODE)"
+        proto_desc = f"TCP {cfg.https_port} via proxy {proxy_server}"
         proxy_section = f"""
 #===============================================================================
-# HTTP CONNECT Proxy Configuration
+# PROXY MODE
 #===============================================================================
-http-proxy {proxy_host} {proxy_port}
-http-proxy-retry"""
-        if proxy_auth:
-            proxy_section += "\nhttp-proxy-option AGENT OpenVPN-Proxy-Client"
+# Egress goes through {proxy_server}. Start stunnel with
+# {client_name}-proxy-stunnel.conf FIRST - it holds the proxy settings and does
+# the CONNECT to {cfg.server_cn}:{cfg.https_port}. This file only ever talks to
+# stunnel on loopback."""
 
     logger.info(
         f"Creating config: {output_path.name}", protocol=proto_desc, mode=tunnel_mode
@@ -377,9 +414,13 @@ verb 3
     # Write config
     write_secret(output_path, config)
 
-    # Write stunnel config if HTTPS tunnel
+    # Write stunnel config if HTTPS tunnel. The proxy variant gets its own
+    # name: both are built from the same tcp-https branch, and proxy configs
+    # are generated second, so a shared name means --proxy silently destroys
+    # the direct-HTTPS stunnel config the same run just wrote.
     if stunnel_config:
-        stunnel_path = output_path.parent / f"{client_name}-stunnel.conf"
+        suffix = "-proxy-stunnel.conf" if proxy_server else "-stunnel.conf"
+        stunnel_path = output_path.parent / f"{client_name}{suffix}"
         write_secret(stunnel_path, stunnel_config)
         logger.info(f"  stunnel config: {stunnel_path}")
 

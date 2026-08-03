@@ -223,7 +223,11 @@ verify_container_server_cert() {
 # Generate test client in container
 generate_test_client() {
     local client_name="${1:-testclient}"
-    container_exec generate-client "${client_name}"
+    # --name, not a positional: generate-client has never taken one, and the
+    # README and every use-case doc spell it this way. Passing it positionally
+    # exits 2 on argparse before any work happens, which is what made this
+    # whole tier look broken.
+    container_exec generate-client --name "${client_name}"
 }
 
 # Check if client configs exist (all 6 configs)

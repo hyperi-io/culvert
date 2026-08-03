@@ -153,7 +153,7 @@ teardown_file() {
 
 @test "client generated on primary is visible on secondary" {
     # Generate client on primary
-    run docker exec "${CONTAINER_PRIMARY}" generate-client sharedtest1
+    run docker exec "${CONTAINER_PRIMARY}" generate-client --name sharedtest1
     assert_success
 
     # Verify client cert exists on secondary
@@ -163,7 +163,7 @@ teardown_file() {
 
 @test "client config generated on primary is visible on secondary" {
     # Generate client on primary
-    docker exec "${CONTAINER_PRIMARY}" generate-client sharedtest2
+    docker exec "${CONTAINER_PRIMARY}" generate-client --name sharedtest2
 
     # Verify configs exist on secondary
     run docker exec "${CONTAINER_SECONDARY}" test -f /etc/vpn/clients/sharedtest2-udp-split.ovpn
@@ -175,7 +175,7 @@ teardown_file() {
 
 @test "client generated on secondary uses same CA" {
     # Generate client on secondary
-    run docker exec "${CONTAINER_SECONDARY}" generate-client sharedtest3
+    run docker exec "${CONTAINER_SECONDARY}" generate-client --name sharedtest3
     assert_success
 
     # Verify client cert on primary is signed by the same CA
@@ -204,7 +204,7 @@ teardown_file() {
 
 @test "client revoked on primary updates CRL visible to secondary" {
     # Generate and revoke client on primary
-    docker exec "${CONTAINER_PRIMARY}" generate-client revoketest
+    docker exec "${CONTAINER_PRIMARY}" generate-client --name revoketest
 
     local crl_before
     crl_before=$(docker exec "${CONTAINER_SECONDARY}" md5sum /etc/vpn/pki/crl.pem | awk '{print $1}')

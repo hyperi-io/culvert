@@ -21,7 +21,7 @@ teardown() {
 @test "generate-client creates WireGuard configs in wireguard mode" {
     start_test_container -e "CULVERT_PROTOCOL=wireguard" -e "CULVERT_SERVER_CN=test.example.com"
     wait_for_container_ready 30
-    run docker exec "${TEST_CONTAINER_NAME}" generate-client --protocol wireguard
+    run docker exec "${TEST_CONTAINER_NAME}" generate-client --name wgonly --protocol wireguard
     assert_success
 
     # Check WireGuard configs were created
@@ -34,7 +34,7 @@ teardown() {
 @test "generate-client creates both OpenVPN and WireGuard configs in both mode" {
     start_test_container -e "CULVERT_PROTOCOL=both" -e "CULVERT_SERVER_CN=test.example.com"
     wait_for_container_ready 60
-    run docker exec "${TEST_CONTAINER_NAME}" generate-client --protocol all
+    run docker exec "${TEST_CONTAINER_NAME}" generate-client --name wgboth --protocol all
     assert_success
 
     run docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/
@@ -47,7 +47,7 @@ teardown() {
 @test "WireGuard client config contains correct endpoint" {
     start_test_container -e "CULVERT_PROTOCOL=wireguard" -e "CULVERT_SERVER_CN=vpn.test.io"
     wait_for_container_ready 30
-    run docker exec "${TEST_CONTAINER_NAME}" generate-client --protocol wireguard
+    run docker exec "${TEST_CONTAINER_NAME}" generate-client --name wgendpoint --protocol wireguard
     assert_success
 
     # Find the generated config and check endpoint
@@ -61,7 +61,7 @@ teardown() {
 @test "WireGuard peer allocation creates allocations.json" {
     start_test_container -e "CULVERT_PROTOCOL=wireguard"
     wait_for_container_ready 30
-    run docker exec "${TEST_CONTAINER_NAME}" generate-client --protocol wireguard
+    run docker exec "${TEST_CONTAINER_NAME}" generate-client --name wgalloc --protocol wireguard
     assert_success
 
     run docker exec "${TEST_CONTAINER_NAME}" test -f /etc/vpn/pki/wireguard/allocations.json

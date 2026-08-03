@@ -137,19 +137,24 @@ teardown_file() {
     generate_test_client "configtest4"
 
     config=$(get_client_config "configtest4" "tcp" "split")
-    # Default TCP port is 443 (over TLS)
-    assert_contains "${config}" "remote test-vpn.example.com 443 tcp"
+    # 1194 is the TCP default (CULVERT_TCP_PORT), same number as UDP. 443
+    # belongs to the HTTPS listener, which is a different thing entirely.
+    assert_contains "${config}" "remote test-vpn.example.com 1194 tcp"
 }
 
 #===============================================================================
 # HTTPS Config Content Tests
 #===============================================================================
 
-@test "HTTPS config contains TCP 443 remote entry" {
+@test "HTTPS config points OpenVPN at the local stunnel, not the server" {
     generate_test_client "configtest4a"
 
     config=$(get_client_config "configtest4a" "https" "split")
-    assert_contains "${config}" "remote test-vpn.example.com 443 tcp"
+    # The whole point of the HTTPS path: OpenVPN talks to stunnel on loopback,
+    # and stunnel is what makes the TLS connection out to the server on 443.
+    # A remote pointing straight at the server would bypass the wrapping this
+    # listener exists to provide.
+    assert_contains "${config}" "remote 127.0.0.1 1195 tcp"
 }
 
 #===============================================================================
