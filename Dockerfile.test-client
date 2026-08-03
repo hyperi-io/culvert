@@ -15,9 +15,9 @@
 #          culvert-client /etc/vpn/clients/alice-split.ovpn
 #
 # Base image: Override with --build-arg UBUNTU_VERSION=xx.xx
-# Default: 24.04 LTS (pinned for stability, override for testing newer)
+# Default: 26.04 LTS (pinned for stability, override for testing newer)
 
-ARG UBUNTU_VERSION=24.04
+ARG UBUNTU_VERSION=26.04
 FROM ubuntu:${UBUNTU_VERSION}
 
 LABEL maintainer="HyperI <opensource@hyperi.io>"
