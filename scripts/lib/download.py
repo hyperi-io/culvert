@@ -267,6 +267,12 @@ def start_client_download_server(
     scheme = "http"
     if tls_cert and tls_key:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        # PROTOCOL_TLS_SERVER inherits its floor from the platform OpenSSL -
+        # TLS 1.2 on the build this ships against, and not a promise. This
+        # endpoint serves .ovpn files with the client private key in them and
+        # the rest of culvert is TLS 1.3 only, so state the floor here rather
+        # than inherit whatever the base image happens to default to.
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
         ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
         server.socket = ctx.wrap_socket(server.socket, server_side=True)
         scheme = "https"
