@@ -2,8 +2,8 @@ apiVersion: v2
 name: culvert
 description: OpenVPN + WireGuard VPN server, optionally tunnelled over HTTPS, with OIDC SSO and external PKI
 type: application
-version: 2.1.3
-appVersion: "v2.1.3"
+version: 2.1.10
+appVersion: "v2.1.10"
 
 icon: https://raw.githubusercontent.com/hyperi-io/culvert/main/assets/brand/product-culvert/light/product-culvert_square_400w.png
 
