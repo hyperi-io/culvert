@@ -13,11 +13,14 @@ Uses real HTTP requests against a test server - no mocking of internals.
 """
 
 import http.client
+import socket
+import ssl
+import subprocess
 import threading
 from http.server import HTTPServer
 
 import pytest
-from lib.download import ClientDownloadHandler
+from lib.download import ClientDownloadHandler, start_client_download_server
 from lib.health import BaseHandler
 
 
@@ -378,3 +381,77 @@ class TestClientDownloadHandlerMissingDir:
         body = response.read().decode()
         assert "Clients directory not found" in body
         conn.close()
+
+
+class TestDownloadServerTlsFloor:
+    """The TLS listener must refuse anything below 1.3.
+
+    Exercised through a real handshake rather than by reading the context back:
+    what matters is what a client can actually negotiate. The negative case is
+    the point - a 1.2-capped client has to be REFUSED, because without a stated
+    floor PROTOCOL_TLS_SERVER inherits the platform OpenSSL's default and will
+    serve .ovpn files, client private key included, over it.
+    """
+
+    @pytest.fixture
+    def tls_server(self, temp_dir):
+        """Start the real download server on a self-signed cert."""
+        cert, key = temp_dir / "server.pem", temp_dir / "server.key"
+        subprocess.run(
+            [
+                "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                "-keyout", str(key), "-out", str(cert), "-days", "1",
+                "-subj", "/CN=localhost",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        # Claim an ephemeral port and hand the number over: the server takes a
+        # fixed port and returns nothing, so there is no way to learn one it
+        # chose itself.
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+
+        clients = temp_dir / "tls-clients"
+        clients.mkdir()
+        start_client_download_server(
+            port=port,
+            clients_dir=clients,
+            auth_token="test-token",
+            tls_cert=str(cert),
+            tls_key=str(key),
+        )
+        return port
+
+    @staticmethod
+    def _handshake(port: int, max_version: ssl.TLSVersion | None) -> str | None:
+        """Negotiated TLS version, or None if the server refused."""
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        if max_version is not None:
+            ctx.maximum_version = max_version
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=10) as raw:
+                with ctx.wrap_socket(raw, server_hostname="localhost") as tls:
+                    return tls.version()
+        except ssl.SSLError:
+            return None
+
+    def test_tls12_client_is_refused(self, tls_server):
+        """A client that cannot do 1.3 gets no connection at all."""
+        assert self._handshake(tls_server, ssl.TLSVersion.TLSv1_2) is None, (
+            "the server accepted TLS 1.2, so the download endpoint would hand"
+            " client private keys over a connection weaker than the one the"
+            " README promises"
+        )
+
+    def test_tls13_client_connects(self, tls_server):
+        """The floor is a floor, not a wall - 1.3 still works."""
+        assert self._handshake(tls_server, None) == "TLSv1.3"
