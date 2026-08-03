@@ -399,9 +399,20 @@ class TestDownloadServerTlsFloor:
         cert, key = temp_dir / "server.pem", temp_dir / "server.key"
         subprocess.run(
             [
-                "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                "-keyout", str(key), "-out", str(cert), "-days", "1",
-                "-subj", "/CN=localhost",
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                str(key),
+                "-out",
+                str(cert),
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
             ],
             check=True,
             capture_output=True,
