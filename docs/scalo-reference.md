@@ -67,21 +67,22 @@ from scalo.metrics import create_metrics
 
 mgr = create_metrics(
     "culvert",
-    backend="prometheus",          # or "opentelemetry"
-    backend_config=None,           # OTel: {"endpoint", "protocol", "insecure"}
+    backend="prometheus",  # or "opentelemetry"
+    backend_config=None,  # OTel: {"endpoint", "protocol", "insecure"}
     enable_auto_update=False,
 )
 
 g_up = mgr.gauge("vpn_openvpn_up", "Whether OpenVPN is running")
 g_clients = mgr.gauge(
-    "vpn_connected_clients", "Connected clients per listener",
+    "vpn_connected_clients",
+    "Connected clients per listener",
     labels=["listener", "protocol"],
 )
 c_rx = mgr.counter("vpn_bytes_received_total", "Total bytes received")
 
 g_up.set(1)
 g_clients.labels(listener="udp", protocol="openvpn").set(3)
-text = mgr.get_metrics_text()          # Prometheus exposition format
+text = mgr.get_metrics_text()  # Prometheus exposition format
 content_type = mgr.get_content_type()  # for the /metrics HTTP response
 ```
 
@@ -102,15 +103,17 @@ second copy of the server key outside the PKI dir).
 ```python
 from scalo.secrets import SecretsManager
 
-manager = SecretsManager.from_config({
-    "cache": {"enabled": False},
-    "openbao": {"address": ..., "auth": {"method": "kubernetes", "role": ...}},
-    # or "aws": {"region": "ap-southeast-2"}; file provider is always present
-})
+manager = SecretsManager.from_config(
+    {
+        "cache": {"enabled": False},
+        "openbao": {"address": ..., "auth": {"method": "kubernetes", "role": ...}},
+        # or "aws": {"region": "ap-southeast-2"}; file provider is always present
+    }
+)
 
 result = manager.get_sync(secret_ref, provider="openbao")  # result.data -> bytes
-manager.health_check_sync()   # dict of provider name -> bool
-await manager.close()         # async - pki.py runs it via asyncio.run
+manager.health_check_sync()  # dict of provider name -> bool
+await manager.close()  # async - pki.py runs it via asyncio.run
 ```
 
 ## What culvert uses
