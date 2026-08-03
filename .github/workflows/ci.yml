@@ -36,6 +36,18 @@ jobs:
     # repos, rather than drawing on the org's self-hosted pool.
     with:
       runner-mode: free
+      # Build the container on pull requests, not only on a publish. Without
+      # this the Build and Container jobs are SKIPPED on every PR, so nothing
+      # compiles the image before it ships - a PR can show every check green
+      # and still contain a container that cannot start. That is not
+      # hypothetical: the Ubuntu 26.04 bump passed all checks and died at
+      # startup on an easy-rsa incompatibility, and a broken --proxy config
+      # reached main the same way.
+      #
+      # Cheap here because culvert is a source-built Python image with no
+      # dist/ binaries, so a non-publish build is constrained to linux/amd64 -
+      # arm64 emulation is still paid only on a real release.
+      branch-build: "true"
       tag: ${{ inputs.tag || '' }}
       from-head: ${{ inputs.from-head || '' }}
       bump: ${{ inputs.bump || 'auto' }}
