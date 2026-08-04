@@ -99,6 +99,7 @@ def run_server(cfg: Config) -> None:
             otel_endpoint=cfg.otel_endpoint,
             otel_protocol=cfg.otel_protocol,
             otel_insecure=cfg.otel_insecure,
+            pki_dir=str(cfg.pki_dir),
         )
     start_observability(cfg.metrics_addr, metrics)
 

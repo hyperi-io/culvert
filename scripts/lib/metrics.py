@@ -168,6 +168,8 @@ def _collect_wg_peer_count() -> int:
             ["wg", "show", "wg0", "latest-handshakes"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
         if result.returncode != 0:
@@ -191,6 +193,8 @@ def _collect_wg_transfer() -> tuple[int, int]:
             ["wg", "show", "wg0", "transfer"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
         if result.returncode != 0:
@@ -212,6 +216,7 @@ def _collect_wg_transfer() -> tuple[int, int]:
 _mgr = None
 _max_clients: int = 100
 _protocol: str = "openvpn"
+_pki_dir: str = ""
 _update_lock = threading.Lock()
 
 # Metric handles (set during init)
@@ -223,6 +228,7 @@ _c_bytes_rx = None
 _c_bytes_tx = None
 _g_utilisation = None
 _g_max_clients = None
+_g_crl_expiry = None
 
 # Last-seen cumulative byte totals. The OpenVPN status files and
 # `wg show transfer` report per-session cumulative bytes that reset when a
@@ -287,7 +293,7 @@ def _init_metrics(
     global _g_openvpn_up, _g_wireguard_up
     global _g_connected, _g_connected_total
     global _c_bytes_rx, _c_bytes_tx
-    global _g_utilisation, _g_max_clients
+    global _g_utilisation, _g_max_clients, _g_crl_expiry
 
     backend = "prometheus"
     backend_config = None
@@ -342,6 +348,12 @@ def _init_metrics(
         "Ratio of connected clients to max capacity",
     )
     _g_max_clients = _mgr.gauge("vpn_max_clients", "Maximum client capacity")
+    # Negative once expired. An expired CRL makes OpenVPN refuse every client,
+    # so this is the metric to alert on rather than the refresh log.
+    _g_crl_expiry = _mgr.gauge(
+        "vpn_crl_seconds_until_expiry",
+        "Seconds until the CRL nextUpdate, negative once it has passed",
+    )
     _reset_byte_tracking()
 
 
@@ -369,6 +381,13 @@ def _update_metrics_locked() -> None:
         from lib.health import _check_openvpn
 
         _gauge_set(_g_openvpn_up, 1 if _check_openvpn() else 0)
+
+        if _pki_dir:
+            from lib.pki import crl_seconds_until_expiry
+
+            remaining = crl_seconds_until_expiry(_pki_dir)
+            if remaining is not None:
+                _gauge_set(_g_crl_expiry, remaining)
 
         for status_file, listener_name in [
             ("/var/log/vpn/status.log", "udp"),
@@ -452,16 +471,20 @@ def init_metrics(
     otel_endpoint: str = "",
     otel_protocol: str = "grpc",
     otel_insecure: bool = False,
+    pki_dir: str = "",
 ) -> ScrapeAdapter:
     """Initialise metrics collection.
 
     Sets up the MetricsManager (Prometheus or OTel backend), starts the
     background update loop, and returns the adapter the observability
     port serves /metrics from.
+
+    pki_dir enables the CRL expiry gauge; empty leaves it unreported.
     """
-    global _max_clients, _protocol
+    global _max_clients, _protocol, _pki_dir
     _max_clients = max_clients
     _protocol = protocol
+    _pki_dir = pki_dir
 
     _init_metrics(
         "culvert",

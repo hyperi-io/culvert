@@ -20,6 +20,7 @@ import os
 import random
 import sys
 import time as _time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from scalo.logger import logger
@@ -411,6 +412,70 @@ def init_pki_local(cfg) -> None:
     logger.info(f"  Algorithm: {cfg.key_type} ({cfg.key_size})")
 
 
+# A failed refresh becomes an outage only when nextUpdate passes. Below this
+# much remaining life, report it at error.
+CRL_EXPIRY_ALARM_SECONDS = 7 * 24 * 3600
+
+
+def crl_seconds_until_expiry(pki_dir) -> float | None:
+    """Seconds until the CRL's nextUpdate, negative once it has passed.
+
+    None when there is no CRL, or openssl cannot read the one there is.
+    """
+    crl_path = Path(pki_dir) / "crl.pem"
+    if not crl_path.exists():
+        return None
+
+    result = run(
+        f"openssl crl -in {crl_path} -noout -nextupdate",
+        check=False,
+        capture=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    for line in (result.stdout or "").strip().splitlines():
+        if not line.startswith("nextUpdate="):
+            continue
+        # e.g. "nextUpdate=Aug  4 22:51:20 2026 GMT". openssl pads a
+        # single-digit day to two columns; strptime absorbs the run.
+        stamp = line.split("=", 1)[1].strip()
+        if stamp.endswith(" GMT") or stamp.endswith(" UTC"):
+            stamp = stamp[:-4]
+        try:
+            expiry = datetime.strptime(stamp, "%b %d %H:%M:%S %Y")
+        except ValueError:
+            logger.warning(f"Could not parse CRL nextUpdate: {stamp}")
+            return None
+        expiry = expiry.replace(tzinfo=UTC)
+        return (expiry - datetime.now(UTC)).total_seconds()
+
+    return None
+
+
+def log_crl_expiry(cfg) -> float | None:
+    """Log how much CRL life is left, at a severity that matches the margin."""
+    remaining = crl_seconds_until_expiry(cfg.pki_dir)
+    if remaining is None:
+        return None
+
+    days = round(remaining / 86400, 1)
+    if remaining <= 0:
+        logger.error(
+            "CRL has expired - OpenVPN is refusing every client, including"
+            " valid ones. Regenerate it with `update-crl`.",
+            days_since_expiry=abs(days),
+        )
+    elif remaining <= CRL_EXPIRY_ALARM_SECONDS:
+        logger.error(
+            "CRL expires soon - every client is refused once it does",
+            days_remaining=days,
+        )
+    else:
+        logger.info("CRL is current", days_remaining=days)
+    return remaining
+
+
 def _regenerate_local_crl(cfg) -> bool:
     """Regenerate the CRL from the local CA. True when it was rewritten."""
     # easyrsa is not on PATH; run it from its install dir like every other call
@@ -422,7 +487,9 @@ def _regenerate_local_crl(cfg) -> bool:
     )
     if result.returncode == 0:
         return True
-    logger.warning(
+    # Local regeneration reaches nothing off-box, so a failure is a defect
+    # rather than a transient.
+    logger.error(
         "CRL regeneration failed",
         stderr=(result.stderr[:200] if result.stderr else ""),
     )
@@ -506,8 +573,17 @@ def start_crl_refresh(cfg, proc_manager, interval_hours: int = 24) -> None:
                     # OpenVPN reads the CRL at startup, so a new file changes
                     # nothing until the server re-reads it.
                     proc_manager._reload_handler(None, None)
+                else:
+                    logger.warning(
+                        "CRL was not updated this cycle - the CRL on disk is"
+                        " now older than the refresh interval"
+                    )
             except Exception as e:
-                logger.warning(f"CRL refresh error: {e}")
+                logger.error(f"CRL refresh error: {e}")
+            # Every cycle, whatever happened above. A refresh that keeps
+            # failing is only an outage once nextUpdate passes, and the
+            # remaining margin is the thing worth escalating on.
+            log_crl_expiry(cfg)
 
     thread = threading.Thread(target=refresh_loop, daemon=True)
     thread.start()
@@ -515,3 +591,6 @@ def start_crl_refresh(cfg, proc_manager, interval_hours: int = 24) -> None:
         f"CRL auto-refresh enabled, {how}",
         interval_hours=interval_hours,
     )
+    # The loop sleeps before its first pass, so without this a CRL that is
+    # already expired at startup goes unreported for a whole interval.
+    log_crl_expiry(cfg)

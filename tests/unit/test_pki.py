@@ -7,6 +7,7 @@
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
 import stat
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -373,6 +374,108 @@ class TestCrlRefresh:
 
         assert refetch_external_crl(cfg) is False
         assert "FAKE_CRL" in (pki / "crl.pem").read_text()
+
+
+class TestCrlExpiry:
+    """The CRL's remaining life has to be observable.
+
+    A refresh that fails is survivable while there is life left, and an
+    outage once nextUpdate passes - so "did the refresh work" is the wrong
+    question to alert on. Nothing measured the margin, which is how a
+    refresh that had never once succeeded went unnoticed until the CRL
+    aged out and OpenVPN began refusing every client.
+    """
+
+    def test_reports_remaining_life(self, tmp_path, write_crl):
+        """A CRL good for another 30 days reports about 30 days."""
+        from lib.pki import crl_seconds_until_expiry
+
+        write_crl(
+            tmp_path / "crl.pem",
+            datetime.now(UTC) + timedelta(days=30),
+        )
+
+        remaining = crl_seconds_until_expiry(tmp_path)
+        assert remaining is not None
+        assert 29.9 < remaining / 86400 < 30.1
+
+    def test_goes_negative_once_expired(self, tmp_path, write_crl):
+        """An expired CRL reports negative, not None and not zero.
+
+        This is the state that refuses every client, so it has to be
+        distinguishable from "no CRL" and from "expires today".
+        """
+        from lib.pki import crl_seconds_until_expiry
+
+        write_crl(
+            tmp_path / "crl.pem",
+            datetime.now(UTC) - timedelta(days=3),
+        )
+
+        remaining = crl_seconds_until_expiry(tmp_path)
+        assert remaining is not None
+        assert -3.1 < remaining / 86400 < -2.9
+
+    def test_survives_a_single_digit_day(self, tmp_path, write_crl):
+        """openssl pads a single-digit day to two columns ("Aug  4")."""
+        from lib.pki import crl_seconds_until_expiry
+
+        # A day-of-month under 10, whatever today is.
+        target = datetime.now(UTC) + timedelta(days=30)
+        while target.day > 9:
+            target += timedelta(days=1)
+        write_crl(tmp_path / "crl.pem", target)
+
+        remaining = crl_seconds_until_expiry(tmp_path)
+        assert remaining is not None
+        assert remaining > 0
+
+    def test_none_when_there_is_no_crl(self, tmp_path):
+        """No CRL is not an expiry of zero."""
+        from lib.pki import crl_seconds_until_expiry
+
+        assert crl_seconds_until_expiry(tmp_path) is None
+
+    def test_none_when_the_crl_is_unreadable(self, tmp_path):
+        """Garbage in the CRL file must not crash the refresh loop."""
+        from lib.pki import crl_seconds_until_expiry
+
+        (tmp_path / "crl.pem").write_text("not a CRL")
+        assert crl_seconds_until_expiry(tmp_path) is None
+
+    @pytest.fixture
+    def local_cfg(self, tmp_path, clean_env, monkeypatch):
+        """Local-PKI config pointed at a real, empty PKI dir."""
+        from lib.config import Config
+
+        pki = tmp_path / "pki"
+        pki.mkdir()
+        monkeypatch.setenv("CULVERT_PKI_MODE", "local")
+
+        cfg = Config.from_settings()
+        cfg.pki_dir = pki
+        return cfg, pki
+
+    def test_log_reports_the_margin(self, local_cfg, write_crl):
+        """log_crl_expiry hands back the margin it logged."""
+        from lib.pki import log_crl_expiry
+
+        cfg, pki = local_cfg
+        write_crl(
+            pki / "crl.pem",
+            datetime.now(UTC) + timedelta(days=45),
+        )
+
+        remaining = log_crl_expiry(cfg)
+        assert remaining is not None
+        assert 44.9 < remaining / 86400 < 45.1
+
+    def test_log_tolerates_a_missing_crl(self, local_cfg):
+        """Nothing to report is not a crash."""
+        from lib.pki import log_crl_expiry
+
+        cfg, _ = local_cfg
+        assert log_crl_expiry(cfg) is None
 
 
 class TestLocalPkiNeverDestroysKeyMaterial:
