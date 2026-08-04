@@ -37,3 +37,22 @@ Easy-RSA
 WireGuard tools (wireguard-tools)
   https://www.wireguard.com/ -- GPL-2.0. Installed from Ubuntu APT
   repositories.
+
+Python runtime dependencies
+  The image installs a Python dependency tree, pinned by hash. Declared
+  directly:
+
+    scalo    https://pypi.org/project/scalo/ -- Apache-2.0.
+             Copyright HYPERI PTY LIMITED. Configuration cascade,
+             observability surface, secrets providers.
+    PyYAML   https://pyyaml.org/ -- MIT License.
+
+  Everything else is transitive. The exact set that ships, with versions and
+  SHA256 hashes, is requirements-docker.txt in this repository - an export of
+  uv.lock generated at build time, so it is the manifest rather than a copy
+  that can drift from one. Licences are those the respective projects publish
+  on PyPI.
+
+  Beyond the two above the tree is predominantly Apache-2.0, MIT and BSD. It
+  is deliberately not enumerated here: 64 packages restated by hand would be
+  stale within a release, and the lockfile cannot be.
