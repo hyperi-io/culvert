@@ -45,6 +45,8 @@ def get_crl_expiry() -> str:
         ["openssl", "crl", "-in", str(crl_path), "-noout", "-nextupdate"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode == 0:
         # Output is like: nextUpdate=Dec 20 12:00:00 2025 GMT
@@ -75,6 +77,8 @@ def update_crl() -> None:
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
     if result.returncode != 0:

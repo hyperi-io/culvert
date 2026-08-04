@@ -286,6 +286,11 @@ operator surface, separate from VPN traffic:
 - **OpenTelemetry:** OTLP push to gRPC `:4317` / HTTP `:4318` collectors
   (when enabled via `CULVERT_OTEL_*`)
 
+Worth an alert: `vpn_crl_seconds_until_expiry` goes negative once the CRL
+expires, and OpenVPN then refuses every client - including valid ones, with
+`certificate expired`. The CRL auto-refresh keeps it topped up, so this only
+moves if the refresh has been failing, which it also logs at error.
+
 ## Versioning
 
 Releases follow [SemVer](https://semver.org/) and are published to

@@ -252,3 +252,45 @@ class TestByteDelta:
         _byte_delta("tx", 100)
         assert _byte_delta("rx", 350) == 250
         assert _byte_delta("tx", 180) == 80
+
+
+class TestCrlExpiryGauge:
+    """The CRL expiry has to reach the scrape, not just the log.
+
+    An expired CRL makes OpenVPN refuse every client, so it needs to be
+    alertable. Logs are what got missed last time.
+    """
+
+    def test_expiry_is_exported_with_the_real_margin(self, tmp_path, write_crl):
+        """A real CRL reaches a real scrape carrying its actual margin.
+
+        Asserts the value, not just the name: a registered-but-never-set
+        gauge exports as 0, which would read as "expires now" and pass a
+        name-only check.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from lib import metrics as m
+
+        write_crl(tmp_path / "crl.pem", datetime.now(UTC) + timedelta(days=60))
+
+        adapter = m.init_metrics(
+            max_clients=10,
+            protocol="openvpn",
+            pki_dir=str(tmp_path),
+        )
+        scrape = adapter.get_metrics().decode()
+
+        value = None
+        for line in scrape.splitlines():
+            if line.startswith("vpn_crl_seconds_until_expiry "):
+                value = float(line.split()[1])
+        assert value is not None, "gauge missing from the scrape"
+        assert 59.9 < value / 86400 < 60.1
+
+    def test_absent_pki_dir_does_not_break_the_scrape(self):
+        """No pki_dir configured must not raise on update."""
+        from lib import metrics as m
+
+        m._pki_dir = ""
+        m.update_metrics()
