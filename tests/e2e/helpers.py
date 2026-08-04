@@ -47,6 +47,8 @@ def docker_exec(
         ["docker", "exec", container, "bash", "-c", cmd],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
     )

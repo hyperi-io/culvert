@@ -110,6 +110,8 @@ def lb_deployed(kubectl, helm_values, pki_secret):
         ["kubectl", "--context", context, "create", "namespace", namespace],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     subprocess.run(
@@ -125,6 +127,8 @@ def lb_deployed(kubectl, helm_values, pki_secret):
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
 
