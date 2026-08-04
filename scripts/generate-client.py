@@ -309,6 +309,8 @@ checkHost = {cfg.server_cn}
         ["openssl", "x509", "-in", str(cfg.pki_dir / "issued" / f"{client_name}.crt")],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     client_cert = result.stdout

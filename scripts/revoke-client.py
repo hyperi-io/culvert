@@ -130,6 +130,8 @@ def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode != 0:
         logger.error(f"Failed to revoke certificate: {result.stderr}")
@@ -143,6 +145,8 @@ def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode != 0:
         logger.error(f"Failed to update CRL: {result.stderr}")

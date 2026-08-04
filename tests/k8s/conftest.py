@@ -97,6 +97,8 @@ class Kubectl:
             ["kubectl", "--context", self.context, "-n", self.namespace, *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=check,
         )
@@ -200,6 +202,8 @@ def helm(*args: str, context: str, namespace: str, check: bool = True, timeout=6
         ["helm", "--kube-context", context, "-n", namespace, *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=check,
     )
@@ -262,6 +266,8 @@ def sweep(context: str, namespace: str) -> None:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=180,
         )
@@ -333,6 +339,8 @@ def pki_secret(kubectl, deployed):
         ),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=120,
     )
@@ -354,6 +362,8 @@ def deployed(kubectl, helm_values):
         ["kubectl", "--context", context, "create", "namespace", namespace],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     # Clear anything an earlier run left behind before installing, so a killed
@@ -375,6 +385,8 @@ def deployed(kubectl, helm_values):
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
 

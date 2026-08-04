@@ -75,6 +75,8 @@ def clean_integration() -> None:
             [*list_cmd, "--filter", f"name={INTEGRATION_PREFIX}"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=60,
         )
@@ -85,6 +87,8 @@ def clean_integration() -> None:
                 [*remove_cmd, *ids],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=120,
             )

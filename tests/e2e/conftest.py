@@ -68,6 +68,8 @@ def compose_down(project: str) -> None:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=120,
     )
@@ -99,7 +101,13 @@ def sweep_project(project: str) -> None:
     )
     for list_cmd, remove_cmd in sweeps:
         listing = subprocess.run(
-            list_cmd, capture_output=True, text=True, check=False, timeout=60
+            list_cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=60,
         )
         ids = listing.stdout.split()
         if ids:
@@ -107,6 +115,8 @@ def sweep_project(project: str) -> None:
                 [*remove_cmd, *ids],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=120,
             )
@@ -163,6 +173,8 @@ def compose_stack():
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
     )
     if result.returncode != 0:
@@ -208,6 +220,8 @@ def compose_stack():
         ["docker", "exec", CLIENT_CONTAINER, "ls", "/etc/vpn/clients/"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     files = result.stdout.strip()
     for name in expected:

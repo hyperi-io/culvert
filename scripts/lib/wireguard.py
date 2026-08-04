@@ -426,6 +426,8 @@ def start_wireguard(cfg) -> None:
         ["wg-quick", "up", str(cfg.wg_conf)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode != 0:
         logger.error(f"Failed to start WireGuard: {result.stderr}")
@@ -477,6 +479,8 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
                     ["wg", "show", "wg0", "latest-handshakes"],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=5,
                 )
                 if hs_result.returncode != 0:
@@ -490,6 +494,8 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
                     ["wg", "show", "wg0", "transfer"],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=5,
                 )
                 transfers = {}

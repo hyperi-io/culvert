@@ -162,6 +162,8 @@ def _run_pod(
         input=json.dumps(spec),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=120,
     )
@@ -195,6 +197,8 @@ def _apply(kubectl: Kubectl, manifest: dict) -> subprocess.CompletedProcess[str]
         input=json.dumps(manifest),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=120,
     )
@@ -338,6 +342,8 @@ def _connect_openvpn(kubectl: Kubectl, pod: str, config: str) -> None:
         input=config,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=60,
     )
@@ -373,6 +379,8 @@ def _write_wireguard_config(kubectl: Kubectl, pod: str, config: str) -> None:
         input=config,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=60,
     )
@@ -591,6 +599,8 @@ class TestExternalPKI:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=600,
             check=False,
         )
@@ -611,6 +621,8 @@ class TestExternalPKI:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=300,
         )
