@@ -1,3 +1,9 @@
 # Culvert code ownership. Ownership sits with HyperI, not an individual - this
 # is a public repo, so every outside contribution routes here for review.
-* @hyperi-io
+#
+# A team, not the @hyperi-io org handle: GitHub rejects an organisation as a
+# code owner ("Unknown owner ... make sure @hyperi-io exists and has write
+# access"). Validate any change with the codeowners/errors API rather than
+# trusting it, because an unparseable line fails SILENTLY - the file is
+# ignored and nobody is assigned.
+* @hyperi-io/development-team
