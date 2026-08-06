@@ -14,7 +14,7 @@ drop it into Kubernetes.
 - **OIDC SSO:** Works with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 and other OIDC providers (OpenVPN only; WireGuard uses key-based auth)
 - **External PKI:** File mounts, OpenBao (Vault-compatible), or AWS Secrets Manager; falls back to self-generated Easy-RSA CA
 - **Observability:** Prometheus `/metrics` + OpenTelemetry OTLP export
-- **Crypto:** TLS 1.3 only, AES-256-GCM, SHA-384, P-384 PKI on the OpenVPN path - the CNSA 2.0 classical suite ([details and honest limits](#cryptography-and-cnsa-20))
+- **Crypto:** TLS 1.3 only, AES-256-GCM, SHA-384, P-384 PKI on the OpenVPN path - the CNSA 2.0 classical suite ([details](#cryptography-and-cnsa-20))
 - **K8s-ready:** `/livez` + `/readyz` probes; SIGTERM drain; cgroup-aware resource detection
 
 ## Coming from another VPN server?
@@ -232,7 +232,7 @@ HTTPS-tunnelled listeners):
 - `tls-crypt-v2` wraps the TLS handshake in a pre-shared symmetric
   layer (metadata protection and DoS mitigation)
 
-The honest limits:
+The limits:
 
 - **ChaCha20-Poly1305 and X25519 are accepted as secondary options**
   for client compatibility. Strict deployments can pin

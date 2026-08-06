@@ -61,7 +61,7 @@ The cipher order is a per-profile knob (`data_ciphers`, or `CULVERT_DATA_CIPHERS
 - **Need CNSA/FIPS?** Use the default profile, and pin
   `CULVERT_DATA_CIPHERS=AES-256-GCM` to refuse the ChaCha20 fallback outright.
 
-So the honest split: **AES-256-GCM is the compliance default; ChaCha20 is the
+So the split: **AES-256-GCM is the compliance default; ChaCha20 is the
 cryptographer's default (and a personal favourite -- DT).** The default profile
 stays CNSA-safe; the mobile profile makes the ChaCha20 trade a deliberate,
 labelled choice - the operator opts in knowing what they get. Never reorder the
