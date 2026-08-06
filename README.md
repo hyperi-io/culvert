@@ -5,8 +5,6 @@ OpenVPN and WireGuard in a single image, each optionally tunnelled over
 HTTPS, with OIDC SSO and external PKI -- `docker run` it standalone or
 drop it into Kubernetes.
 
-**License:** [Apache-2.0](LICENSE) | **Copyright:** (c) 2026 HYPERI PTY LIMITED
-
 ## Features
 
 - **Protocols:** OpenVPN (UDP/TCP) and WireGuard, independently or both simultaneously
@@ -26,13 +24,13 @@ switching - and what you give up:
 | If you use | What you gain with Culvert |
 |------------|----------------------------|
 | [AWS Client VPN](https://aws.amazon.com/vpn/) | Flat cost of a node instead of per-subnet-association plus per-connection charges. Adds WireGuard, any-IdP OIDC, and the HTTPS-tunnelled listeners; AWS Client VPN is OpenVPN-only with a 50 Mbps per-connection baseline. You give up the managed control plane. |
-| [kylemanna/docker-openvpn](https://github.com/kylemanna/docker-openvpn) | The most-pulled OpenVPN image (1.2B pulls) has been unmaintained since 2020 and its published image ships OpenVPN 2.4. Culvert is the maintained successor shape: OpenVPN 2.7 with DCO, plus everything above. |
+| [kylemanna/docker-openvpn](https://github.com/kylemanna/docker-openvpn) | Unmaintained since 2020 and its published image ships OpenVPN 2.4. Culvert is the maintained successor shape: OpenVPN 2.7 with DCO, plus everything above. |
 | [angristan/openvpn-install](https://github.com/angristan/openvpn-install) | Same result (plus the extras) without a host-mutating bash script - the server is an image, config is env vars, upgrades are a `docker pull`. |
 | [OpenVPN Access Server](https://openvpn.net/access-server/) | No per-connection licensing. Culvert adds WireGuard and provider-neutral OIDC. |
 | [wg-easy](https://github.com/wg-easy/wg-easy) | Keep the WireGuard simplicity, add OpenVPN for the clients that need it, external PKI, and the option to run either protocol over HTTPS. wg-easy's OAuth (15.4+) signs users into its web UI; culvert's OIDC gates the VPN session itself. |
 
 If you want a mesh overlay (Tailscale, NetBird) this is a different
-shape: Culvert is a classic hub VPN server you run yourself, for the
+thing: Culvert is a classic hub VPN server you run yourself, for the
 cases that need OpenVPN client compatibility, certificate-based
 compliance, or a VPN that travels over HTTPS.
 

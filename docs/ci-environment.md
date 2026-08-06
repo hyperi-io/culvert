@@ -16,8 +16,11 @@ Configure these in **Settings -> Secrets and variables -> Actions -> Secrets**:
 
 | Secret | Description |
 |--------|-------------|
-| `GH_APP_ID` | GitHub App ID for semantic-release |
 | `GH_APP_PRIVATE_KEY` | GitHub App private key (PEM format) |
+
+The GitHub App is identified by the `GH_APP_CLIENT_ID` repository *variable*
+(Settings -> Variables), not a secret - the App token is minted from the
+client ID, not the numeric App ID.
 
 `GITHUB_TOKEN` is provided automatically by GitHub Actions and is used
 for GHCR login during publish.
@@ -42,11 +45,17 @@ uv run pytest tests/unit/ -q
 
 ## Workflow Triggers
 
-| Workflow | Trigger | Action |
-|----------|---------|--------|
-| CI | Push/PR to main | Lint, build (no push), test |
-| Release | Push to main | Semantic-release -> multi-arch build -> push to GHCR |
-| Dependency Check | Weekly (Mon 09:00 UTC) | Check for new upstream versions, open PR |
+There are two workflows: `ci.yml` (the main pipeline, delegating to the shared
+hyperi-ci reusable workflow) and `dependency-check.yml` (weekly upstream-version
+checks). Publishing is gated - see the push-to-main rows.
+
+| Trigger | Action |
+|---------|--------|
+| Pull request to main | Full pipeline: lint, test, container build (no push) |
+| Push to main, no `Publish: true` trailer | Validate-only: no tag, no publish |
+| Push to main with a `Publish: true` trailer | Semantic-release -> multi-arch build -> push to GHCR |
+| `workflow_dispatch` (`from-head=true`) | Same publish path, triggered by hand |
+| Dependency Check (weekly, Mon 09:00 UTC) | Check for new upstream versions, open PR |
 
 ## Image Tags
 

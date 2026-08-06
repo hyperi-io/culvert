@@ -69,13 +69,14 @@ ARG WSTUNNEL_VERSION="10.6.2"              # + SHA256_AMD64 / SHA256_ARM64
 
 ## Updating Dependencies
 
-Bump a version ARG in `Dockerfile`, commit with conventional-commit
-prefix (`fix:` for patch, `feat:` for minor), push to `main`. The CI
-pipeline runs semantic-release and - if the commit list produces a
-version bump - publishes a new image.
+Bump a version ARG in `Dockerfile` and commit with a conventional-commit
+prefix (`fix:` for patch, `feat:` for minor). Merging to `main` validates the
+change but does not ship it - publishing is gated on a `Publish: true` trailer
+on the head commit (or a manual `workflow_dispatch` with `from-head=true`), at
+which point semantic-release cuts the version and pushes a new image. See
+[ci-environment.md](ci-environment.md) for the trigger table.
 
-For CVE-driven updates, prefer `sec:` as the commit type to flag the
-intent.
+For CVE-driven updates, prefer `sec:` as the commit type to flag the intent.
 
 ## Multi-Architecture Support
 
