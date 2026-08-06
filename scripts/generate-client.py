@@ -69,6 +69,7 @@ class Config:
         self.https_port = vpn.https_port
         self.key_type = vpn.key_type
         self.key_size = vpn.key_size
+        self.cert_expire_days = vpn.cert_expire_days
 
         # WireGuard. wg_conf and the PostUp/PostDown hooks are needed because
         # issuing a client rewrites the server's own config: writing it anywhere
@@ -436,13 +437,15 @@ def generate_wireguard_configs(
     client_name: str,
     cfg: Config,
     pubkey: str = "",
+    rotate: bool = False,
 ) -> None:
     """Generate WireGuard client configuration files.
 
     Creates split and full tunnel configs, plus the HTTPS-tunnelled variants
     when WireGuard-over-HTTPS is enabled.
     If pubkey is provided, uses client-side key generation mode (no private key
-    embedded in config).
+    embedded in config). Otherwise the client keypair is retained across runs
+    and rotated only when rotate is set (see load_or_generate_client_keys).
     """
     from lib import wireguard
 
@@ -457,19 +460,19 @@ def generate_wireguard_configs(
     client_ip = wireguard.allocate_peer_ip(cfg.pki_dir, cfg.wg_network, client_name)
     logger.info("Allocated WireGuard IP", client=client_name, ip=client_ip)
 
-    # Generate or accept client keys
+    # Reuse the client's keypair by default; mint only when it does not exist
+    # yet or rotate is requested. Regenerating it changes the server's accepted
+    # peer and silently breaks every config already issued to the client.
     if pubkey:
         client_private = None
         client_public = pubkey
+        pub_key_path = peers_dir / f"{client_name}.pub"
+        pub_key_path.write_text(client_public + "\n")
         logger.info("Using provided client public key (client-side key generation)")
     else:
-        client_private, client_public = wireguard.generate_client_keys()
-        logger.info("Generated WireGuard client keypair")
-
-    # Save client public key
-    pub_key_path = peers_dir / f"{client_name}.pub"
-    pub_key_path.write_text(client_public + "\n")
-    logger.info("Saved client public key", path=str(pub_key_path))
+        client_private, client_public = wireguard.load_or_generate_client_keys(
+            cfg.pki_dir, client_name, rotate=rotate
+        )
 
     # Build AllowedIPs for split tunnel
     split_allowed_ips_parts = []
@@ -641,13 +644,24 @@ Examples:
     parser.add_argument(
         "--days",
         type=int,
-        default=730,
-        help="Certificate validity in days (default: 730)",
+        default=None,
+        help=(
+            "Client certificate validity in days"
+            " (default: CULVERT_CERT_EXPIRE_DAYS)"
+        ),
     )
     parser.add_argument(
         "--config-only",
         action="store_true",
         help="Regenerate configs only (skip cert creation)",
+    )
+    parser.add_argument(
+        "--rotate",
+        action="store_true",
+        help=(
+            "Mint a fresh WireGuard client keypair, replacing the retained one."
+            " Invalidates the client's existing WireGuard configs."
+        ),
     )
     parser.add_argument("--proxy", help="HTTP CONNECT proxy (HOST:PORT)")
     parser.add_argument(
@@ -687,10 +701,14 @@ Examples:
         )
         sys.exit(1)
 
+    # An unset --days falls back to the configured cert lifetime, so a
+    # deployment with a long CULVERT_CERT_EXPIRE_DAYS issues clients to match.
+    cert_days = args.days if args.days is not None else cfg.cert_expire_days
+
     logger.info(f"Generating client: {client_name}")
     logger.info(f"  Protocol: {args.protocol}")
     if generate_openvpn:
-        logger.info(f"  Certificate validity: {args.days} days")
+        logger.info(f"  Certificate validity: {cert_days} days")
         logger.info(f"  UDP port: {cfg.udp_port}")
         logger.info(f"  TCP port: {cfg.tcp_port}")
     if generate_wg:
@@ -728,7 +746,7 @@ Examples:
                 sys.exit(1)
             generate_certificate(
                 client_name,
-                args.days,
+                cert_days,
                 cfg.pki_dir,
                 key_type=cfg.key_type,
                 key_size=cfg.key_size,
@@ -780,6 +798,7 @@ Examples:
             client_name=client_name,
             cfg=cfg,
             pubkey=args.pubkey or "",
+            rotate=args.rotate,
         )
 
     # Copy vpn-client-setup.md to output directory

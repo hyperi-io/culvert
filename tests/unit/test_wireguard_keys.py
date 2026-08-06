@@ -20,11 +20,14 @@ from lib.wireguard import (
     allocate_peer_ip,
     deallocate_peer_ip,
     generate_server_keys,
+    load_or_generate_client_keys,
     validate_subnets_no_overlap,
 )
 
 FAKE_PRIVATE = "cFakePrivateKeyBase64EncodedValue000000000000="
 FAKE_PUBLIC = "cFakePublicKeyBase64EncodedValueX000000000000="
+FAKE_PRIVATE_2 = "cSecondPrivateKeyBase64EncodedValue000000000="
+FAKE_PUBLIC_2 = "cSecondPublicKeyBase64EncodedValueX0000000000="
 
 
 @pytest.fixture()
@@ -86,6 +89,81 @@ class TestGenerateServerKeys:
 
         assert private == FAKE_PRIVATE
         assert public == FAKE_PUBLIC
+
+
+class TestLoadOrGenerateClientKeys:
+    """Tests for load_or_generate_client_keys (idempotent client identity)."""
+
+    def _peers(self, pki_dir: Path) -> Path:
+        return pki_dir / "wireguard" / "peers"
+
+    def test_generates_and_persists_when_missing(self, pki_dir: Path) -> None:
+        """First call mints a keypair and persists the private key at 0600."""
+        with patch("lib.wireguard.subprocess.check_output") as mock_co:
+            mock_co.side_effect = [FAKE_PRIVATE.encode(), FAKE_PUBLIC.encode()]
+            private, public = load_or_generate_client_keys(pki_dir, "alice")
+
+        assert (private, public) == (FAKE_PRIVATE, FAKE_PUBLIC)
+        key_path = self._peers(pki_dir) / "alice.key"
+        pub_path = self._peers(pki_dir) / "alice.pub"
+        assert key_path.read_text().strip() == FAKE_PRIVATE
+        assert pub_path.read_text().strip() == FAKE_PUBLIC
+        assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+
+    def test_reuses_existing_key_without_regenerating(self, pki_dir: Path) -> None:
+        """A stored key is reused; no new keypair is minted (identity retained)."""
+        peers = self._peers(pki_dir)
+        peers.mkdir(parents=True)
+        (peers / "alice.key").write_text(FAKE_PRIVATE + "\n")
+
+        # Only the derive-public call (wg pubkey) should run; never wg genkey.
+        with patch("lib.wireguard.subprocess.check_output") as mock_co:
+            mock_co.return_value = FAKE_PUBLIC.encode()
+            private, public = load_or_generate_client_keys(pki_dir, "alice")
+            assert mock_co.call_count == 1
+            assert mock_co.call_args.args[0] == ["wg", "pubkey"]
+
+        assert private == FAKE_PRIVATE
+        assert public == FAKE_PUBLIC
+
+    def test_reuse_self_heals_missing_public(self, pki_dir: Path) -> None:
+        """Reuse rewrites the .pub from the private key if it went missing."""
+        peers = self._peers(pki_dir)
+        peers.mkdir(parents=True)
+        (peers / "alice.key").write_text(FAKE_PRIVATE + "\n")
+
+        with patch("lib.wireguard.subprocess.check_output") as mock_co:
+            mock_co.return_value = FAKE_PUBLIC.encode()
+            load_or_generate_client_keys(pki_dir, "alice")
+
+        assert (peers / "alice.pub").read_text().strip() == FAKE_PUBLIC
+
+    def test_rotate_replaces_the_stored_key(self, pki_dir: Path) -> None:
+        """rotate=True mints a fresh keypair even when one exists."""
+        peers = self._peers(pki_dir)
+        peers.mkdir(parents=True)
+        (peers / "alice.key").write_text(FAKE_PRIVATE + "\n")
+
+        with patch("lib.wireguard.subprocess.check_output") as mock_co:
+            mock_co.side_effect = [FAKE_PRIVATE_2.encode(), FAKE_PUBLIC_2.encode()]
+            private, public = load_or_generate_client_keys(
+                pki_dir, "alice", rotate=True
+            )
+
+        assert (private, public) == (FAKE_PRIVATE_2, FAKE_PUBLIC_2)
+        assert (peers / "alice.key").read_text().strip() == FAKE_PRIVATE_2
+
+    def test_reuse_survives_across_repeated_calls(self, pki_dir: Path) -> None:
+        """Repeated default calls return the same identity (restart-safe)."""
+        with patch("lib.wireguard.subprocess.check_output") as mock_co:
+            mock_co.side_effect = [FAKE_PRIVATE.encode(), FAKE_PUBLIC.encode()]
+            first = load_or_generate_client_keys(pki_dir, "alice")
+
+        with patch("lib.wireguard.subprocess.check_output") as mock_co:
+            mock_co.return_value = FAKE_PUBLIC.encode()
+            second = load_or_generate_client_keys(pki_dir, "alice")
+
+        assert first == second
 
 
 class TestAllocatePeerIp:

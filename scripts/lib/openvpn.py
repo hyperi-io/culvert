@@ -46,6 +46,7 @@ def generate_config(template_path: Path, output_path: Path, variables: dict) -> 
 def _common_variables(cfg) -> dict:
     """Build common template variables from config."""
     return {
+        "OPENVPN_DATA_CIPHERS": cfg.data_ciphers,
         "OPENVPN_SNDBUF": cfg.sndbuf,
         "OPENVPN_RCVBUF": cfg.rcvbuf,
         "OPENVPN_TUN_MTU": cfg.tun_mtu,

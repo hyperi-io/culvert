@@ -352,9 +352,9 @@ def init_pki_local(cfg) -> None:
         "EASYRSA_PKI": str(cfg.pki_dir),
         "EASYRSA_REQ_CN": cfg.ca_cn,
         "EASYRSA_BATCH": "1",
-        "EASYRSA_CA_EXPIRE": "3650",
-        "EASYRSA_CERT_EXPIRE": "730",
-        "EASYRSA_CRL_DAYS": "180",
+        "EASYRSA_CA_EXPIRE": str(cfg.ca_expire_days),
+        "EASYRSA_CERT_EXPIRE": str(cfg.cert_expire_days),
+        "EASYRSA_CRL_DAYS": str(cfg.crl_days),
     }
 
     if cfg.key_type == "ec":

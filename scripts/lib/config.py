@@ -148,6 +148,13 @@ class Config:
     key_type: str = "ec"
     key_size: str = "secp384r1"
 
+    # OpenVPN data-channel cipher order (NCP negotiation). AES-256-GCM first is
+    # the CNSA 2.0 / FIPS-compliant default. A profile may reorder to prefer
+    # ChaCha20-Poly1305 (see the mobile profile) -- faster on AES-NI-less
+    # clients, but it leaves the CNSA suite, so it is a deliberate per-profile
+    # opt-in, never the default.
+    data_ciphers: str = "AES-256-GCM:CHACHA20-POLY1305"
+
     # PKI Mode
     pki_mode: str = "local"
 
@@ -221,10 +228,11 @@ class Config:
     # external PKI on AWS authenticates with those same instance credentials.
     block_link_local: bool = True
 
-    # Network Profile
+    # Network Profile -- a descriptive label only; tuning is carried by the
+    # profile YAML, not derived from this string.
     network_profile: str = "default"
 
-    # Performance (set by __post_init__ based on network_profile)
+    # Performance -- plain baseline defaults; a profile YAML overrides via cascade
     sndbuf: int = 0
     rcvbuf: int = 0
     tun_mtu: int = 1500
@@ -283,6 +291,14 @@ class Config:
 
     crl_refresh_hours: int = 24
 
+    # Certificate lifetimes for local PKI, in days. Defaults keep the historical
+    # 10-year CA / 2-year leaf. Raise them for a set-and-forget deployment that
+    # has no rotation operator -- e.g. 7300 (20 years) so the server cert cannot
+    # silently expire and strand the VPN. WireGuard has no expiry to configure.
+    ca_expire_days: int = 3650
+    cert_expire_days: int = 730
+    crl_days: int = 180
+
     # Client Download Server
     client_download_enabled: bool = False
     client_download_port: int = 8443
@@ -317,22 +333,10 @@ class Config:
             else:
                 self.ca_cn = "VPN CA"
 
-        if self.network_profile in ("wireless", "mobile", "4g"):
-            if self.sndbuf == 0:
-                self.sndbuf = 393216
-            if self.rcvbuf == 0:
-                self.rcvbuf = 393216
-            if self.tun_mtu == 1500:
-                self.tun_mtu = 1400
-            if self.mssfix == 1450:
-                self.mssfix = 1400
-            if self.keepalive_ping == 10:
-                self.keepalive_ping = 30
-            if self.keepalive_timeout == 60:
-                self.keepalive_timeout = 120
-            logger.info("Network profile: wireless (4G/mobile optimised)")
-        else:
-            logger.info("Network profile: default (fast internet)")
+        # No hard-coded performance presets here: tuning is data, carried by the
+        # profile YAML (profiles/*.yaml or a user-supplied file). network_profile
+        # is only a label. Values arrive already set via the settings cascade.
+        logger.info("Network profile: %s", self.network_profile)
 
         # Per-listener OAuth2 inheritance: if no explicit per-listener
         # setting, inherit from global oauth2_enabled
@@ -458,9 +462,10 @@ class Config:
         oauth2_tcp_enabled = _settings_bool(s, "oauth2_tcp_enabled", oauth2_enabled)
         oauth2_https_enabled = _settings_bool(s, "oauth2_https_enabled", oauth2_enabled)
 
-        # Read performance tuning; network_profile drives defaults
+        # network_profile is a descriptive label only. Performance tuning is
+        # data: it comes from the loaded profile YAML (profiles/*.yaml, or a
+        # user-supplied file via CULVERT_PROFILE), not from hard-coded presets.
         network_profile = s.get("network_profile", "default")
-        is_wireless = network_profile in ("wireless", "mobile", "4g")
 
         return cls(
             # Server identity
@@ -469,6 +474,7 @@ class Config:
             ca_cn=s.get("ca_cn", ""),
             key_type=s.get("key_type", "ec"),
             key_size=s.get("key_size", "secp384r1"),
+            data_ciphers=s.get("data_ciphers", "AES-256-GCM:CHACHA20-POLY1305"),
             # PKI
             pki_mode=s.get("pki_mode", "local"),
             # Protocol
@@ -504,18 +510,15 @@ class Config:
             allowed_destinations=s.get("allowed_destinations", ""),
             downstream_admin_cidrs=s.get("downstream_admin_cidrs", ""),
             block_link_local=_settings_bool(s, "block_link_local", True),
-            # Network profile + performance
+            # Network profile + performance. Defaults are the plain baseline;
+            # a profile YAML supplies any tuned values through the cascade.
             network_profile=network_profile,
-            sndbuf=_settings_int(s, "sndbuf", 393216 if is_wireless else 0),
-            rcvbuf=_settings_int(s, "rcvbuf", 393216 if is_wireless else 0),
-            tun_mtu=_settings_int(s, "tun_mtu", 1400 if is_wireless else 1500),
-            mssfix=_settings_int(s, "mssfix", 1400 if is_wireless else 1450),
-            keepalive_ping=_settings_int(
-                s, "keepalive_ping", 30 if is_wireless else 10
-            ),
-            keepalive_timeout=_settings_int(
-                s, "keepalive_timeout", 120 if is_wireless else 60
-            ),
+            sndbuf=_settings_int(s, "sndbuf", 0),
+            rcvbuf=_settings_int(s, "rcvbuf", 0),
+            tun_mtu=_settings_int(s, "tun_mtu", 1500),
+            mssfix=_settings_int(s, "mssfix", 1450),
+            keepalive_ping=_settings_int(s, "keepalive_ping", 10),
+            keepalive_timeout=_settings_int(s, "keepalive_timeout", 60),
             # Server limits
             max_clients=max_clients,
             reneg_sec=_settings_int(s, "reneg_sec", 3600),
@@ -562,6 +565,10 @@ class Config:
             otel_protocol=s.get("otel_protocol", "grpc"),
             otel_insecure=_settings_bool(s, "otel_insecure", False),
             crl_refresh_hours=_settings_int(s, "crl_refresh_hours", 24),
+            # Certificate lifetimes (local PKI)
+            ca_expire_days=_settings_int(s, "ca_expire_days", 3650),
+            cert_expire_days=_settings_int(s, "cert_expire_days", 730),
+            crl_days=_settings_int(s, "crl_days", 180),
             # Client download
             client_download_enabled=_settings_bool(s, "client_download_enabled", False),
             client_download_port=_settings_int(s, "client_download_port", 8443),

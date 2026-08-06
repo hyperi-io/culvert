@@ -1,0 +1,33 @@
+# Mobile profile -- constrained or extra-encapsulated paths: 5G modems, phone
+# tethering, hotel and captive-portal wifi, CGNAT. These paths carry a smaller
+# or NAT64/PPPoE-shrunk MTU and drop idle NAT mappings quickly. Load with:
+# CULVERT_PROFILE=mobile, or copy this file, tweak it, and point CULVERT_PROFILE
+# at your own. Explicit CULVERT_* env vars still override any value here.
+#
+# This file IS the tuning -- there are no hidden presets in code.
+
+network_profile: mobile   # label only
+
+# OpenVPN cipher order: ChaCha20-Poly1305 first. It is constant-time and
+# AES-NI-independent, so it is faster, cooler and steadier under weak signal on
+# the phone/ARM clients this profile targets. Choosing this profile is the
+# informed opt-in: it LEAVES the CNSA 2.0 / FIPS suite. Use the default profile
+# where compliance requires AES-256. (ChaCha20 is a personal favourite -- DT.)
+data_ciphers: "CHACHA20-POLY1305:AES-256-GCM"
+
+# OpenVPN: larger buffers for high-latency links, a conservative MTU/mssfix so
+# packets do not fragment on a ~1400 mobile path, and tolerant keepalive timers
+# for reordering and pauses.
+sndbuf: 393216
+rcvbuf: 393216
+tun_mtu: 1400
+mssfix: 1400
+keepalive_ping: 30
+keepalive_timeout: 120
+
+# WireGuard: 1420 black-holes on a ~1400 path -- the tunnel connects but large
+# transfers stall silently, because carriers filter the ICMP that would signal
+# it. 1280 is the IPv6 minimum every network must carry, so it gets through with
+# headroom. Keepalive holds the CGNAT mapping open.
+wg_mtu: 1280
+wg_persistent_keepalive: 25
