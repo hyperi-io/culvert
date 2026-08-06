@@ -433,6 +433,33 @@ verb 3
 # ===============================================================================
 
 
+def _bundle_client_zip(client_name: str, output_dir: Path) -> Path | None:
+    """Zip a single client's generated files into <name>.zip (0600).
+
+    Per client, never one archive of every client: a shared archive would
+    package one client's private keys with another's. Returns the zip path, or
+    None when the client has no files. The .zip itself is excluded so repeated
+    runs do not nest.
+    """
+    import zipfile
+
+    members = sorted(
+        p
+        for p in output_dir.glob(f"{client_name}-*")
+        if p.is_file() and p.suffix != ".zip"
+    )
+    if not members:
+        return None
+
+    zip_path = output_dir / f"{client_name}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for member in members:
+            zf.write(member, member.name)
+    zip_path.chmod(0o600)
+    logger.info("Bundled client configs", zip=str(zip_path), files=len(members))
+    return zip_path
+
+
 def generate_wireguard_configs(
     client_name: str,
     cfg: Config,
@@ -809,6 +836,12 @@ Examples:
 
         shutil.copy2(setup_doc_src, setup_doc_dst)
         logger.info(f"  Documentation: {setup_doc_dst}")
+
+    # Bundle this client's files into <name>.zip for easy hand-off. Per client,
+    # not one archive of every client, so one client's private keys are never
+    # packaged alongside another's. Regenerated each run so it tracks the
+    # current configs.
+    _bundle_client_zip(client_name, cfg.output_dir)
 
     # Summary
     logger.info("")

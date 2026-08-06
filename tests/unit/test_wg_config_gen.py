@@ -390,3 +390,41 @@ class TestGenerateClientConfigWrapper:
                 f"generate-client's Config wrapper does not copy {field}, so"
                 " generate_wireguard_configs raises AttributeError"
             )
+
+
+class TestBundleClientZip:
+    """generate-client bundles each client's files into <name>.zip."""
+
+    @staticmethod
+    def _module():
+        import importlib.util
+
+        path = Path(__file__).resolve().parents[2] / "scripts" / "generate-client.py"
+        spec = importlib.util.spec_from_file_location("generate_client_script", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_bundles_only_this_clients_files(self, tmp_path: Path) -> None:
+        """The zip holds alice's files and none of bob's."""
+        import stat
+        import zipfile
+
+        (tmp_path / "alice-udp-split.ovpn").write_text("a1")
+        (tmp_path / "alice-wg-split.conf").write_text("a2")
+        (tmp_path / "bob-udp-split.ovpn").write_text("b1")
+
+        zip_path = self._module()._bundle_client_zip("alice", tmp_path)
+
+        assert zip_path == tmp_path / "alice.zip"
+        with zipfile.ZipFile(zip_path) as zf:
+            names = set(zf.namelist())
+        assert names == {"alice-udp-split.ovpn", "alice-wg-split.conf"}
+        assert stat.S_IMODE(zip_path.stat().st_mode) == 0o600
+
+    def test_excludes_existing_zip_and_returns_none_when_empty(
+        self, tmp_path: Path
+    ) -> None:
+        """A prior <name>.zip is never nested, and no files means no zip."""
+        (tmp_path / "carol.zip").write_text("stale")
+        assert self._module()._bundle_client_zip("carol", tmp_path) is None
