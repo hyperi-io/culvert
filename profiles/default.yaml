@@ -1,0 +1,34 @@
+# Default profile -- the sensible general-purpose baseline for a remote-access
+# VPN, deliberately a notch more robust than bare stock. Load with:
+# CULVERT_PROFILE=default, or copy this file, tweak it, and point CULVERT_PROFILE
+# at your own. Explicit CULVERT_* env vars still override any value here.
+#
+# This file IS the tuning -- there are no hidden presets in code.
+#
+# What "optimised" means here is robust-everywhere, not benchmark-maximum:
+#   - mssfix 1420 (not 1450): a remote VPN is reached from imperfect links, and
+#     PPPoE DSL caps the path at 1492, so 1420 keeps OpenVPN off the
+#     fragmentation cliff on the common case for a cost no one can measure.
+#   - socket buffers at OS auto-tuning (0): modern Linux sizes them per
+#     connection better than any fixed number, so NOT pinning them is the win.
+#   - WireGuard at 1420: 1500 minus the v6 outer headers, correct for a clean
+#     path. The mobile profile is the one that lowers it.
+
+network_profile: default   # label only
+
+# OpenVPN cipher order: AES-256-GCM first keeps the CNSA 2.0 / FIPS-compliant
+# default. ChaCha20-Poly1305 stays offered as the secondary for clients that
+# prefer it, without leaving the compliant lead.
+data_ciphers: "AES-256-GCM:CHACHA20-POLY1305"
+
+# OpenVPN
+sndbuf: 0
+rcvbuf: 0
+tun_mtu: 1500
+mssfix: 1420
+keepalive_ping: 10
+keepalive_timeout: 60
+
+# WireGuard
+wg_mtu: 1420
+wg_persistent_keepalive: 25

@@ -32,6 +32,9 @@ for one of the opinionated `CULVERT_PROFILE=` presets.
 
 - [addressing.md](addressing.md) - why the tunnels default to `10.8.0.0/22`,
   and when to move to the CGNAT range instead.
+- [performance.md](performance.md) - the cipher stance (AES-256-GCM the
+  compliance default, ChaCha20 offered), what the tuning profiles change, and
+  the host-side throughput levers (DCO, sysctl).
 
 ## Look something up
 

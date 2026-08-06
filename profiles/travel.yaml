@@ -31,5 +31,14 @@ wg_https_tunnel_enabled: true
 # directly.
 full_tunnel: true
 
-# Mobile-tolerant timers and MTU - travel means 4G/5G and flaky wifi.
-network_profile: wireless
+# Mobile-tolerant timers and MTU - travel means 4G/5G and flaky wifi. These are
+# the same values as the mobile profile, inlined so this file stands alone.
+network_profile: mobile
+sndbuf: 393216
+rcvbuf: 393216
+tun_mtu: 1400
+mssfix: 1400
+keepalive_ping: 30
+keepalive_timeout: 120
+wg_mtu: 1280
+wg_persistent_keepalive: 25

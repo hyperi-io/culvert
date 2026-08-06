@@ -232,9 +232,14 @@ def revoke_wireguard_client(client_name: str) -> bool:
             )
         logger.info("Removed live peer from wg0 interface")
 
-    # Delete peer public key file
+    # Delete peer public key file and the retained private key, so a later
+    # generate-client mints a fresh identity rather than reusing this one.
     pub_key_path.unlink()
     logger.info(f"  Removed: {pub_key_path}")
+    priv_key_path = peers_dir / f"{client_name}.key"
+    if priv_key_path.exists():
+        priv_key_path.unlink()
+        logger.info(f"  Removed: {priv_key_path}")
 
     # Deallocate IP
     freed_ip = wireguard.deallocate_peer_ip(PKI_DIR, client_name)

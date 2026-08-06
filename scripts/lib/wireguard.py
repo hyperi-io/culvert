@@ -90,6 +90,47 @@ def generate_client_keys() -> tuple[str, str]:
     return private, public
 
 
+def load_or_generate_client_keys(
+    pki_dir: Path, client_name: str, rotate: bool = False
+) -> tuple[str, str]:
+    """Return a client's keypair, reusing the stored one by default.
+
+    WireGuard keys have no expiry, so a client's identity is retained across
+    config regenerations and container restarts: the private key is persisted
+    at pki/wireguard/peers/<name>.key (0600, like the OpenVPN client keys) and
+    reused. It is minted only when absent, or when rotate forces a fresh one.
+
+    Retaining it is the whole point -- generating a new keypair changes the
+    server's accepted peer, which silently breaks every config already handed
+    to that client. Returns (private_key, public_key).
+    """
+    peers_dir = pki_dir / "wireguard" / "peers"
+    key_path = peers_dir / f"{client_name}.key"
+    pub_path = peers_dir / f"{client_name}.pub"
+
+    if not rotate and key_path.exists():
+        private = key_path.read_text().strip()
+        public = (
+            subprocess.check_output(["wg", "pubkey"], input=private.encode())
+            .decode()
+            .strip()
+        )
+        # Rewrite the .pub from the private key so a missing or stale public
+        # half self-heals rather than desyncing from the peer.
+        pub_path.write_text(public + "\n")
+        logger.info("WireGuard client key exists, reusing", client=client_name)
+        return private, public
+
+    peers_dir.mkdir(parents=True, exist_ok=True)
+    private, public = generate_client_keys()
+    write_secret(key_path, private + "\n")
+    pub_path.write_text(public + "\n")
+    logger.info(
+        "Generated WireGuard client keypair", client=client_name, rotated=rotate
+    )
+    return private, public
+
+
 # ---------------------------------------------------------------------------
 # IP allocation
 # ---------------------------------------------------------------------------

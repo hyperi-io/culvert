@@ -202,6 +202,15 @@ services:
       - CULVERT_CA_CN=${CULVERT_CA_CN:-}
       - CULVERT_KEY_TYPE=${CULVERT_KEY_TYPE:-ec}
       - CULVERT_KEY_SIZE=${CULVERT_KEY_SIZE:-secp384r1}
+      # OpenVPN data-channel cipher order. AES-256-GCM first is the CNSA/FIPS
+      # default; a profile (or this var) may prefer ChaCha20 -- which leaves CNSA.
+      - CULVERT_DATA_CIPHERS=${CULVERT_DATA_CIPHERS:-AES-256-GCM:CHACHA20-POLY1305}
+      # Local-PKI certificate lifetimes (days). Defaults: 10-year CA, 2-year
+      # leaf. Raise for a set-and-forget deployment with no rotation operator,
+      # e.g. 7300 (20y), so the server cert cannot silently expire.
+      - CULVERT_CA_EXPIRE_DAYS=${CULVERT_CA_EXPIRE_DAYS:-3650}
+      - CULVERT_CERT_EXPIRE_DAYS=${CULVERT_CERT_EXPIRE_DAYS:-730}
+      - CULVERT_CRL_DAYS=${CULVERT_CRL_DAYS:-180}
       # "local" mints a CA on first start. "external" takes the CA and server
       # keypair from a secrets backend instead, which needs every
       # CULVERT_SECRETS_* path below - see the External PKI section of

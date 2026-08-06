@@ -190,7 +190,7 @@ class TestConfigEnvOverride:
 
 
 class TestConfigNetworkProfiles:
-    """Network profile drives performance tuning defaults."""
+    """network_profile is a descriptive label; tuning is data in the YAML."""
 
     def test_default_profile_buffers(self, clean_env):
         """Default profile uses 0 buffers (OS auto-tuning)."""
@@ -204,33 +204,26 @@ class TestConfigNetworkProfiles:
         assert cfg.tun_mtu == 1500
         assert cfg.mssfix == 1450
 
-    def test_wireless_profile_buffers(self, clean_env, monkeypatch):
-        """Wireless profile uses larger buffers."""
-        monkeypatch.setenv("CULVERT_NETWORK_PROFILE", "wireless")
-        cfg = Config.from_settings()
-        assert cfg.sndbuf == 393216
-        assert cfg.rcvbuf == 393216
+    def test_network_profile_label_does_not_tune(self, clean_env, monkeypatch):
+        """network_profile is a label: setting it alone changes no tuning value.
 
-    def test_wireless_profile_mtu(self, clean_env, monkeypatch):
-        """Wireless profile uses smaller MTU."""
+        Tuning is data, carried by a profile YAML -- see TestShippedProfiles.
+        """
         monkeypatch.setenv("CULVERT_NETWORK_PROFILE", "wireless")
         cfg = Config.from_settings()
-        assert cfg.tun_mtu == 1400
+        assert cfg.network_profile == "wireless"
+        assert cfg.sndbuf == 0
+        assert cfg.tun_mtu == 1500
+        assert cfg.mssfix == 1450
+        assert cfg.wg_mtu == 1420
+
+    def test_explicit_tuning_is_read_through(self, clean_env, monkeypatch):
+        """Explicit CULVERT_* tuning vars are honoured directly."""
+        monkeypatch.setenv("CULVERT_WG_MTU", "1280")
+        monkeypatch.setenv("CULVERT_MSSFIX", "1400")
+        cfg = Config.from_settings()
+        assert cfg.wg_mtu == 1280
         assert cfg.mssfix == 1400
-
-    def test_mobile_profile_same_as_wireless(self, clean_env, monkeypatch):
-        """Mobile profile uses same settings as wireless."""
-        monkeypatch.setenv("CULVERT_NETWORK_PROFILE", "mobile")
-        cfg = Config.from_settings()
-        assert cfg.sndbuf == 393216
-        assert cfg.tun_mtu == 1400
-
-    def test_wireless_keepalive(self, clean_env, monkeypatch):
-        """Wireless profile uses longer keepalive intervals."""
-        monkeypatch.setenv("CULVERT_NETWORK_PROFILE", "wireless")
-        cfg = Config.from_settings()
-        assert cfg.keepalive_ping == 30
-        assert cfg.keepalive_timeout == 120
 
 
 class TestConfigOAuth2Inheritance:
@@ -428,6 +421,27 @@ class TestShippedProfiles:
         assert cfg.full_tunnel is False
         assert cfg.push_routes == "192.168.1.0/24"
 
+    def test_default(self, clean_env, monkeypatch):
+        cfg = self._load(monkeypatch, "default")
+        assert cfg.network_profile == "default"
+        assert cfg.mssfix == 1420
+        assert cfg.wg_mtu == 1420
+        # CNSA-compliant: AES-256-GCM leads.
+        assert cfg.data_ciphers.split(":")[0] == "AES-256-GCM"
+
+    def test_mobile(self, clean_env, monkeypatch):
+        cfg = self._load(monkeypatch, "mobile")
+        assert cfg.network_profile == "mobile"
+        assert cfg.tun_mtu == 1400
+        assert cfg.wg_mtu == 1280
+        # Informed opt-in: ChaCha20 leads (leaves CNSA), AES-256-GCM still offered.
+        assert cfg.data_ciphers == "CHACHA20-POLY1305:AES-256-GCM"
+
+    def test_default_data_ciphers_is_the_compliant_default(self, clean_env):
+        """With no profile, the cipher order stays CNSA-compliant (AES first)."""
+        cfg = Config.from_settings()
+        assert cfg.data_ciphers == "AES-256-GCM:CHACHA20-POLY1305"
+
     def test_corporate(self, clean_env, monkeypatch):
         cfg = self._load(
             monkeypatch,
@@ -456,7 +470,9 @@ class TestShippedProfiles:
         assert cfg.protocol == "both"
         assert cfg.https_enabled is True
         assert cfg.wg_https_tunnel_enabled is True
-        assert cfg.network_profile == "wireless"
+        assert cfg.network_profile == "mobile"
+        assert cfg.wg_mtu == 1280
+        assert cfg.tun_mtu == 1400
 
     def test_edge_fleet(self, clean_env, monkeypatch):
         cfg = self._load(monkeypatch, "edge-fleet")
