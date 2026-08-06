@@ -673,8 +673,7 @@ Examples:
         type=int,
         default=None,
         help=(
-            "Client certificate validity in days"
-            " (default: CULVERT_CERT_EXPIRE_DAYS)"
+            "Client certificate validity in days (default: CULVERT_CERT_EXPIRE_DAYS)"
         ),
     )
     parser.add_argument(
