@@ -161,15 +161,20 @@ surviving CI.
 
 ## CI/CD Workflow
 
-When your pull request is merged to `main`:
+Every push and pull request runs the full CI pipeline - lint, format, tests,
+secret scan, dependency audit, and a container build - through the shared
+hyperi-ci reusable workflow.
 
-1. **semantic-release** analyses commit messages since the last release
-2. Determines the next version number based on commit types
-3. Generates/updates the CHANGELOG
-4. Creates a new GitHub release with release notes
-5. Publishes the package (if applicable)
+Publishing is deliberate, not a side effect of merging. A plain merge to
+`main` is a validate-only run: it does not tag or publish. A release happens
+only when the head commit on `main` carries a `Publish: true` trailer, or when
+the workflow is dispatched by hand (Actions -> CI -> Run workflow, with
+`from-head=true`). On a publish run, semantic-release reads the commits since
+the last release, works out the next version from their types, updates the
+CHANGELOG, tags a GitHub release, and pushes the multi-arch image to GHCR.
 
-This happens automatically - no manual intervention required.
+So land your change with a normal `fix:`/`feat:` merge, then trigger the
+publish separately when you want it shipped.
 
 ## culvert Conventions
 
