@@ -1,6 +1,6 @@
 # <img src="assets/brand/product-culvert/tertiary/product-culvert_square.svg" alt="Culvert icon" width="40"> Culvert
 
-The VPN server that installs like a container, because it is one.
+The VPN server that installs like a container.
 OpenVPN and WireGuard in a single image, each optionally tunnelled over
 HTTPS, with OIDC SSO and external PKI -- `docker run` it standalone or
 drop it into Kubernetes.
