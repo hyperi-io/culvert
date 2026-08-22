@@ -102,6 +102,13 @@ That mints a real credential, so treat the output accordingly:
   and keep it private; losing it invalidates every issued config, and
   leaking it lets someone else issue their own.
 
+One identity covers alice's devices concurrently, laptop and phone both
+connected. OpenVPN shares the certificate across sessions; WireGuard cannot
+share a key, so alice gets one peer per device slot (`alice-wg-split.conf`,
+`alice-wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
+`CULVERT_ALLOW_SHARED_CLIENTS=false` where a credential must identify a single
+device.
+
 See [docs/vpn-client-setup.md](docs/vpn-client-setup.md) for the full
 client connection guide.
 

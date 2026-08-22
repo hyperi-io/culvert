@@ -89,8 +89,8 @@ keepalive ${OPENVPN_KEEPALIVE_PING} ${OPENVPN_KEEPALIVE_TIMEOUT}
 push "persist-key"
 push "persist-tun"
 
-# Allow multiple clients with same CN
-duplicate-cn
+# Concurrent connections per client identity (CULVERT_ALLOW_SHARED_CLIENTS)
+${OPENVPN_DUPLICATE_CN}
 
 #===============================================================================
 # Client Configuration

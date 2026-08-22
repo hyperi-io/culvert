@@ -215,6 +215,10 @@ def compose_stack():
         f"{CLIENT_NAME}-wg-split.conf",
         f"{CLIENT_NAME}-wg-full.conf",
         f"{CLIENT_NAME}-wg-https-split.conf",
+        # The second WireGuard device slot, asserted here so a generator that
+        # stopped issuing slots fails rather than skipping the concurrency tests.
+        f"{CLIENT_NAME}-wg2-split.conf",
+        f"{CLIENT_NAME}-wg2-full.conf",
     ]
     result = subprocess.run(
         ["docker", "exec", CLIENT_CONTAINER, "ls", "/etc/vpn/clients/"],
@@ -311,6 +315,45 @@ def wireguard_full_connection():
         yield
     finally:
         disconnect_wireguard(config_name)
+
+
+@pytest.fixture
+def openvpn_shared_pair_connection():
+    """Connect BOTH client hosts with the SAME certificate, then disconnect.
+
+    The same .ovpn on two hosts at once is what duplicate-cn permits; without it
+    the server evicts the first session when the second presents the same CN.
+    """
+    from helpers import CLIENT_B_CONTAINER, connect_openvpn, disconnect_openvpn
+
+    config = f"{CLIENT_NAME}-udp-split.ovpn"
+    connect_openvpn(config, container=CLIENT_CONTAINER)
+    connect_openvpn(config, container=CLIENT_B_CONTAINER)
+    try:
+        yield
+    finally:
+        disconnect_openvpn(container=CLIENT_CONTAINER)
+        disconnect_openvpn(container=CLIENT_B_CONTAINER)
+
+
+@pytest.fixture
+def wireguard_slot_pair_connection():
+    """Connect each WireGuard device slot from its own host, then disconnect.
+
+    Slot 1 on one host and slot 2 on the other: one client identity, two live
+    peers.
+    """
+    from helpers import CLIENT_B_CONTAINER, connect_wireguard, disconnect_wireguard
+
+    slot_one = f"{CLIENT_NAME}-wg-split.conf"
+    slot_two = f"{CLIENT_NAME}-wg2-split.conf"
+    connect_wireguard(slot_one, container=CLIENT_CONTAINER)
+    connect_wireguard(slot_two, container=CLIENT_B_CONTAINER)
+    try:
+        yield
+    finally:
+        disconnect_wireguard(slot_one, container=CLIENT_CONTAINER)
+        disconnect_wireguard(slot_two, container=CLIENT_B_CONTAINER)
 
 
 @pytest.fixture

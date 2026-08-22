@@ -51,6 +51,13 @@ These clients support the web-based OAuth2 authentication flow required for SSO.
 | `*-wg-https-split.conf` | WSS 4443 (wstunnel) | over HTTPS, VPN routes only |
 | `*-wg-https-full.conf` | WSS 4443 (wstunnel) | over HTTPS, all traffic |
 
+### Using more than one device
+
+The same `.ovpn` works on a laptop and a phone at once. WireGuard does not: a
+key connects from one place at a time, so you get a set of files per device -
+`*-wg-split.conf` for the first, `*-wg2-split.conf` for the second. Load one set
+per device, or they will keep knocking each other offline.
+
 **Which to use:**
 1. Try **WireGuard** first (best performance, simplest setup)
 2. If WireGuard is blocked, try **OpenVPN UDP** (UDP 1194)

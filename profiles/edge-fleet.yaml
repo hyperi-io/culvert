@@ -36,6 +36,11 @@ routing_control_enabled: true
 # reaches them). Isolation stays ON.
 client_isolation: true
 
+# One credential identifies ONE appliance here, unlike the laptop-plus-phone
+# default: a second session on the same certificate is a cloned appliance, and
+# sharing would hide it. Set true if a site really runs paired appliances.
+allow_shared_clients: false
+
 # Outbound allow-list: appliances may only INITIATE to the receiver
 # network. Set this to your receiver's service CIDR.
 allowed_destinations: "10.20.0.0/16"

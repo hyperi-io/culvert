@@ -17,11 +17,11 @@ This will:
     1. Revoke the client certificate
     2. Update the CRL
     3. Remove client files (keys, configs)
-  WireGuard:
+  WireGuard (for every device slot the client holds):
     1. Remove live peer from wg0 interface (if running)
     2. Delete peer public key file
     3. Deallocate IP from allocations.json
-    4. Regenerate wg0.conf without the removed peer
+    4. Regenerate wg0.conf without the removed peers
 """
 
 import argparse
@@ -183,26 +183,17 @@ def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
 # ===============================================================================
 
 
-def revoke_wireguard_client(client_name: str) -> bool:
-    """Revoke a WireGuard client by removing its peer and deallocating its IP.
+def _revoke_wireguard_peer(peer: str, peers_dir: Path) -> None:
+    """Remove one peer: live interface first, then its key files and IP.
 
-    Returns True when a peer was revoked, False when none existed.
+    Raises RevocationError when the live removal is refused, so a peer whose
+    tunnel is still up is never reported as revoked.
     """
     from lib import wireguard
 
-    wg_dir = PKI_DIR / "wireguard"
-    peers_dir = wg_dir / "peers"
-    pub_key_path = peers_dir / f"{client_name}.pub"
-
-    if not pub_key_path.exists():
-        logger.warning(
-            f"WireGuard peer key not found: {client_name}",
-            path=str(pub_key_path),
-        )
-        return False
-
+    pub_key_path = peers_dir / f"{peer}.pub"
     public_key = pub_key_path.read_text().strip()
-    logger.info(f"Revoking WireGuard peer: {client_name}")
+    logger.info(f"Revoking WireGuard peer: {peer}")
 
     # Remove the peer from the running interface. The kernel holds the peer
     # list, so until this lands the revoked client keeps its tunnel.
@@ -225,7 +216,7 @@ def revoke_wireguard_client(client_name: str) -> bool:
         )
         if removal.returncode != 0:
             raise RevocationError(
-                f"could not remove {client_name} from the running wg0 interface"
+                f"could not remove {peer} from the running wg0 interface"
                 f" (exit {removal.returncode}): {removal.stderr.strip()}."
                 " The client's tunnel is still live, so nothing has been"
                 " revoked - refusing to report otherwise."
@@ -236,17 +227,48 @@ def revoke_wireguard_client(client_name: str) -> bool:
     # generate-client mints a fresh identity rather than reusing this one.
     pub_key_path.unlink()
     logger.info(f"  Removed: {pub_key_path}")
-    priv_key_path = peers_dir / f"{client_name}.key"
+    priv_key_path = peers_dir / f"{peer}.key"
     if priv_key_path.exists():
         priv_key_path.unlink()
         logger.info(f"  Removed: {priv_key_path}")
 
     # Deallocate IP
-    freed_ip = wireguard.deallocate_peer_ip(PKI_DIR, client_name)
+    freed_ip = wireguard.deallocate_peer_ip(PKI_DIR, peer)
     if freed_ip:
         logger.info(f"  Deallocated IP: {freed_ip}")
     else:
-        logger.warning("No IP allocation found for client", client=client_name)
+        logger.warning("No IP allocation found for peer", peer=peer)
+
+
+def revoke_wireguard_client(client_name: str) -> bool:
+    """Revoke a WireGuard client: every device slot it holds.
+
+    Slots are read from disk rather than from the configured slot count, so
+    lowering CULVERT_SHARED_CLIENT_SLOTS cannot strand a peer that still has
+    access. Returns True when a peer was revoked, False when none existed.
+    """
+    from lib import wireguard
+
+    wg_dir = PKI_DIR / "wireguard"
+    peers_dir = wg_dir / "peers"
+
+    peers = wireguard.existing_peer_ids(PKI_DIR, client_name)
+    if not peers:
+        logger.warning(
+            f"WireGuard peer key not found: {client_name}",
+            path=str(peers_dir / f"{client_name}.pub"),
+        )
+        return False
+
+    if len(peers) > 1:
+        logger.info(
+            "Revoking every device slot for client",
+            client=client_name,
+            slots=len(peers),
+        )
+
+    for peer in peers:
+        _revoke_wireguard_peer(peer, peers_dir)
 
     # Remove WireGuard config files from output directory
     removed = 0
@@ -290,7 +312,8 @@ def revoke_wireguard_client(client_name: str) -> bool:
 
     logger.info(
         f"WireGuard client {client_name} has been revoked",
-        files_removed=removed + 1,
+        slots=len(peers),
+        files_removed=removed + len(peers),
     )
     return True
 
@@ -310,10 +333,10 @@ This will:
     1. Revoke the client certificate
     2. Update the CRL
     3. Remove client files (keys, configs)
-  WireGuard:
-    1. Remove live peer from wg0 interface
-    2. Delete peer public key and config files
-    3. Deallocate IP and regenerate server config
+  WireGuard (every device slot the client holds):
+    1. Remove live peers from wg0 interface
+    2. Delete peer public keys and config files
+    3. Deallocate IPs and regenerate server config
 
 Examples:
   revoke-client alice

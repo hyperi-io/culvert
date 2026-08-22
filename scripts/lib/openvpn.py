@@ -43,6 +43,19 @@ def generate_config(template_path: Path, output_path: Path, variables: dict) -> 
     output_path.write_text(content)
 
 
+def _duplicate_cn_directive(cfg) -> str:
+    """Render the duplicate-cn line, or a marker saying why it is absent.
+
+    Without duplicate-cn OpenVPN evicts the existing session when a second one
+    presents the same CN, so this is what makes a client credential shareable.
+    A comment rather than an empty string keeps the reason visible in the
+    generated config an operator actually reads.
+    """
+    if cfg.allow_shared_clients:
+        return "duplicate-cn"
+    return "# duplicate-cn omitted: CULVERT_ALLOW_SHARED_CLIENTS=false"
+
+
 def _common_variables(cfg) -> dict:
     """Build common template variables from config."""
     return {
@@ -56,6 +69,7 @@ def _common_variables(cfg) -> dict:
         "OPENVPN_DNS1": cfg.dns1,
         "OPENVPN_DNS2": cfg.dns2,
         "OPENVPN_MAX_CLIENTS": cfg.max_clients,
+        "OPENVPN_DUPLICATE_CN": _duplicate_cn_directive(cfg),
         "OPENVPN_RENEG_SEC": cfg.reneg_sec,
         "OPENVPN_VERB": cfg.verb,
         "OPENVPN_MUTE": cfg.mute,

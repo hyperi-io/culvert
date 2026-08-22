@@ -244,6 +244,15 @@ class Config:
     max_clients: int | None = None
     reneg_sec: int = 3600
 
+    # One issued identity may carry concurrent connections. On by default.
+    # OpenVPN implements it as duplicate-cn. WireGuard cannot share a key at
+    # all - the protocol keeps one endpoint per peer, so the server would answer
+    # only the device that handshook last - and instead gets shared_client_slots
+    # independent peers, each with its own keypair and tunnel IP.
+    # Opting out makes every credential exclusive and forces a single slot.
+    allow_shared_clients: bool = True
+    shared_client_slots: int = 2
+
     # Logging
     log_mode: str = "file"
     verb: int = 3
@@ -346,6 +355,13 @@ class Config:
         # Calculate max_clients if not explicitly set
         if self.max_clients is None:
             self.max_clients = self._calculate_max_clients()
+
+        # The opt-out is the single source of truth for exclusivity: a leftover
+        # slot count must not quietly keep issuing extra WireGuard peers. Only
+        # counts above one are clamped, so an invalid count still reaches
+        # validate() rather than being silently corrected into a valid one.
+        if not self.allow_shared_clients and self.shared_client_slots > 1:
+            self.shared_client_slots = 1
 
     def _calculate_max_clients(self) -> int:
         """Calculate max clients from CPU/RAM (container-aware)."""
@@ -522,6 +538,9 @@ class Config:
             # Server limits
             max_clients=max_clients,
             reneg_sec=_settings_int(s, "reneg_sec", 3600),
+            # Shared client connections
+            allow_shared_clients=_settings_bool(s, "allow_shared_clients", True),
+            shared_client_slots=_settings_int(s, "shared_client_slots", 2),
             # Logging
             log_mode=s.get("log_mode", "file"),
             verb=_settings_int(s, "verb", 3),
@@ -768,6 +787,31 @@ class Config:
                     errors.append(
                         "CULVERT_SECRETS_AWS_REGION is required for aws provider"
                     )
+
+        # Shared client slots. Each WireGuard slot consumes one tunnel IP, so a
+        # raised count shrinks how many clients the pool can hold. Only a count
+        # above the shipped default warns: the default's cost is documented, and
+        # a warning every stock deployment emits is one nobody reads.
+        if self.shared_client_slots < 1:
+            errors.append(
+                f"CULVERT_SHARED_CLIENT_SLOTS={self.shared_client_slots}"
+                " must be at least 1"
+            )
+        elif self.shared_client_slots > 2 and self.protocol in ("wireguard", "both"):
+            try:
+                usable = ipaddress.ip_network(
+                    self.wg_network, strict=False
+                ).num_addresses
+                # .0 network, .1 server, .255 broadcast
+                usable = max(0, usable - 3)
+                warnings.append(
+                    f"CULVERT_SHARED_CLIENT_SLOTS={self.shared_client_slots} means"
+                    f" {self.wg_network} holds"
+                    f" {usable // self.shared_client_slots} WireGuard clients"
+                    f" instead of {usable}"
+                )
+            except ValueError:
+                pass
 
         # Key type
         if self.key_type not in ("ec", "rsa"):

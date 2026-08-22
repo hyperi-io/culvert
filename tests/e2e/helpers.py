@@ -24,6 +24,11 @@ SERVER_CONTAINER = "culvert-test-e2e-server"
 CLIENT_CONTAINER = "culvert-test-e2e-client"
 TARGET_CONTAINER = "culvert-test-e2e-target"
 
+# A second, independent client. Concurrency is the only thing it exists for:
+# one container cannot hold two tunnels on the same interface name, so proving
+# that a shared credential carries two live connections needs two hosts.
+CLIENT_B_CONTAINER = "culvert-test-e2e-client-b"
+
 # The server as the client sees it, on the shared external network.
 SERVER_IP = "172.30.1.10"
 
@@ -62,10 +67,10 @@ def docker_exec(
     return result
 
 
-def curl_target(timeout: int = 5) -> str | None:
-    """Curl the target from the client container. Returns body or None."""
+def curl_target(timeout: int = 5, container: str = CLIENT_CONTAINER) -> str | None:
+    """Curl the target from a client container. Returns body or None."""
     result = docker_exec(
-        CLIENT_CONTAINER,
+        container,
         f"curl -sf --connect-timeout {timeout} {TARGET_URL}",
         timeout=timeout + 5,
         check=False,
@@ -75,7 +80,9 @@ def curl_target(timeout: int = 5) -> str | None:
     return None
 
 
-def assert_tunnel_mode(interface: str, mode: str) -> None:
+def assert_tunnel_mode(
+    interface: str, mode: str, container: str = CLIENT_CONTAINER
+) -> None:
     """Check the tunnel routes the way the requested mode says it should.
 
     Without this the two modes are indistinguishable from a connectivity test: a
@@ -87,17 +94,13 @@ def assert_tunnel_mode(interface: str, mode: str) -> None:
         interface: tun0 or wg0.
         mode: "split" or "full".
     """
-    to_target = docker_exec(
-        CLIENT_CONTAINER, f"ip route get {TARGET_IP}", check=False
-    ).stdout
+    to_target = docker_exec(container, f"ip route get {TARGET_IP}", check=False).stdout
     assert f"dev {interface}" in to_target, (
         f"{mode} tunnel does not route the target through {interface}:\n{to_target}"
     )
 
     # 1.1.1.1 stands in for "anywhere else". Nothing is sent to it.
-    elsewhere = docker_exec(
-        CLIENT_CONTAINER, "ip route get 1.1.1.1", check=False
-    ).stdout
+    elsewhere = docker_exec(container, "ip route get 1.1.1.1", check=False).stdout
     if mode == "full":
         assert f"dev {interface}" in elsewhere, (
             "full tunnel is not carrying the default route - traffic outside the"
@@ -110,12 +113,14 @@ def assert_tunnel_mode(interface: str, mode: str) -> None:
         )
 
 
-def wait_for_tunnel(interface: str = "tun0", timeout: int = 30) -> str:
+def wait_for_tunnel(
+    interface: str = "tun0", timeout: int = 30, container: str = CLIENT_CONTAINER
+) -> str:
     """Poll until tunnel interface has an IP. Returns the IP address."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = docker_exec(
-            CLIENT_CONTAINER,
+            container,
             f"ip -4 addr show dev {interface} 2>/dev/null | grep -oP 'inet \\K[0-9.]+'",
             check=False,
         )
@@ -124,25 +129,26 @@ def wait_for_tunnel(interface: str = "tun0", timeout: int = 30) -> str:
             return ip
         time.sleep(1)
     raise TimeoutError(
-        f"Tunnel interface {interface} did not get an IP within {timeout}s"
+        f"Tunnel interface {interface} did not get an IP in {container}"
+        f" within {timeout}s"
     )
 
 
-def connect_openvpn(config_name: str) -> None:
-    """Start OpenVPN in background inside the client container."""
+def connect_openvpn(config_name: str, container: str = CLIENT_CONTAINER) -> None:
+    """Start OpenVPN in background inside a client container."""
     config_path = f"/etc/vpn/clients/{config_name}"
     docker_exec(
-        CLIENT_CONTAINER,
+        container,
         f"openvpn --config {config_path}"
         " --daemon --log /tmp/openvpn.log"
         " --connect-retry 1 --connect-retry-max 3",
     )
 
 
-def disconnect_openvpn() -> None:
-    """Kill all OpenVPN processes in the client container."""
+def disconnect_openvpn(container: str = CLIENT_CONTAINER) -> None:
+    """Kill all OpenVPN processes in a client container."""
     docker_exec(
-        CLIENT_CONTAINER,
+        container,
         "pkill -SIGTERM openvpn || true",
         check=False,
     )
@@ -190,8 +196,8 @@ def disconnect_openvpn_https() -> None:
     time.sleep(2)
 
 
-def connect_wireguard(config_name: str) -> None:
-    """Start WireGuard via wg-quick inside the client container.
+def connect_wireguard(config_name: str, container: str = CLIENT_CONTAINER) -> None:
+    """Start WireGuard via wg-quick inside a client container.
 
     wg-quick requires the config to be at /etc/wireguard/<iface>.conf
     or specified as just an interface name. We copy to /etc/wireguard/wg0.conf.
@@ -199,19 +205,22 @@ def connect_wireguard(config_name: str) -> None:
     src = f"/etc/vpn/clients/{config_name}"
     # Copy config and strip DNS line (resolvconf not available in container)
     docker_exec(
-        CLIENT_CONTAINER,
+        container,
         f"mkdir -p /etc/wireguard && sed '/^DNS/d' {src} > /etc/wireguard/wg0.conf",
     )
     docker_exec(
-        CLIENT_CONTAINER,
+        container,
         "wg-quick up wg0",
     )
 
 
-def disconnect_wireguard(config_name: str) -> None:  # noqa: ARG001
-    """Stop WireGuard via wg-quick inside the client container."""
+def disconnect_wireguard(
+    config_name: str,  # noqa: ARG001
+    container: str = CLIENT_CONTAINER,
+) -> None:
+    """Stop WireGuard via wg-quick inside a client container."""
     docker_exec(
-        CLIENT_CONTAINER,
+        container,
         "wg-quick down wg0",
         check=False,
     )
@@ -327,10 +336,10 @@ def tls_handshake(port: int, host: str = SERVER_IP, timeout: int = 10) -> str:
     return result.stdout + result.stderr
 
 
-def get_openvpn_log() -> str:
-    """Get the OpenVPN log from the client container (for debugging)."""
+def get_openvpn_log(container: str = CLIENT_CONTAINER) -> str:
+    """Get the OpenVPN log from a client container (for debugging)."""
     result = docker_exec(
-        CLIENT_CONTAINER,
+        container,
         "cat /tmp/openvpn.log 2>/dev/null",
         check=False,
     )

@@ -179,6 +179,11 @@ services:
       - CULVERT_KEEPALIVE_TIMEOUT=${CULVERT_KEEPALIVE_TIMEOUT:-}
       - CULVERT_MAX_CLIENTS=${CULVERT_MAX_CLIENTS:-auto}
       - CULVERT_RENEG_SEC=${CULVERT_RENEG_SEC:-}
+
+      # Concurrent connections per client identity (laptop + phone). Set
+      # ALLOW_SHARED_CLIENTS=false to make each credential exclusive.
+      - CULVERT_ALLOW_SHARED_CLIENTS=${CULVERT_ALLOW_SHARED_CLIENTS:-true}
+      - CULVERT_SHARED_CLIENT_SLOTS=${CULVERT_SHARED_CLIENT_SLOTS:-2}
       - CULVERT_LOG_MODE=${CULVERT_LOG_MODE:-file}
       - CULVERT_VERB=${CULVERT_VERB:-}
       - CULVERT_MUTE=${CULVERT_MUTE:-}
