@@ -23,6 +23,16 @@
 {{- if and (gt (int $replicas) 1) (not $sharedTcKey) }}
 {{- fail (printf "culvert: %d replicas with no shared tls-crypt-v2 server key. Each replica mints its own, and a client config only works against the replica that issued it, so connections would fail at random. Set pkiSecret to a Secret carrying tc.key, or point env.CULVERT_SECRETS_TC_KEY_PATH at a shared one in your secrets backend." (int $replicas)) }}
 {{- end }}
+{{- /* WireGuard has no external-PKI path at all: lib/pki.py sources CA,
+     server cert/key, CRL and tc.key, and nothing WireGuard. Every replica
+     therefore mints its own server keypair and keeps its own
+     allocations.json, so a client config works against exactly one pod and
+     the tunnel IPs collide. Same failure the tc-key guard above refuses,
+     and pkiSecret does NOT excuse it - it carries no WireGuard key. */}}
+{{- $wg := has (default "openvpn" $env.CULVERT_PROTOCOL) (list "wireguard" "both") }}
+{{- if and $wg (gt (int $replicas) 1) }}
+{{- fail (printf "culvert: %d replicas with CULVERT_PROTOCOL=%s. WireGuard server keys are not sourced from any secrets backend, so each replica mints its own and allocates tunnel IPs independently - a client config reaches one pod and the addresses collide. Run WireGuard at one replica, or use CULVERT_PROTOCOL=openvpn to scale out." (int $replicas) (default "openvpn" $env.CULVERT_PROTOCOL)) }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

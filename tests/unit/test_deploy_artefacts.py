@@ -287,6 +287,52 @@ class TestSharedPkiMaterial:
         )
 
 
+class TestWireGuardReplicaGuard:
+    """WireGuard has no shared-key path, so it cannot be scaled out.
+
+    Nothing in lib/pki.py sources WireGuard material, so every replica mints its
+    own server keypair and keeps its own allocations.json: a client config
+    reaches exactly one pod and the tunnel addresses collide. pkiSecret does not
+    excuse it -- that Secret carries no WireGuard key -- so this guard has to be
+    independent of the two beside it.
+    """
+
+    def test_guard_is_present_and_independent_of_the_pki_guards(self):
+        text = (CHART_DIR / "templates" / "deployment.yaml").read_text(encoding="utf-8")
+        assert "CULVERT_PROTOCOL" in text, (
+            "the deployment template never reads CULVERT_PROTOCOL, so a"
+            " multi-replica WireGuard install renders without complaint"
+        )
+        assert 'list "wireguard" "both"' in text, (
+            "the guard does not cover both WireGuard-carrying protocol values"
+        )
+
+    def test_guard_reads_the_autoscaler_ceiling(self):
+        """An HPA that CAN reach 2 replicas is already broken for WireGuard."""
+        text = (CHART_DIR / "templates" / "deployment.yaml").read_text(encoding="utf-8")
+        wg_guard = text.split("$wg :=")[1]
+        assert "$replicas" in wg_guard, (
+            "the WireGuard guard does not use the shared $replicas value, so it"
+            " does not inherit the autoscaler-ceiling handling"
+        )
+
+    @pytest.mark.parametrize("starter", STARTERS)
+    def test_multi_replica_starters_do_not_enable_wireguard(self, starter):
+        """A starter that trips the chart's own guard is uninstallable."""
+        values_file = _load(CHART_DIR / starter)
+        replicas = values_file.get("autoscaling", {}).get(
+            "maxReplicas", values_file.get("replicaCount", 1)
+        )
+        if int(replicas) < 2:
+            pytest.skip(f"{starter} runs a single replica")
+        protocol = values_file.get("env", {}).get("CULVERT_PROTOCOL", "openvpn")
+        assert protocol not in ("wireguard", "both"), (
+            f"{starter} scales to {replicas} replicas with"
+            f" CULVERT_PROTOCOL={protocol}; each would mint its own WireGuard"
+            " server key, so the chart's guard rejects the install"
+        )
+
+
 class TestLogging:
     """A pod that dies must say why in `kubectl logs`."""
 

@@ -64,22 +64,29 @@ Gateway API. The `values-k8s-scale.yaml` starter notes this.
 
 Each extra listener is two edits that must agree: turn the feature on via
 `env`, and add the matching `extraPorts` entry so the containerPort and
-Service port render. For example, WireGuard alongside OpenVPN:
+Service port render. For example, the TCP fallback listener:
 
 ```yaml
 env:
   CULVERT_SERVER_CN: vpn.example.com
-  CULVERT_PROTOCOL: both
+  CULVERT_TCP_ENABLED: "true"
 extraPorts:
-  - name: wireguard
-    port: 51820
-    protocol: UDP
+  - name: openvpn-tcp
+    port: 1194
+    protocol: TCP
 ```
 
 The commented block in [values.yaml](../deploy/helm/culvert/values.yaml)
 lists every listener (`openvpn-tcp`, `openvpn-https`, `wireguard`,
 `wg-https`, the `oauth2-*` callbacks, `client-download`) with the
 `CULVERT_*` switch each one pairs with.
+
+**WireGuard does not scale out.** No WireGuard material is sourced from a
+secrets backend, so every replica mints its own server keypair and keeps its
+own IP allocations: a client config reaches exactly one pod, and the tunnel
+addresses collide. The chart refuses `CULVERT_PROTOCOL=wireguard` or `both`
+above one replica rather than letting you find that out in production. Run
+WireGuard as a single replica, on its own release, and scale OpenVPN here.
 
 ## 5. Scale and observe
 
