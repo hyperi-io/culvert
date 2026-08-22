@@ -1,4 +1,7 @@
-FROM ubuntu:24.04
+# The same base, by digest, that the server image pins. A test client on an
+# older Ubuntu line still passes every check while sharing none of the runtime
+# libraries the thing under test actually ships with.
+FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 
 # Match the production Dockerfile's wstunnel version + per-arch SHA256.
 ARG WSTUNNEL_VERSION="10.6.2"
@@ -6,9 +9,10 @@ ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e192413
 ARG WSTUNNEL_SHA256_ARM64="26bb36b856948255bec7cd71a39df5f8912acdd7a47a9ccd4044a9b80ced108d"
 
 # OpenVPN comes from the upstream repo, the same one the server image uses, so
-# the client under test is 2.7 rather than the 2.6 in Ubuntu 24.04. It matters:
-# 2.7 treats an option it does not recognise in a PUSH_REPLY as fatal, where 2.6
-# ignores it, so a 2.6-only client cannot catch a bad server push.
+# the client under test is 2.7 rather than whatever the Ubuntu archive carries.
+# It matters: 2.7 treats an option it does not recognise in a PUSH_REPLY as
+# fatal, where 2.6 ignores it, so a 2.6-only client cannot catch a bad server
+# push.
 #
 # iptables lets a test block its own egress to the plain VPN ports, so the
 # HTTPS-tunnelled listeners can be proven to work when nothing else gets out.
