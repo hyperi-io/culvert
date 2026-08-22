@@ -148,6 +148,26 @@ def chart() -> dict:
     return _load(CHART_DIR / "Chart.yaml")
 
 
+def _latest_release_tag() -> str | None:
+    """The highest vX.Y.Z tag git knows about, or None when there are none.
+
+    None is the honest answer in a shallow clone: `actions/checkout` fetches no
+    tags unless asked, and inventing a comparison there would fail a test on
+    what the checkout omitted rather than on anything in the tree.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "tag", "--list", "v*", "--sort=-v:refname"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+    tags = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return tags[0] if tags else None
+
+
 class TestImageReference:
     """A plain `helm install` must resolve to an image that exists."""
 
@@ -156,6 +176,27 @@ class TestImageReference:
         version = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
         assert chart["appVersion"] == f"v{version.lstrip('v')}"
         assert chart["version"] == version.lstrip("v")
+
+    def test_app_version_tracks_the_latest_release(self, chart):
+        """The chart must not point at an image older than the last release.
+
+        Agreeing with VERSION is not enough: the release pipeline stamps VERSION
+        only for the build and commits just the CHANGELOG, so VERSION and
+        Chart.yaml stay in step with each other while both fall behind what was
+        actually published. That is how the chart shipped seven releases stale
+        (fixed in dab7919) and then three releases stale again.
+
+        Fix a failure by bumping VERSION to the tag and regenerating:
+        `python scripts/generate-deploy-artefacts.py`.
+        """
+        latest = _latest_release_tag()
+        if latest is None:
+            pytest.skip("no release tags in this clone - nothing to compare against")
+
+        assert chart["appVersion"] == latest, (
+            f"chart appVersion {chart['appVersion']} is not the latest release"
+            f" {latest}, so `helm install` deploys an image that old"
+        )
 
 
 class TestCapabilities:
