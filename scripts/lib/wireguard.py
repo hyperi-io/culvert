@@ -45,6 +45,57 @@ def _alloc_lock(wg_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# Device slots
+# ---------------------------------------------------------------------------
+#
+# WireGuard keeps one endpoint per peer, so two devices sharing a key cannot
+# both be connected: the server answers whichever handshook last. Concurrent
+# use of one client identity is therefore several independent peers, each with
+# its own keypair and tunnel IP, grouped under the client's name.
+
+
+def peer_id(client_name: str, slot: int) -> str:
+    """Peer identity for one of a client's device slots.
+
+    Slot 1 keeps the bare client name, so peers, IP allocations and configs
+    issued before slots existed stay valid. Later slots take a dotted suffix,
+    which no client name can collide with - validate_client_name permits only
+    [a-zA-Z0-9_-].
+    """
+    return client_name if slot == 1 else f"{client_name}.{slot}"
+
+
+def peer_ids(client_name: str, slots: int) -> list[str]:
+    """Peer identities for every slot a client is issued."""
+    return [peer_id(client_name, n) for n in range(1, slots + 1)]
+
+
+def slot_infix(slot: int) -> str:
+    """Filename infix separating a client's slots (slot 1 is unsuffixed)."""
+    return "" if slot == 1 else str(slot)
+
+
+def existing_peer_ids(pki_dir: Path, client_name: str) -> list[str]:
+    """Every peer identity currently on disk for a client, slot order.
+
+    Revocation reads this rather than the configured slot count: lowering the
+    count must not orphan peers that are still in the server config.
+    """
+    peers_dir = pki_dir / "wireguard" / "peers"
+    if not peers_dir.exists():
+        return []
+
+    found = []
+    if (peers_dir / f"{client_name}.pub").exists():
+        found.append((1, client_name))
+    for pub in peers_dir.glob(f"{client_name}.*.pub"):
+        suffix = pub.name[len(client_name) + 1 : -len(".pub")]
+        if suffix.isdigit():
+            found.append((int(suffix), pub.name[: -len(".pub")]))
+    return [name for _, name in sorted(found)]
+
+
+# ---------------------------------------------------------------------------
 # Key management
 # ---------------------------------------------------------------------------
 

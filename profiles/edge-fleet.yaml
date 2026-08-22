@@ -36,6 +36,12 @@ routing_control_enabled: true
 # reaches them). Isolation stays ON.
 client_isolation: true
 
+# Sharing is left at the shipped default deliberately. This preset runs 2-8
+# replicas, and duplicate-cn is enforced per OpenVPN process, so opting out
+# would give per-pod exclusivity while reading as a fleet-wide guarantee. Each
+# appliance already holds its own certificate; a cloned one is caught by the
+# connection log and revoked with revoke-client, not by duplicate-cn.
+
 # Outbound allow-list: appliances may only INITIATE to the receiver
 # network. Set this to your receiver's service CIDR.
 allowed_destinations: "10.20.0.0/16"

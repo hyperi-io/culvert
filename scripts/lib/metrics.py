@@ -452,16 +452,20 @@ class ScrapeAdapter:
     The observability server calls get_metrics()/get_content_type() on
     each scrape, so refreshing here keeps every scrape current rather
     than serving whatever the 15s poll last left behind.
+
+    Those two method names are the interface scalo's server calls and stay as
+    they are; scalo's own manager exposes the same values as the .metrics and
+    .content_type properties, and deprecates its get_* accessors.
     """
 
     def get_metrics(self) -> bytes:
         update_metrics()
         assert _mgr is not None  # init_metrics sets it before handing out
-        return _mgr.get_metrics()
+        return _mgr.metrics
 
     def get_content_type(self) -> str:
         assert _mgr is not None
-        return _mgr.get_content_type()
+        return _mgr.content_type
 
 
 def init_metrics(

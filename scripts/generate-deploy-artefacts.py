@@ -560,6 +560,22 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         " env.CULVERT_SECRETS_TC_KEY_PATH at a shared one in your secrets"
         ' backend." (int $replicas)) }}\n'
         "{{- end }}\n"
+        "{{- /* WireGuard has no external-PKI path at all: lib/pki.py sources CA,\n"
+        "     server cert/key, CRL and tc.key, and nothing WireGuard. Every replica\n"
+        "     therefore mints its own server keypair and keeps its own\n"
+        "     allocations.json, so a client config works against exactly one pod and\n"
+        "     the tunnel IPs collide. Same failure the tc-key guard above refuses,\n"
+        "     and pkiSecret does NOT excuse it - it carries no WireGuard key. */}}\n"
+        '{{- $wg := has (default "openvpn" $env.CULVERT_PROTOCOL)'
+        ' (list "wireguard" "both") }}\n'
+        "{{- if and $wg (gt (int $replicas) 1) }}\n"
+        '{{- fail (printf "culvert: %d replicas with CULVERT_PROTOCOL=%s. WireGuard'
+        " server keys are not sourced from any secrets backend, so each replica"
+        " mints its own and allocates tunnel IPs independently - a client config"
+        " reaches one pod and the addresses collide. Run WireGuard at one replica,"
+        ' or use CULVERT_PROTOCOL=openvpn to scale out." (int $replicas)'
+        ' (default "openvpn" $env.CULVERT_PROTOCOL)) }}\n'
+        "{{- end }}\n"
         "apiVersion: apps/v1\nkind: Deployment\n",
     )
 

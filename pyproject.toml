@@ -18,7 +18,7 @@ license = {text = "Apache-2.0"}
 # [secrets] extra would drag in ansible-vault + GCP + Azure (~180MB) that
 # no culvert backend uses.
 dependencies = [
-    "scalo[metrics,secrets-vault,secrets-aws]>=2.29.11,<3",
+    "scalo[metrics,secrets-vault,secrets-aws]>=2.29.14,<3",
     # Imported directly in lib/oauth2.py (yaml.safe_dump) and for the profile
     # cascade; also a transitive dep of dynaconf, pinned here so it is declared.
     "pyyaml>=6,<7",
@@ -30,12 +30,18 @@ secrets-aws = ["scalo[secrets-aws]"]
 secrets-gcp = ["scalo[secrets-gcp]"]
 secrets-azure = ["scalo[secrets-azure]"]
 otel = ["scalo[opentelemetry]"]
+# Bounded, like the runtime deps. An unpinned dev dependency is not a loose
+# constraint but an invisible one: nothing proposes an update, and the version
+# moves silently on the next lock refresh.
 dev = [
-    "ruff",
-    "pytest",
+    "ruff>=0.16.1,<0.17",
+    "pytest>=9.1,<10",
+    # tests/conftest.py builds a real X.509 CRL for the CRL-expiry tests, which
+    # shell out to `openssl crl` and so cannot use a stubbed string.
+    "cryptography>=50,<51",
     # Deployment-contract generators (Helm chart, compose fragment). Pulls in
     # pydantic. Dev/CI-only: culvert's runtime never imports scalo.deployment.
-    "scalo[deployment]",
+    "scalo[deployment]>=2.29.14,<3",
 ]
 
 # culvert is distributed as a container image, not a Python package.
