@@ -14,6 +14,7 @@ that are visible in the shipped files alone - the ones that would otherwise be
 found by whoever runs `helm install` first, or read by whoever clones the repo.
 """
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -148,6 +149,35 @@ def chart() -> dict:
     return _load(CHART_DIR / "Chart.yaml")
 
 
+def _changelog_versions() -> list[tuple[int, int, int]]:
+    """Every `## [X.Y.Z]` release heading in CHANGELOG.md, as sortable tuples."""
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    return [
+        (int(m[0]), int(m[1]), int(m[2]))
+        for m in re.findall(r"^## \[(\d+)\.(\d+)\.(\d+)\]", text, re.MULTILINE)
+    ]
+
+
+def _latest_release_tag() -> str | None:
+    """The highest vX.Y.Z tag git knows about, or None when there are none.
+
+    None is the honest answer in a shallow clone: `actions/checkout` fetches no
+    tags unless asked, and inventing a comparison there would fail a test on
+    what the checkout omitted rather than on anything in the tree.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "tag", "--list", "v*", "--sort=-v:refname"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+    tags = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return tags[0] if tags else None
+
+
 class TestImageReference:
     """A plain `helm install` must resolve to an image that exists."""
 
@@ -156,6 +186,54 @@ class TestImageReference:
         version = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
         assert chart["appVersion"] == f"v{version.lstrip('v')}"
         assert chart["version"] == version.lstrip("v")
+
+    def test_app_version_is_not_behind_the_changelog(self, chart):
+        """The in-tree guard, for a checkout with no tags.
+
+        The tag check below is the precise one, and it skips wherever
+        `actions/checkout` was not asked for tags -- which is CI, the one place
+        a stale chart most needs stopping. CHANGELOG.md is committed by the
+        release job, so it is in the tree whatever the fetch depth.
+
+        Weaker on purpose: it only proves the chart is not BEHIND a release the
+        changelog already records, so being ahead (just after a backfill) is
+        fine. It would still have caught the drift this test was written for --
+        the chart sat at 2.1.10 while the changelog recorded 2.1.12.
+        """
+        released = _changelog_versions()
+        if not released:
+            pytest.skip("no released versions recorded in CHANGELOG.md")
+
+        newest = max(released)
+        actual = tuple(
+            int(part) for part in chart["appVersion"].lstrip("v").split(".")[:3]
+        )
+        assert actual >= newest, (
+            f"chart appVersion {chart['appVersion']} is behind"
+            f" {'.'.join(str(n) for n in newest)}, the newest release in"
+            " CHANGELOG.md, so `helm install` deploys an image that old"
+        )
+
+    def test_app_version_tracks_the_latest_release(self, chart):
+        """The chart must not point at an image older than the last release.
+
+        Agreeing with VERSION is not enough: the release pipeline stamps VERSION
+        only for the build and commits just the CHANGELOG, so VERSION and
+        Chart.yaml stay in step with each other while both fall behind what was
+        actually published. That is how the chart shipped seven releases stale
+        (fixed in dab7919) and then three releases stale again.
+
+        Fix a failure by bumping VERSION to the tag and regenerating:
+        `python scripts/generate-deploy-artefacts.py`.
+        """
+        latest = _latest_release_tag()
+        if latest is None:
+            pytest.skip("no release tags in this clone - nothing to compare against")
+
+        assert chart["appVersion"] == latest, (
+            f"chart appVersion {chart['appVersion']} is not the latest release"
+            f" {latest}, so `helm install` deploys an image that old"
+        )
 
 
 class TestCapabilities:
