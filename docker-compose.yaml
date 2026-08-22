@@ -297,7 +297,7 @@ services:
     # Using maintained fork (pinned): https://github.com/nickfedor/watchtower
     # SECURITY: mounting docker.sock hands this container root-equivalent
     # control of the HOST - keep this profile opt-in and the tag pinned.
-    image: nickfedor/watchtower:1.20.1
+    image: nickfedor/watchtower:1.20.3
     container_name: watchtower
     restart: unless-stopped
     profiles:
