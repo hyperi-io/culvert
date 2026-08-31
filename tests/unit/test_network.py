@@ -171,6 +171,20 @@ class TestNatRules:
             for c in calls
         )
 
+    @pytest.mark.parametrize("protocol", ["openvpn", "wireguard", "both"])
+    def test_forwarded_tcp_is_mss_clamped(self, monkeypatch, protocol):
+        """Without this a session establishes and then hangs mid-transfer.
+
+        Every protocol needs it: the tunnel MTU is smaller than the networks on
+        both sides regardless of which listener carried the client.
+        """
+        calls = self._capture(monkeypatch)
+        network.setup_network(FakeNatCfg(protocol=protocol))
+        assert any(
+            "-t mangle -A FORWARD" in c and "TCPMSS --clamp-mss-to-pmtu" in c
+            for c in calls
+        ), f"no MSS clamp with protocol={protocol}: {calls}"
+
 
 class TestRoutingControl:
     """FORWARD-chain rule generation (run() captured, not executed)."""
