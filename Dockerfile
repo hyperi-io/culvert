@@ -66,9 +66,9 @@ LABEL openvpn.features="DCO,TLS1.3,AEAD,4G-optimized,OIDC-SSO"
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENVPN_MIN_VERSION="2.7.0"
-ARG OPENVPN_AUTH_OAUTH2_VERSION="1.28.3"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="f762273dca8fe3449c51b8365cc0fa7dc5ad30d95720e7fde6d16bd17cd6d476"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="f20b7f2ac713540ca996d7a8e522980b158c78f8a970ca9fa3f9c0c5e3b33f5d"
+ARG OPENVPN_AUTH_OAUTH2_VERSION="2.1.0"
+ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="de860fe277e86cb7e652cb4d57ccbbfabef1be33833247051344ef0bac5fbff3"
+ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="55ce23b504da4043bbc1c8d49ce73c4ebf33d9166a41ddbe873035acebbdfdc9"
 
 # openvpn from the project's signed apt repo. The downloaded keyring must carry
 # EXACTLY ONE primary key and its fingerprint must be the pinned one, so neither
