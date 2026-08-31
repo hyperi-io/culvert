@@ -99,6 +99,17 @@ def setup_network(cfg) -> None:
         )
         logger.info("WireGuard NAT rule added")
 
+    # The tunnel MTU sits well below the 1500 of the networks on either side, so
+    # a peer deriving its MSS from its own link advertises more than the tunnel
+    # can carry. Oversized segments are dropped rather than fragmented, so the
+    # connection establishes and then stalls on its first full-size packet.
+    _add_rule(
+        "-t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN"
+        " -j TCPMSS --clamp-mss-to-pmtu",
+        "MSS clamping so forwarded TCP fits the tunnel MTU",
+    )
+    logger.info("TCP MSS clamping rule added")
+
     logger.info(f"Network configured (NAT via {iface})")
 
 
