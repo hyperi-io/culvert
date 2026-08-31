@@ -9,7 +9,6 @@
 """Unit tests for Config.from_settings() using CULVERT_* env prefix."""
 
 import pytest
-
 from lib.config import Config
 
 
@@ -233,9 +232,7 @@ class TestConfigNetworkProfiles:
         cfg = Config.from_settings()
         assert cfg.wg_mtu == 1280
 
-    def test_explicit_wireguard_mtu_survives_the_profile(
-        self, clean_env, monkeypatch
-    ):
+    def test_explicit_wireguard_mtu_survives_the_profile(self, clean_env, monkeypatch):
         """No profile can know a given path's MTU, so an explicit value wins."""
         monkeypatch.setenv("CULVERT_NETWORK_PROFILE", "mobile")
         monkeypatch.setenv("CULVERT_WG_MTU", "1200")
