@@ -8,6 +8,8 @@
 
 """Unit tests for Config.from_settings() using CULVERT_* env prefix."""
 
+import pytest
+
 from lib.config import Config
 
 
@@ -217,6 +219,28 @@ class TestConfigNetworkProfiles:
         cfg = Config.from_settings()
         assert cfg.tun_mtu == 1400
         assert cfg.mssfix == 1400
+
+    @pytest.mark.parametrize("profile", ["wireless", "mobile", "4g"])
+    def test_constrained_profile_lowers_the_wireguard_mtu(
+        self, clean_env, monkeypatch, profile
+    ):
+        """Covering OpenVPN alone leaves WireGuard oversizing every packet.
+
+        The operator picked a constrained-path profile, so the reduction has to
+        reach both tunnels or the choice is silently half-applied.
+        """
+        monkeypatch.setenv("CULVERT_NETWORK_PROFILE", profile)
+        cfg = Config.from_settings()
+        assert cfg.wg_mtu == 1280
+
+    def test_explicit_wireguard_mtu_survives_the_profile(
+        self, clean_env, monkeypatch
+    ):
+        """No profile can know a given path's MTU, so an explicit value wins."""
+        monkeypatch.setenv("CULVERT_NETWORK_PROFILE", "mobile")
+        monkeypatch.setenv("CULVERT_WG_MTU", "1200")
+        cfg = Config.from_settings()
+        assert cfg.wg_mtu == 1200
 
     def test_mobile_profile_same_as_wireless(self, clean_env, monkeypatch):
         """Mobile profile uses same settings as wireless."""

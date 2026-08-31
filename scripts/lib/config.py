@@ -326,6 +326,10 @@ class Config:
                 self.tun_mtu = 1400
             if self.mssfix == 1450:
                 self.mssfix = 1400
+            # Left out, the profile covers OpenVPN only and WireGuard keeps
+            # sending packets the constrained path cannot carry.
+            if self.wg_mtu == 1420:
+                self.wg_mtu = 1280
             if self.keepalive_ping == 10:
                 self.keepalive_ping = 30
             if self.keepalive_timeout == 60:
