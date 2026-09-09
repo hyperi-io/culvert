@@ -333,6 +333,31 @@ def generate_server_config(
     return "\n".join(lines)
 
 
+def build_dns_line(dns_servers: list[str], dns_domain: str = "") -> str:
+    """Assemble the `DNS =` value from resolvers and an optional search domain.
+
+    Entries are stripped, empties dropped and duplicates removed in order.
+    Without that, a deployment setting DNS1 and DNS2 to the same resolver emits
+    it twice, and clearing DNS2 emits a trailing comma that wg-quick rejects.
+
+    A leading `~` is stripped from the domain. It is systemd-resolved's routing
+    prefix, but wg-quick hands this line to resolvconf, where a distro with a
+    partial resolvconf stub drops the setting silently. The routing domain is
+    emitted through PostUp in the Linux variant instead.
+    """
+    seen: list[str] = []
+    for server in dns_servers:
+        entry = server.strip()
+        if entry and entry not in seen:
+            seen.append(entry)
+
+    domain = dns_domain.strip().lstrip("~")
+    if domain and domain not in seen:
+        seen.append(domain)
+
+    return ", ".join(seen)
+
+
 def generate_client_config(
     client_private_key: str | None,
     client_ip: str,
@@ -348,9 +373,7 @@ def generate_client_config(
     """Generate a WireGuard client configuration file."""
     private_key_value = client_private_key or "YOUR_PRIVATE_KEY_HERE"
 
-    dns_line = ", ".join(dns_servers)
-    if dns_domain:
-        dns_line = f"{dns_line}, {dns_domain}"
+    dns_line = build_dns_line(dns_servers, dns_domain)
 
     lines = [
         "[Interface]",
@@ -384,13 +407,23 @@ def generate_https_tunnel_client_config(
     persistent_keepalive: int = 25,
     allowed_ips: str = "0.0.0.0/0, ::/0",
     wstunnel_port: int = 443,
+    tls_server_name: str = "",
 ) -> str:
-    """Generate a WireGuard client config that runs over HTTPS via wstunnel."""
+    """Generate a WireGuard client config that runs over HTTPS via wstunnel.
+
+    ``tls_server_name`` is the name on the server's certificate. When the
+    dialled endpoint is not that name -- an IP literal, or an external address
+    that differs from the certificate CN -- it is passed as the SNI override so
+    verification still has a name to match.
+    """
     private_key_value = client_private_key or "YOUR_PRIVATE_KEY_HERE"
 
-    dns_line = ", ".join(dns_servers)
-    if dns_domain:
-        dns_line = f"{dns_line}, {dns_domain}"
+    dns_line = build_dns_line(dns_servers, dns_domain)
+
+    # wstunnel accepts any certificate unless verification is asked for.
+    tls_flags = " --tls-verify-certificate"
+    if tls_server_name and tls_server_name != server_endpoint:
+        tls_flags += f" --tls-sni-override {tls_server_name}"
 
     header = [
         "# WireGuard over HTTPS (wstunnel required)",
@@ -398,6 +431,7 @@ def generate_https_tunnel_client_config(
         "# Start wstunnel before activating this WireGuard config:",
         f"#   wstunnel client"
         f" -L udp://127.0.0.1:51820:127.0.0.1:{server_port}"
+        f"{tls_flags}"
         f" wss://{server_endpoint}:{wstunnel_port}",
         "#",
         "# The WireGuard Endpoint below connects to the local wstunnel listener.",

@@ -46,7 +46,9 @@ LEGACY_CONTAINER_PATHS = (
     "/etc/openvpn/clients",
     "/etc/openvpn/server",
     "/etc/openvpn/oauth2-tls",
-    "/var/log/openvpn/",
+    # No trailing slash: a mount target has none, which is how two compose
+    # files kept mounting the log directory at a path nothing writes.
+    "/var/log/openvpn",
 )
 
 

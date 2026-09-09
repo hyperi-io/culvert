@@ -104,6 +104,66 @@ def validate_hostname(value: str, name: str) -> None:
         raise ValidationError(f"{name}='{value}' is not a valid hostname")
 
 
+def validate_endpoint(value: str, name: str) -> None:
+    """Validate a dialable address: hostname, IPv4 literal, or bracketed IPv6.
+
+    IPv6 literals must be bracketed because the emitted `Endpoint` and `remote`
+    lines append `:port`, which is ambiguous against an unbracketed address.
+    """
+    if not value:
+        raise ValidationError(f"{name} is required")
+
+    if value.startswith("["):
+        if not value.endswith("]"):
+            raise ValidationError(f"{name}='{value}' is missing its closing bracket")
+        try:
+            ipaddress.IPv6Address(value[1:-1])
+        except ValueError as exc:
+            raise ValidationError(
+                f"{name}='{value}' is not a valid bracketed IPv6 literal"
+            ) from exc
+        return
+
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        pass
+    else:
+        return
+
+    try:
+        ipaddress.IPv6Address(value)
+    except ValueError:
+        pass
+    else:
+        raise ValidationError(
+            f"{name}='{value}' is an IPv6 literal and must be bracketed as"
+            f" '[{value}]', since a port is appended to it"
+        )
+
+    validate_hostname(value, name)
+
+
+def validate_dns_domain(value: str, name: str) -> None:
+    """Validate the pushed DNS zone, tolerating a leading routing-domain `~`."""
+    if not value:
+        return
+    validate_hostname(value.lstrip("~"), name)
+
+
+def endpoint_inside_zone(endpoint: str, dns_domain: str) -> bool:
+    """Whether the address clients dial sits inside the zone this VPN serves.
+
+    A client resolves the endpoint before the tunnel exists, so a name in the
+    served zone cannot be resolved when it is needed and the interface comes up
+    with no endpoint and no error.
+    """
+    zone = dns_domain.strip().lstrip("~")
+    if not zone or not endpoint:
+        return False
+    return endpoint == zone or endpoint.endswith(f".{zone}")
+
+
 def validate_url(value: str, name: str) -> None:
     """Validate a URL."""
     if not value.startswith(("http://", "https://")):
@@ -147,6 +207,12 @@ class Config:
     server_cn: str = ""
     key_type: str = "ec"
     key_size: str = "secp384r1"
+
+    # The address clients dial, when it is not the certificate name. server_cn
+    # cannot serve both -- clients match it with verify-x509-name and stunnel
+    # checkHost, so repointing it breaks every issued client. Empty means "same
+    # as server_cn"; accepts a hostname, an IPv4 literal or a bracketed IPv6.
+    external_endpoint: str = ""
 
     # OpenVPN data-channel cipher order (NCP negotiation). AES-256-GCM first is
     # the CNSA 2.0 / FIPS-compliant default. A profile may reorder to prefer
@@ -487,6 +553,7 @@ class Config:
             # Server identity
             org_name=s.get("org_name", ""),
             server_cn=s.get("server_cn", ""),
+            external_endpoint=s.get("external_endpoint", ""),
             ca_cn=s.get("ca_cn", ""),
             key_type=s.get("key_type", "ec"),
             key_size=s.get("key_size", "secp384r1"),
@@ -609,6 +676,16 @@ class Config:
             secrets_aws_region=s.get("secrets_aws_region", ""),
         )
 
+    @property
+    def client_endpoint(self) -> str:
+        """The address issued client configs dial.
+
+        Every address site reads this; the certificate-identity sites
+        (verify-x509-name, stunnel checkHost, EASYRSA_REQ_CN) keep reading
+        server_cn.
+        """
+        return self.external_endpoint or self.server_cn
+
     def validate(self) -> None:
         """Validate all configuration values.
 
@@ -631,6 +708,29 @@ class Config:
             warnings.append(
                 "CULVERT_SERVER_CN is empty; WireGuard client configs"
                 " will have an empty Endpoint"
+            )
+
+        # The address clients dial. Validated whether it was set explicitly or
+        # inherited from server_cn, because the inherited case is the one that
+        # ships broken.
+        if self.external_endpoint:
+            try:
+                validate_endpoint(self.external_endpoint, "CULVERT_EXTERNAL_ENDPOINT")
+            except ValidationError as e:
+                errors.append(str(e))
+
+        try:
+            validate_dns_domain(self.dns_domain, "CULVERT_DNS_DOMAIN")
+        except ValidationError as e:
+            errors.append(str(e))
+
+        if endpoint_inside_zone(self.client_endpoint, self.dns_domain):
+            warnings.append(
+                f"The address clients dial ('{self.client_endpoint}') is inside"
+                f" CULVERT_DNS_DOMAIN='{self.dns_domain.lstrip('~')}', the zone"
+                " this VPN serves, so clients cannot resolve it before the"
+                " tunnel is up. Set CULVERT_EXTERNAL_ENDPOINT to a publicly"
+                " resolvable name or a literal address."
             )
 
         # Ports

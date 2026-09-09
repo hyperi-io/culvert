@@ -104,7 +104,7 @@ services:
       # Client-specific configs (ccd) - mount from host for customization
       - ./config/ccd:/etc/vpn/server/ccd:ro
       # Logs (persistent)
-      - ${CULVERT_LOGS_PATH:-./logs}:/var/log/openvpn
+      - ${CULVERT_LOGS_PATH:-./logs}:/var/log/vpn
       # OAuth2 TLS certificates (required when CULVERT_OAUTH2_ENABLED=true)
       # Mount wildcard or server-specific certificate for HTTPS callback endpoint
       - ${OAUTH2_TLS_CERT_PATH:-/opt/openvpn/certs}:/etc/vpn/oauth2-tls:ro
@@ -137,16 +137,16 @@ services:
 
       # Routing
       - CULVERT_FULL_TUNNEL=${CULVERT_FULL_TUNNEL:-false}
-      - CULVERT_PUSH_ROUTES=${CULVERT_PUSH_ROUTES:-}
-      - CULVERT_DNS_DOMAIN=${CULVERT_DNS_DOMAIN:-}
+      - CULVERT_PUSH_ROUTES
+      - CULVERT_DNS_DOMAIN
 
       # Routing control: who clients may reach, and who may reach back down the
       # tunnels. Off by default (clients route wherever the host can). Turning it
       # on denies client-to-client and unsolicited inbound; see .env.example.
       - CULVERT_ROUTING_CONTROL_ENABLED=${CULVERT_ROUTING_CONTROL_ENABLED:-false}
       - CULVERT_CLIENT_ISOLATION=${CULVERT_CLIENT_ISOLATION:-true}
-      - CULVERT_ALLOWED_DESTINATIONS=${CULVERT_ALLOWED_DESTINATIONS:-}
-      - CULVERT_DOWNSTREAM_ADMIN_CIDRS=${CULVERT_DOWNSTREAM_ADMIN_CIDRS:-}
+      - CULVERT_ALLOWED_DESTINATIONS
+      - CULVERT_DOWNSTREAM_ADMIN_CIDRS
 
       # Clients cannot reach 169.254.0.0/16, which on a cloud instance is the
       # metadata service and this host's credentials. On by default, and applies
@@ -154,7 +154,7 @@ services:
       - CULVERT_BLOCK_LINK_LOCAL=${CULVERT_BLOCK_LINK_LOCAL:-true}
 
       # Site profile: loads profiles/<name>.yaml as a base for everything above
-      - CULVERT_PROFILE=${CULVERT_PROFILE:-}
+      - CULVERT_PROFILE
 
       # WireGuard (opt-in: set CULVERT_PROTOCOL=wireguard, or both to run it
       # alongside OpenVPN, then uncomment the knobs you need)
@@ -171,22 +171,22 @@ services:
       - CULVERT_NETWORK_PROFILE=${CULVERT_NETWORK_PROFILE:-default}
 
       # Performance tuning (optional - profile sets sensible defaults)
-      - CULVERT_SNDBUF=${CULVERT_SNDBUF:-}
-      - CULVERT_RCVBUF=${CULVERT_RCVBUF:-}
-      - CULVERT_TUN_MTU=${CULVERT_TUN_MTU:-}
-      - CULVERT_MSSFIX=${CULVERT_MSSFIX:-}
-      - CULVERT_KEEPALIVE_PING=${CULVERT_KEEPALIVE_PING:-}
-      - CULVERT_KEEPALIVE_TIMEOUT=${CULVERT_KEEPALIVE_TIMEOUT:-}
+      - CULVERT_SNDBUF
+      - CULVERT_RCVBUF
+      - CULVERT_TUN_MTU
+      - CULVERT_MSSFIX
+      - CULVERT_KEEPALIVE_PING
+      - CULVERT_KEEPALIVE_TIMEOUT
       - CULVERT_MAX_CLIENTS=${CULVERT_MAX_CLIENTS:-auto}
-      - CULVERT_RENEG_SEC=${CULVERT_RENEG_SEC:-}
+      - CULVERT_RENEG_SEC
 
       # Concurrent connections per client identity (laptop + phone). Set
       # ALLOW_SHARED_CLIENTS=false to make each credential exclusive.
       - CULVERT_ALLOW_SHARED_CLIENTS=${CULVERT_ALLOW_SHARED_CLIENTS:-true}
       - CULVERT_SHARED_CLIENT_SLOTS=${CULVERT_SHARED_CLIENT_SLOTS:-2}
       - CULVERT_LOG_MODE=${CULVERT_LOG_MODE:-file}
-      - CULVERT_VERB=${CULVERT_VERB:-}
-      - CULVERT_MUTE=${CULVERT_MUTE:-}
+      - CULVERT_VERB
+      - CULVERT_MUTE
 
       # Observability listener: always serves health probes; /metrics is
       # served when CULVERT_METRICS_ENABLED=true
@@ -197,14 +197,14 @@ services:
       # the served configs embed client private keys, so it fails closed)
       - CULVERT_CLIENT_DOWNLOAD_ENABLED=${CULVERT_CLIENT_DOWNLOAD_ENABLED:-false}
       - CULVERT_CLIENT_DOWNLOAD_PORT=${CULVERT_CLIENT_DOWNLOAD_PORT:-8443}
-      - CULVERT_CLIENT_DOWNLOAD_TOKEN=${CULVERT_CLIENT_DOWNLOAD_TOKEN:-}
+      - CULVERT_CLIENT_DOWNLOAD_TOKEN
 
       # PKI settings (CNSA 2.0 compliant defaults)
       # ORG_NAME names the CA: "Acme" -> "Acme VPN CA". CA_CN overrides that
       # derivation outright, so it is passed through empty rather than
       # defaulted - set it only if you want to name the CA yourself.
-      - CULVERT_ORG_NAME=${CULVERT_ORG_NAME:-}
-      - CULVERT_CA_CN=${CULVERT_CA_CN:-}
+      - CULVERT_ORG_NAME
+      - CULVERT_CA_CN
       - CULVERT_KEY_TYPE=${CULVERT_KEY_TYPE:-ec}
       - CULVERT_KEY_SIZE=${CULVERT_KEY_SIZE:-secp384r1}
       # OpenVPN data-channel cipher order. AES-256-GCM first is the CNSA/FIPS
@@ -222,28 +222,28 @@ services:
       # .env.example. TC_KEY_PATH is what lets more than one server share
       # clients; a single server can leave it unset and mint its own.
       - CULVERT_PKI_MODE=${CULVERT_PKI_MODE:-local}
-      - CULVERT_SECRETS_PROVIDER=${CULVERT_SECRETS_PROVIDER:-}
-      - CULVERT_SECRETS_CA_CERT_PATH=${CULVERT_SECRETS_CA_CERT_PATH:-}
-      - CULVERT_SECRETS_SERVER_CERT_PATH=${CULVERT_SECRETS_SERVER_CERT_PATH:-}
-      - CULVERT_SECRETS_SERVER_KEY_PATH=${CULVERT_SECRETS_SERVER_KEY_PATH:-}
-      - CULVERT_SECRETS_CRL_PATH=${CULVERT_SECRETS_CRL_PATH:-}
-      - CULVERT_SECRETS_TC_KEY_PATH=${CULVERT_SECRETS_TC_KEY_PATH:-}
+      - CULVERT_SECRETS_PROVIDER
+      - CULVERT_SECRETS_CA_CERT_PATH
+      - CULVERT_SECRETS_SERVER_CERT_PATH
+      - CULVERT_SECRETS_SERVER_KEY_PATH
+      - CULVERT_SECRETS_CRL_PATH
+      - CULVERT_SECRETS_TC_KEY_PATH
 
       # OIDC SSO, opt-in (works with Entra ID, Okta, Keycloak, Google, Auth0, etc.)
       - CULVERT_OAUTH2_ENABLED=${CULVERT_OAUTH2_ENABLED:-false}
-      - CULVERT_OAUTH2_ISSUER=${CULVERT_OAUTH2_ISSUER:-}
-      - CULVERT_OAUTH2_CLIENT_ID=${CULVERT_OAUTH2_CLIENT_ID:-}
-      - CULVERT_OAUTH2_CLIENT_SECRET=${CULVERT_OAUTH2_CLIENT_SECRET:-}
-      - CULVERT_OAUTH2_VALIDATE_GROUPS=${CULVERT_OAUTH2_VALIDATE_GROUPS:-}
+      - CULVERT_OAUTH2_ISSUER
+      - CULVERT_OAUTH2_CLIENT_ID
+      - CULVERT_OAUTH2_CLIENT_SECRET
+      - CULVERT_OAUTH2_VALIDATE_GROUPS
       # Per-listener OAuth2 enable/disable (defaults to CULVERT_OAUTH2_ENABLED)
-      - CULVERT_OAUTH2_UDP_ENABLED=${CULVERT_OAUTH2_UDP_ENABLED:-}
-      - CULVERT_OAUTH2_HTTPS_ENABLED=${CULVERT_OAUTH2_HTTPS_ENABLED:-}
-      - CULVERT_OAUTH2_TCP_ENABLED=${CULVERT_OAUTH2_TCP_ENABLED:-}
+      - CULVERT_OAUTH2_UDP_ENABLED
+      - CULVERT_OAUTH2_HTTPS_ENABLED
+      - CULVERT_OAUTH2_TCP_ENABLED
       # Per-listener OAuth2 callback ports (defaults: 9000=UDP, 9001=HTTPS, 9002=TCP)
       - CULVERT_OAUTH2_UDP_PORT=${CULVERT_OAUTH2_UDP_PORT:-9000}
       - CULVERT_OAUTH2_HTTPS_PORT=${CULVERT_OAUTH2_HTTPS_PORT:-9001}
       - CULVERT_OAUTH2_TCP_PORT=${CULVERT_OAUTH2_TCP_PORT:-9002}
-      - CULVERT_OAUTH2_HTTP_SECRET=${CULVERT_OAUTH2_HTTP_SECRET:-}
+      - CULVERT_OAUTH2_HTTP_SECRET
       # Default scopes match the code default. Add offline_access for IdPs
       # that issue refresh tokens through it (e.g. Entra ID); some IdPs
       # reject unknown scopes, so it is not the default.
@@ -261,7 +261,7 @@ services:
       # Custom HTML template and assets for OAuth login page. The assets
       # fallback repeats the code default because an empty-but-set env var
       # would override it with "" and drop the baked-in branding.
-      - CULVERT_OAUTH2_TEMPLATE=${CULVERT_OAUTH2_TEMPLATE:-}
+      - CULVERT_OAUTH2_TEMPLATE
       - CULVERT_OAUTH2_ASSETS_PATH=${CULVERT_OAUTH2_ASSETS_PATH:-/etc/openvpn-auth-oauth2/assets}
 
       # Timezone
