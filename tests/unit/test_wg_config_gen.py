@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
 from lib.wireguard import (
+    build_dns_line,
     generate_client_config,
     generate_https_tunnel_client_config,
     generate_server_config,
@@ -137,6 +138,99 @@ class TestGenerateServerConfig:
 
         assert "PostUp" not in config
         assert "PostDown" not in config
+
+
+class TestBuildDnsLine:
+    """The DNS line as generate-client actually calls it -- always two servers."""
+
+    @pytest.mark.parametrize(
+        ("servers", "domain", "expected"),
+        [
+            # The shape that shipped: dns1 and dns2 set to the same resolver.
+            (
+                ["10.66.0.101", "10.66.0.101"],
+                "devex.hyperi.io",
+                "10.66.0.101, devex.hyperi.io",
+            ),
+            # A single-resolver site clearing DNS2 -- a trailing comma and an
+            # empty entry are both rejected by wg-quick.
+            (["1.1.1.1", ""], "", "1.1.1.1"),
+            (["1.1.1.1", "   "], "corp.example.com", "1.1.1.1, corp.example.com"),
+            (["", ""], "", ""),
+            ([" 1.1.1.1 ", "1.0.0.1"], "", "1.1.1.1, 1.0.0.1"),
+            # The routing prefix belongs in the Linux variant's PostUp, never here.
+            (["1.1.1.1"], "~corp.example.com", "1.1.1.1, corp.example.com"),
+            (["2606:4700:4700::1111", "1.1.1.1"], "", "2606:4700:4700::1111, 1.1.1.1"),
+        ],
+    )
+    def test_shapes(self, servers: list[str], domain: str, expected: str) -> None:
+        assert build_dns_line(servers, domain) == expected
+
+    def test_duplicate_resolver_appears_once_in_a_config(self) -> None:
+        config = generate_client_config(
+            client_private_key=FAKE_CLIENT_PRIV,
+            client_ip="10.8.0.2",
+            server_public_key=FAKE_SERVER_PUB,
+            server_endpoint="vpn.example.com",
+            server_port=51820,
+            dns_servers=["10.66.0.101", "10.66.0.101"],
+            dns_domain="devex.hyperi.io",
+        )
+
+        assert "DNS = 10.66.0.101, devex.hyperi.io\n" in config
+
+    def test_empty_second_resolver_leaves_no_trailing_comma(self) -> None:
+        config = generate_client_config(
+            client_private_key=FAKE_CLIENT_PRIV,
+            client_ip="10.8.0.2",
+            server_public_key=FAKE_SERVER_PUB,
+            server_endpoint="vpn.example.com",
+            server_port=51820,
+            dns_servers=["1.1.1.1", ""],
+        )
+
+        assert "DNS = 1.1.1.1\n" in config
+
+    def test_https_variant_shares_the_same_assembly(self) -> None:
+        config = generate_https_tunnel_client_config(
+            client_private_key=FAKE_CLIENT_PRIV,
+            client_ip="10.8.0.2",
+            server_public_key=FAKE_SERVER_PUB,
+            server_endpoint="vpn.example.com",
+            server_port=51820,
+            dns_servers=["10.66.0.101", "10.66.0.101"],
+            dns_domain="~devex.hyperi.io",
+        )
+
+        assert "DNS = 10.66.0.101, devex.hyperi.io\n" in config
+
+
+class TestWstunnelTlsVerification:
+    """wstunnel accepts any certificate unless the command asks it not to."""
+
+    def _config(self, endpoint: str, tls_server_name: str = "") -> str:
+        return generate_https_tunnel_client_config(
+            client_private_key=FAKE_CLIENT_PRIV,
+            client_ip="10.8.0.2",
+            server_public_key=FAKE_SERVER_PUB,
+            server_endpoint=endpoint,
+            server_port=51820,
+            dns_servers=["1.1.1.1"],
+            tls_server_name=tls_server_name,
+        )
+
+    def test_verification_is_always_requested(self) -> None:
+        assert "--tls-verify-certificate" in self._config("vpn.example.com")
+
+    def test_sni_override_when_the_dialled_address_is_not_the_cert_name(self) -> None:
+        config = self._config("203.0.113.10", tls_server_name="vpn.example.com")
+
+        assert "--tls-sni-override vpn.example.com" in config
+
+    def test_no_sni_override_when_the_endpoint_is_the_cert_name(self) -> None:
+        config = self._config("vpn.example.com", tls_server_name="vpn.example.com")
+
+        assert "--tls-sni-override" not in config
 
 
 class TestGenerateClientConfig:

@@ -8,7 +8,8 @@
 
 """Unit tests for Config.from_settings() using CULVERT_* env prefix."""
 
-from lib.config import Config
+import pytest
+from lib.config import Config, endpoint_inside_zone
 
 
 class TestConfigDefaults:
@@ -601,6 +602,84 @@ class TestExampleProfile:
         assert cfg.stunnel_key == "/etc/vpn/oauth2-tls/privkey.key"
         assert cfg.push_routes == "10.0.0.0/24,10.0.1.0/24"
         assert cfg.dns_domain == "internal.example.com"
+
+
+class TestExternalEndpoint:
+    """The address clients dial is separable from the certificate identity."""
+
+    def test_defaults_to_server_cn(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        cfg = Config.from_settings()
+
+        assert cfg.client_endpoint == "vpn.example.com"
+
+    def test_overrides_server_cn_without_changing_it(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.internal")
+        monkeypatch.setenv("CULVERT_EXTERNAL_ENDPOINT", "203.0.113.10")
+        cfg = Config.from_settings()
+
+        assert cfg.client_endpoint == "203.0.113.10"
+        assert cfg.server_cn == "vpn.internal"
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        ["vpn.example.com", "203.0.113.10", "[2001:db8::1]"],
+    )
+    def test_accepts_hostname_ipv4_and_bracketed_ipv6(
+        self, clean_env, monkeypatch, endpoint
+    ):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_EXTERNAL_ENDPOINT", endpoint)
+        cfg = Config.from_settings()
+        cfg.validate()
+
+    def test_rejects_unbracketed_ipv6(self, clean_env, monkeypatch):
+        """A port is appended, so a bare v6 literal is ambiguous."""
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_EXTERNAL_ENDPOINT", "2001:db8::1")
+        cfg = Config.from_settings()
+
+        with pytest.raises(SystemExit):
+            cfg.validate()
+
+    @pytest.mark.parametrize(
+        ("endpoint", "zone", "inside"),
+        [
+            # The shape that shipped.
+            ("devex.hyperi.io", "hyperi.io", True),
+            ("vpn.corp.example.com", "corp.example.com", True),
+            ("vpn.corp.example.com", "~corp.example.com", True),
+            ("corp.example.com", "corp.example.com", True),
+            ("vpn.example.net", "corp.example.com", False),
+            # A suffix match must not fire on a neighbouring zone.
+            ("vpn.notcorp.example.com", "corp.example.com", False),
+            ("203.0.113.10", "corp.example.com", False),
+            ("vpn.example.com", "", False),
+        ],
+    )
+    def test_detects_an_endpoint_inside_the_served_zone(
+        self, endpoint: str, zone: str, inside: bool
+    ) -> None:
+        assert endpoint_inside_zone(endpoint, zone) is inside
+
+
+class TestDnsDomainValidation:
+    """The routing prefix is tolerated; a malformed zone is not."""
+
+    @pytest.mark.parametrize("domain", ["corp.example.com", "~corp.example.com", ""])
+    def test_accepts(self, clean_env, monkeypatch, domain):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_DNS_DOMAIN", domain)
+        cfg = Config.from_settings()
+        cfg.validate()
+
+    def test_rejects_a_malformed_zone(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_DNS_DOMAIN", "not a domain!!")
+        cfg = Config.from_settings()
+
+        with pytest.raises(SystemExit):
+            cfg.validate()
 
 
 class TestProtocolAwareValidation:

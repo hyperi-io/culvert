@@ -49,9 +49,9 @@ services:
 
       # Logs - keep local per container (or share for central aggregation)
       # Option 1: Local logs (default - for per-container debugging)
-      - openvpn-logs:/var/log/openvpn
+      - openvpn-logs:/var/log/vpn
       # Option 2: Shared logs (uncomment for central log aggregation)
-      # - ${SHARED_STORAGE_PATH}/logs:/var/log/openvpn
+      # - ${SHARED_STORAGE_PATH}/logs:/var/log/vpn
 
 # Keep local volume for logs (shared storage override doesn't affect logs by default)
 volumes:

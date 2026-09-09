@@ -65,9 +65,11 @@ class Config:
         from lib.config import Config as VpnConfig
 
         vpn = VpnConfig.from_settings()
+        self._vpn = vpn
         self.pki_dir = vpn.pki_dir
         self.output_dir = Path(os.environ.get("OUTPUT_DIR", "/etc/vpn/clients"))
         self.server_cn = vpn.server_cn
+        self.client_endpoint = vpn.client_endpoint
         self.udp_port = vpn.udp_port
         self.tcp_port = vpn.tcp_port
         self.https_port = vpn.https_port
@@ -99,6 +101,10 @@ class Config:
         self.dns_domain = vpn.dns_domain
         self.push_routes = vpn.push_routes
         self.full_tunnel = vpn.full_tunnel
+
+    def validate(self) -> None:
+        """Validate the underlying CULVERT_* settings, exiting on error."""
+        self._vpn.validate()
 
 
 # ===============================================================================
@@ -213,10 +219,10 @@ def generate_ovpn_config(
     # Determine remote line based on protocol
     stunnel_config = None
     if protocol == "udp":
-        remote_line = f"remote {cfg.server_cn} {cfg.udp_port} udp"
+        remote_line = f"remote {cfg.client_endpoint} {cfg.udp_port} udp"
         proto_desc = f"UDP {cfg.udp_port}"
     elif protocol == "tcp":
-        remote_line = f"remote {cfg.server_cn} {cfg.tcp_port} tcp"
+        remote_line = f"remote {cfg.client_endpoint} {cfg.tcp_port} tcp"
         proto_desc = f"TCP {cfg.tcp_port}"
     elif protocol == "tcp-https":
         # HTTPS tunnel via stunnel - connect to local stunnel on 1195
@@ -238,7 +244,7 @@ def generate_ovpn_config(
 # generally only permit CONNECT to 443, which is exactly the port the HTTPS
 # listener uses - that is the whole point of tunnelling over it.
 protocol = connect
-protocolHost = {cfg.server_cn}:{cfg.https_port}"""
+protocolHost = {cfg.client_endpoint}:{cfg.https_port}"""
             if proxy_auth:
                 stunnel_target += """
 protocolAuthentication = basic
@@ -252,7 +258,7 @@ protocolPassword = CHANGE_ME"""
 # protocolUsername = your-username
 # protocolPassword = your-password"""
         else:
-            stunnel_target = f"connect = {cfg.server_cn}:{cfg.https_port}"
+            stunnel_target = f"connect = {cfg.client_endpoint}:{cfg.https_port}"
 
         stunnel_name = (
             f"{client_name}-proxy-stunnel.conf"
@@ -302,7 +308,7 @@ checkHost = {cfg.server_cn}
 #===============================================================================
 # Egress goes through {proxy_server}. Start stunnel with
 # {client_name}-proxy-stunnel.conf FIRST - it holds the proxy settings and does
-# the CONNECT to {cfg.server_cn}:{cfg.https_port}. This file only ever talks to
+# the CONNECT to {cfg.client_endpoint}:{cfg.https_port}. This file only ever talks to
 # stunnel on loopback."""
 
     logger.info(
@@ -363,7 +369,7 @@ redirect-gateway def1 bypass-dhcp
 # Client: {client_name}
 # Mode: {mode_desc}
 # Protocol: {proto_desc}
-# Server: {cfg.server_cn}
+# Server: {cfg.client_endpoint}
 # Generated: {timestamp}
 #
 # Recommended client: OpenVPN Connect (https://openvpn.net/client/)
@@ -564,7 +570,7 @@ def generate_wireguard_configs(
             "client_private_key": client_private,
             "client_ip": client_ip,
             "server_public_key": server_public,
-            "server_endpoint": cfg.server_cn,
+            "server_endpoint": cfg.client_endpoint,
             "server_port": cfg.wg_port,
             "dns_servers": cfg.dns_servers,
             "dns_domain": cfg.dns_domain,
@@ -594,6 +600,7 @@ def generate_wireguard_configs(
                             **peer_config,
                             allowed_ips=allowed_ips,
                             wstunnel_port=cfg.wg_https_tunnel_port,
+                            tls_server_name=cfg.server_cn,
                         ),
                     )
                 )
@@ -631,6 +638,11 @@ def generate_wireguard_configs(
 
 def main() -> None:
     cfg = Config()
+
+    # Unvalidated, a bad setting reaches a client file and fails only on
+    # someone else's machine.
+    cfg.validate()
+
     default_name = cfg.server_cn.replace(".", "-")
 
     parser = argparse.ArgumentParser(
