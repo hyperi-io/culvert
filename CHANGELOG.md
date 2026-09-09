@@ -3,6 +3,12 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.15](https://github.com/hyperi-io/culvert/compare/v2.1.14...v2.1.15) (2026-09-09)
+
+### Bug Fixes
+
+* **client:** separate the address clients dial from the certificate identity ([#37](https://github.com/hyperi-io/culvert/issues/37)) ([0a66586](https://github.com/hyperi-io/culvert/commit/0a66586b201e0760c55ebb065023838866c95523))
+
 ## [2.1.14](https://github.com/hyperi-io/culvert/compare/v2.1.13...v2.1.14) (2026-08-31)
 
 ### Bug Fixes
