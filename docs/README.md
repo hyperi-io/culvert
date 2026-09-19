@@ -30,6 +30,9 @@ for one of the opinionated `CULVERT_PROFILE=` presets.
 
 ## Understand a decision
 
+- [architecture.md](architecture.md) - what is in the image, the startup order,
+  the two iptables chains and why their order is what it is, and the PKI
+  invariants. Start here before changing any of them.
 - [addressing.md](addressing.md) - why the tunnels default to `10.8.0.0/22`,
   and when to move to the CGNAT range instead.
 - [performance.md](performance.md) - the cipher stance (AES-256-GCM the
