@@ -28,6 +28,26 @@ These clients support the web-based OAuth2 authentication flow required for SSO.
 
 ---
 
+## Configuration lifetime
+
+Client configuration files are static. Ask the administrator for a newly
+issued file after the VPN endpoint, DNS settings, or WireGuard MTU changes;
+restarting the server does not update a file already imported on a device.
+
+Administrators can compare every issued client with the current server
+settings:
+
+```bash
+generate-client --status
+```
+
+The report prints `CURRENT`, `STALE` with the changed fields, or `UNKNOWN` for
+a client issued before tracking existed. `STALE` and `UNKNOWN` return a nonzero
+exit status so the report can be used by monitoring. Reissue the named client;
+do not infer that an untracked legacy config is current.
+
+---
+
 ## Configuration Files Included
 
 ### OpenVPN
