@@ -442,6 +442,13 @@ verb 3
 # ===============================================================================
 
 
+_CLIENT_CONFIG_SUFFIX = re.compile(
+    r"(?:udp|tcp|https|proxy)-(?:split|full)\.ovpn"
+    r"|(?:proxy-)?stunnel\.conf"
+    r"|wg\d*(?:-https)?-(?:split|full)\.conf"
+)
+
+
 def _bundle_client_zip(client_name: str, output_dir: Path) -> Path | None:
     """Zip a single client's generated files into <name>.zip (0600).
 
@@ -452,10 +459,13 @@ def _bundle_client_zip(client_name: str, output_dir: Path) -> Path | None:
     """
     import zipfile
 
+    prefix = f"{client_name}-"
     members = sorted(
         p
-        for p in output_dir.glob(f"{client_name}-*")
-        if p.is_file() and p.suffix != ".zip"
+        for p in output_dir.iterdir()
+        if p.is_file()
+        and p.name.startswith(prefix)
+        and _CLIENT_CONFIG_SUFFIX.fullmatch(p.name[len(prefix) :])
     )
     if not members:
         return None
