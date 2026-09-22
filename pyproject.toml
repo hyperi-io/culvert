@@ -10,7 +10,7 @@
 name = "culvert"
 version = "0.0.0"
 description = "Culvert - OpenVPN + WireGuard, optionally tunnelled over HTTPS, with OIDC SSO and external PKI"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = {text = "Apache-2.0"}
 
 # Granular secrets extras on purpose: culvert's backends are file (core,
