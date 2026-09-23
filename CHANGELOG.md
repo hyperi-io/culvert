@@ -3,6 +3,13 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.16](https://github.com/hyperi-io/culvert/compare/v2.1.15...v2.1.16) (2026-09-23)
+
+### Bug Fixes
+
+* **docs:** add a README Context section and the architecture doc ([#42](https://github.com/hyperi-io/culvert/issues/42)) ([94ec5e1](https://github.com/hyperi-io/culvert/commit/94ec5e1daeaf1f3609a4a31d9b481276ffa6070e)), closes [#38](https://github.com/hyperi-io/culvert/issues/38)
+* raise the Python floor to 3.14 ([f71ee60](https://github.com/hyperi-io/culvert/commit/f71ee60ba628fdfcc840d8868f20aaeb5c074d03))
+
 ## [2.1.15](https://github.com/hyperi-io/culvert/compare/v2.1.14...v2.1.15) (2026-09-09)
 
 ### Bug Fixes
