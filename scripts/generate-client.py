@@ -631,6 +631,41 @@ def generate_wireguard_configs(
     wireguard.sync_running_interface(cfg.wg_conf)
 
 
+def _material_client_state(cfg: Config) -> dict[str, dict[str, object]]:
+    """Settings from today's config that are embedded in static client files."""
+    from lib.client_state import current_protocol_state
+
+    return current_protocol_state(
+        client_endpoint=cfg.client_endpoint,
+        dns_servers=cfg.dns_servers,
+        dns_domain=cfg.dns_domain,
+        wg_mtu=cfg.wg_mtu,
+    )
+
+
+def _report_client_states(cfg: Config) -> bool:
+    """Print issued-client freshness and return whether every row is current."""
+    from lib.client_state import inspect_client_states
+
+    rows = inspect_client_states(cfg.pki_dir, _material_client_state(cfg))
+    if not rows:
+        print("No issued clients found.")
+        return True
+
+    for row in rows:
+        detail = f": {', '.join(row.reasons)}" if row.reasons else ""
+        print(f"{row.status} {row.client}{detail}")
+    return all(row.status == "CURRENT" for row in rows)
+
+
+def _record_generated_protocol(cfg: Config, client_name: str, protocol: str) -> None:
+    """Record one protocol only after its complete generation path succeeds."""
+    from lib.client_state import record_client_state
+
+    material_state = _material_client_state(cfg)
+    record_client_state(cfg.pki_dir, client_name, {protocol: material_state[protocol]})
+
+
 # ===============================================================================
 # Main
 # ===============================================================================
@@ -730,12 +765,20 @@ Examples:
             " Invalidates the client's existing WireGuard configs."
         ),
     )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Report CURRENT, STALE, or UNKNOWN for every issued client and exit",
+    )
     parser.add_argument("--proxy", help="HTTP CONNECT proxy (HOST:PORT)")
     parser.add_argument(
         "--proxy-auth", action="store_true", help="Add proxy auth placeholder"
     )
 
     args = parser.parse_args()
+
+    if args.status:
+        raise SystemExit(0 if _report_client_states(cfg) else 1)
 
     # Apply arguments
     client_name = args.name or default_name
@@ -875,6 +918,8 @@ Examples:
                     proxy_auth=args.proxy_auth,
                 )
 
+        _record_generated_protocol(cfg, client_name, "openvpn")
+
     # ---- WireGuard ----
     if generate_wg:
         generate_wireguard_configs(
@@ -883,6 +928,7 @@ Examples:
             pubkeys=args.pubkey,
             rotate=args.rotate,
         )
+        _record_generated_protocol(cfg, client_name, "wireguard")
 
     # Copy vpn-client-setup.md to output directory
     setup_doc_src = Path("/etc/vpn/docs/vpn-client-setup.md")
