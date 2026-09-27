@@ -646,7 +646,7 @@ class TestExternalEndpoint:
         ("endpoint", "zone", "inside"),
         [
             # The shape that shipped.
-            ("devex.hyperi.io", "hyperi.io", True),
+            ("vpn.example.org", "example.org", True),
             ("vpn.corp.example.com", "corp.example.com", True),
             ("vpn.corp.example.com", "~corp.example.com", True),
             ("corp.example.com", "corp.example.com", True),

@@ -12,8 +12,7 @@ Integration test: fetch PKI certs from real OpenBao.
 Requires OPENBAO_ADDR and OPENBAO_TOKEN environment variables.
 Skipped if not set (CI without infra access).
 
-To run manually:
-    source /projects/hyperi-infra/.env
+To run manually, with OPENBAO_ADDR and OPENBAO_TOKEN exported:
     pytest tests/integration/test_openbao_pki.py -v
 """
 

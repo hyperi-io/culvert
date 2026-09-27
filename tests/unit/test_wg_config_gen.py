@@ -148,9 +148,9 @@ class TestBuildDnsLine:
         [
             # The shape that shipped: dns1 and dns2 set to the same resolver.
             (
-                ["10.66.0.101", "10.66.0.101"],
-                "devex.hyperi.io",
-                "10.66.0.101, devex.hyperi.io",
+                ["10.0.0.53", "10.0.0.53"],
+                "internal.example.org",
+                "10.0.0.53, internal.example.org",
             ),
             # A single-resolver site clearing DNS2 -- a trailing comma and an
             # empty entry are both rejected by wg-quick.
@@ -173,11 +173,11 @@ class TestBuildDnsLine:
             server_public_key=FAKE_SERVER_PUB,
             server_endpoint="vpn.example.com",
             server_port=51820,
-            dns_servers=["10.66.0.101", "10.66.0.101"],
-            dns_domain="devex.hyperi.io",
+            dns_servers=["10.0.0.53", "10.0.0.53"],
+            dns_domain="internal.example.org",
         )
 
-        assert "DNS = 10.66.0.101, devex.hyperi.io\n" in config
+        assert "DNS = 10.0.0.53, internal.example.org\n" in config
 
     def test_empty_second_resolver_leaves_no_trailing_comma(self) -> None:
         config = generate_client_config(
@@ -198,11 +198,11 @@ class TestBuildDnsLine:
             server_public_key=FAKE_SERVER_PUB,
             server_endpoint="vpn.example.com",
             server_port=51820,
-            dns_servers=["10.66.0.101", "10.66.0.101"],
-            dns_domain="~devex.hyperi.io",
+            dns_servers=["10.0.0.53", "10.0.0.53"],
+            dns_domain="~internal.example.org",
         )
 
-        assert "DNS = 10.66.0.101, devex.hyperi.io\n" in config
+        assert "DNS = 10.0.0.53, internal.example.org\n" in config
 
 
 class TestWstunnelTlsVerification:
