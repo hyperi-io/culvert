@@ -26,8 +26,8 @@ services:
       # runs; wstunnel serves WSS with the same pair.
       CULVERT_TCP_ENABLED: "true"
       CULVERT_HTTPS_ENABLED: "true"
-      CULVERT_STUNNEL_CERT: /etc/vpn/oauth2-tls/hyperi-wildcard-fullchain.pem
-      CULVERT_STUNNEL_KEY: /etc/vpn/oauth2-tls/hyperi-wildcard.key
+      CULVERT_STUNNEL_CERT: /etc/vpn/oauth2-tls/e2e-fullchain.pem
+      CULVERT_STUNNEL_KEY: /etc/vpn/oauth2-tls/e2e.key
       CULVERT_WG_HTTPS_TUNNEL_ENABLED: "true"
       # generate-client.py now uses CULVERT_* via lib.config (no legacy vars needed)
     networks:

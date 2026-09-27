@@ -3,11 +3,11 @@ set -euo pipefail
 
 # Generate self-signed TLS cert for stunnel (OpenVPN over HTTPS)
 mkdir -p /etc/vpn/oauth2-tls
-if [ ! -f /etc/vpn/oauth2-tls/hyperi-wildcard-fullchain.pem ]; then
+if [ ! -f /etc/vpn/oauth2-tls/e2e-fullchain.pem ]; then
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-        -keyout /etc/vpn/oauth2-tls/hyperi-wildcard.key \
-        -out /etc/vpn/oauth2-tls/hyperi-wildcard-fullchain.pem \
-        -days 1 -nodes -subj '/CN=*.hyperi.io' 2>/dev/null
+        -keyout /etc/vpn/oauth2-tls/e2e.key \
+        -out /etc/vpn/oauth2-tls/e2e-fullchain.pem \
+        -days 1 -nodes -subj '/CN=vpn-server' 2>/dev/null
 fi
 
 # The entrypoint's setup_network only MASQUERADEs VPN subnets on the default
