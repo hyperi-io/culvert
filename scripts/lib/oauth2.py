@@ -209,19 +209,17 @@ def setup_oauth2(cfg) -> None:
         )
 
 
-def _generate_oauth2_config(
+def _oauth2_config(
     cfg,
-    name: str,
     port: int,
     socket: str,
     http_secret: str,
     mgmt_password: str,
-) -> None:
-    """Generate OAuth2 config for a listener.
+) -> dict:
+    """Build one listener's openvpn-auth-oauth2 config.
 
-    Serialised with yaml.safe_dump: secrets and issuer URLs are
-    operator-supplied, so hand-rolled f-string YAML would break (or
-    inject keys) on quotes and newlines.
+    openvpn-auth-oauth2 2.x exits at startup on any key its schema does not
+    know, so every key here must exist in the release the Dockerfile pins.
     """
     http_section: dict = {
         "listen": f":{port}",
@@ -250,12 +248,29 @@ def _generate_oauth2_config(
             ]
         }
 
-    config = {
+    return {
         "http": http_section,
         "oauth2": oauth2_section,
         "openvpn": {"addr": f"unix://{socket}", "password": mgmt_password},
         "log": {"level": "info"},
     }
+
+
+def _generate_oauth2_config(
+    cfg,
+    name: str,
+    port: int,
+    socket: str,
+    http_secret: str,
+    mgmt_password: str,
+) -> None:
+    """Generate OAuth2 config for a listener.
+
+    Serialised with yaml.safe_dump: secrets and issuer URLs are
+    operator-supplied, so hand-rolled f-string YAML would break (or
+    inject keys) on quotes and newlines.
+    """
+    config = _oauth2_config(cfg, port, socket, http_secret, mgmt_password)
     config_path = Path(f"/etc/openvpn-auth-oauth2/config-{name}.yaml")
     write_secret(config_path, yaml.safe_dump(config, sort_keys=False))
     logger.info(f"  {name}: port {port} -> {socket}")
