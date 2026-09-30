@@ -83,3 +83,42 @@ class TestStartOAuth2Supervision:
         pm = FakeProcessManager()
         oauth2.start_oauth2(cfg, pm)
         assert pm.started == {}
+
+
+class TestOAuth2ConfigSchema:
+    """The generated config must load under openvpn-auth-oauth2's strict schema."""
+
+    def test_emits_only_keys_the_pinned_release_accepts(self):
+        """An unknown key stops the binary at startup, and CI never runs it."""
+        cfg = Config()
+        cfg.server_cn = "vpn.example.test"
+        cfg.oauth2_issuer = "https://idp.example.test"
+        cfg.oauth2_client_id = "culvert"
+        cfg.oauth2_client_secret = "client-secret"
+        cfg.oauth2_tls_cert = "/etc/vpn/oauth2-tls/fullchain.pem"
+        cfg.oauth2_tls_key = "/etc/vpn/oauth2-tls/privkey.pem"
+        cfg.oauth2_template = "/etc/vpn/oauth2-template.html"
+        cfg.oauth2_validate_groups = "vpn-users, admins"
+
+        config = oauth2._oauth2_config(
+            cfg, 9000, "/run/vpn/management-udp.sock", "h" * 32, "m" * 32
+        )
+
+        assert {section: sorted(body) for section, body in config.items()} == {
+            "http": [
+                "assets-path",
+                "baseurl",
+                "cert",
+                "key",
+                "listen",
+                "secret",
+                "template",
+                "tls",
+            ],
+            "oauth2": ["client", "issuer", "scopes", "validate"],
+            "openvpn": ["addr", "password"],
+            "log": ["level"],
+        }
+        assert sorted(config["oauth2"]["client"]) == ["id", "secret"]
+        assert config["oauth2"]["validate"] == {"groups": ["vpn-users", "admins"]}
+        assert config["openvpn"]["addr"] == "unix:///run/vpn/management-udp.sock"

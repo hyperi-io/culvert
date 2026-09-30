@@ -64,8 +64,33 @@ jobs:
             echo "Already on latest version"
           fi
 
-      - name: Generate GitHub App Token
+      - name: Check for a pending bump
         if: steps.compare.outputs.update_available == 'true'
+        id: pending
+        # A branch from an earlier run means this version is already proposed,
+        # and pushing over it again is a non-fast-forward rejection.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          BRANCH="deps/openvpn-auth-oauth2-${VERSION}"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          # matching-refs is a prefix match, so the jq filter keeps only the exact ref.
+          FOUND=$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/heads/${BRANCH}" --jq "map(select(.ref == \"refs/heads/${BRANCH}\")) | length")
+          if [ "${FOUND}" = "0" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          PR=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --state open --json number --jq '.[0].number // empty')
+          if [ -n "${PR}" ]; then
+            echo "::notice::openvpn-auth-oauth2 ${VERSION} is already proposed in #${PR}"
+          else
+            echo "::warning::branch ${BRANCH} exists with no open PR - delete it to propose ${VERSION} again"
+          fi
+
+      - name: Generate GitHub App Token
+        if: steps.compare.outputs.update_available == 'true' && steps.pending.outputs.exists == 'false'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -74,14 +99,14 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Create update PR
-        if: steps.compare.outputs.update_available == 'true'
+        if: steps.compare.outputs.update_available == 'true' && steps.pending.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ steps.latest.outputs.version }}
           CURRENT: ${{ steps.current.outputs.version }}
+          BRANCH: ${{ steps.pending.outputs.branch }}
         run: |
           # Create branch
-          BRANCH="deps/openvpn-auth-oauth2-${VERSION}"
           git checkout -b "${BRANCH}"
 
           # The Dockerfile pins a SHA256 per architecture and verifies it before

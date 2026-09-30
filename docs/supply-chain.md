@@ -6,7 +6,7 @@ GitHub releases during image build:
 | Dependency | Source | Pinned version |
 |------------|--------|----------------|
 | Base image | `ubuntu:24.04` | pinned by `sha256` digest in `BASE_IMAGE` |
-| `openvpn-auth-oauth2` | [github.com/jkroepke/openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2) | `1.28.3`, `sha256`-verified per arch |
+| `openvpn-auth-oauth2` | [github.com/jkroepke/openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2) | `2.2.0`, `sha256`-verified per arch |
 | `wstunnel` | [github.com/erebe/wstunnel](https://github.com/erebe/wstunnel) | `10.6.2`, `sha256`-verified per arch |
 | `openvpn` (server) | [build.openvpn.net](https://build.openvpn.net) (official APT repo) | stable channel, 2.7.x+ |
 | `easy-rsa` | Ubuntu archive | System package (from digest-pinned base) |
@@ -63,7 +63,7 @@ install:
 
 ```dockerfile
 ARG BASE_IMAGE="ubuntu:24.04@sha256:..."   # base image pinned by digest
-ARG OPENVPN_AUTH_OAUTH2_VERSION="1.28.3"   # + SHA256_AMD64 / SHA256_ARM64
+ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.0"    # + SHA256_AMD64 / SHA256_ARM64
 ARG WSTUNNEL_VERSION="10.6.2"              # + SHA256_AMD64 / SHA256_ARM64
 ```
 
