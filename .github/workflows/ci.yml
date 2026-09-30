@@ -29,6 +29,13 @@ on:
         default: "auto"
         description: "from-head version: auto | patch | minor | X.Y.Z (exact)."
 
+# The union of what python-ci.yml's jobs request; the caller's grant caps them.
+permissions:
+  contents: write
+  issues: write
+  packages: write
+  pull-requests: write
+
 jobs:
   ci:
     uses: hyperi-io/hyperi-ci/.github/workflows/python-ci.yml@main
