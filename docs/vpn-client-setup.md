@@ -8,11 +8,11 @@ This guide covers installing and configuring OpenVPN and WireGuard clients on Li
 
 | Client | Minimum Version | OAuth2/SSO Support | Download |
 |--------|-----------------|-------------------|----------|
-| **OpenVPN Connect** | 3.4.0+ | Yes | https://openvpn.net/client/ |
-| **OpenVPN GUI (Windows)** | 2.6.0+ | Yes | https://openvpn.net/community-downloads/ |
-| **OpenVPN (Linux CLI)** | 2.6.0+ | No (certificate only) | https://openvpn.net/community-downloads/ |
-| **Tunnelblick (macOS)** | 3.8.8+ | No (certificate only) | https://tunnelblick.net/ |
-| **WireGuard** | Any | N/A (key-based) | https://www.wireguard.com/install/ |
+| **OpenVPN Connect** | 3.4.0+ | Yes | <https://openvpn.net/client/> |
+| **OpenVPN GUI (Windows)** | 2.6.0+ | Yes | <https://openvpn.net/community-downloads/> |
+| **OpenVPN (Linux CLI)** | 2.6.0+ | No (certificate only) | <https://openvpn.net/community-downloads/> |
+| **Tunnelblick (macOS)** | 3.8.8+ | No (certificate only) | <https://tunnelblick.net/> |
+| **WireGuard** | Any | N/A (key-based) | <https://www.wireguard.com/install/> |
 
 ### OAuth2/SSO Authentication
 
@@ -59,6 +59,7 @@ key connects from one place at a time, so you get a set of files per device -
 per device, or they will keep knocking each other offline.
 
 **Which to use:**
+
 1. Try **WireGuard** first (best performance, simplest setup)
 2. If WireGuard is blocked, try **OpenVPN UDP** (UDP 1194)
 3. If UDP blocked, try **OpenVPN TCP** (TCP 1194)
@@ -70,7 +71,7 @@ per device, or they will keep knocking each other offline.
 
 ### Installation
 
-- **Windows:** Download from https://www.wireguard.com/install/
+- **Windows:** Download from <https://www.wireguard.com/install/>
 - **macOS:** `brew install wireguard-tools` or "WireGuard" from the App Store
 - **Linux (Ubuntu/Debian):** `sudo apt install wireguard-tools`
 - **Linux (Fedora/RHEL):** `sudo dnf install wireguard-tools`
@@ -134,7 +135,7 @@ sudo wg-quick up ./alice-wg-split.conf
 
 ### Windows
 
-1. Download and install WireGuard from https://www.wireguard.com/install/
+1. Download and install WireGuard from <https://www.wireguard.com/install/>
 2. Open WireGuard, click "Import tunnel(s) from file"
 3. Select your `.conf` file
 4. Click "Activate"
@@ -167,15 +168,17 @@ For networks that block WireGuard, use the HTTPS-tunnel configs (`*-wg-https-*.c
 #### Installing wstunnel
 
 - **macOS:** `brew install wstunnel`
-- **Linux:** Download the binary for your architecture from https://github.com/erebe/wstunnel/releases
-- **Windows:** Download the `.exe` from https://github.com/erebe/wstunnel/releases
+- **Linux:** Download the binary for your architecture from <https://github.com/erebe/wstunnel/releases>
+- **Windows:** Download the `.exe` from <https://github.com/erebe/wstunnel/releases>
 
 #### Connecting
 
 1. Start wstunnel first:
+
    ```bash
    wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
    ```
+
    (Replace `vpn.example.com` with your VPN server hostname)
 
 2. Then import and activate the `*-wg-https-*.conf` config in your WireGuard client
@@ -221,7 +224,7 @@ openvpn3 config-import --config alice-udp-split.ovpn --name culvert
 openvpn3 session-start --config culvert
 ```
 
-Download: https://openvpn.net/client/
+Download: <https://openvpn.net/client/>
 
 #### Install OpenVPN (Open Source - Certificate Only)
 
@@ -377,7 +380,7 @@ sudo systemctl status openvpn-client@culvert-https
 
 #### Option 1: OpenVPN Connect (Recommended - Required for OAuth2/SSO)
 
-Download: https://openvpn.net/client/ or from the Mac App Store
+Download: <https://openvpn.net/client/> or from the Mac App Store
 
 **Minimum version:** 3.4.0
 
@@ -394,7 +397,7 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 
 **Minimum version:** 3.8.8
 
-1. Download and install from https://tunnelblick.net/
+1. Download and install from <https://tunnelblick.net/>
 2. Double-click the `.ovpn` file to import
 3. Click the Tunnelblick icon in the menu bar
 4. Select "Connect" for your VPN configuration
@@ -428,7 +431,7 @@ sudo /opt/homebrew/sbin/openvpn --config alice-https-split.ovpn
 
 #### Option 1: OpenVPN Connect (Recommended - Required for OAuth2/SSO)
 
-Download: https://openvpn.net/client/
+Download: <https://openvpn.net/client/>
 
 **Minimum version:** 3.4.0
 
@@ -441,7 +444,7 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 
 #### Option 2: OpenVPN GUI (Supports OAuth2/SSO)
 
-Download: https://openvpn.net/community-downloads/
+Download: <https://openvpn.net/community-downloads/>
 
 **Minimum version:** 2.6.0
 
@@ -455,12 +458,13 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 #### HTTPS Tunnel on Windows
 
 1. **Install stunnel:**
-   - Download from https://www.stunnel.org/downloads.html
+   - Download from <https://www.stunnel.org/downloads.html>
    - Run the installer
 
 2. **Configure stunnel:**
    - Copy `alice-stunnel.conf` to `C:\Program Files (x86)\stunnel\config\`
    - Edit the file and update paths if needed:
+
      ```ini
      # Windows paths use forward slashes or escaped backslashes
      CApath = C:/Program Files (x86)/stunnel/certs
@@ -469,6 +473,7 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 3. **Start stunnel:**
    - Run stunnel from Start Menu, or
    - Open Command Prompt as Administrator:
+
      ```cmd
      "C:\Program Files (x86)\stunnel\bin\stunnel.exe" "C:\Program Files (x86)\stunnel\config\alice-stunnel.conf"
      ```
@@ -538,7 +543,7 @@ If OAuth2/SSO is enabled, your browser will open for authentication.
 Running the client inside a container or a Kubernetes pod, on a full tunnel
 (`AllowedIPs = 0.0.0.0/0`)? Look for this line in the `wg-quick up` output:
 
-```
+```text
 [#] sysctl -q net.ipv4.conf.all.src_valid_mark=1
 sysctl: setting key "net.ipv4.conf.all.src_valid_mark", ignoring: Read-only file system
 ```

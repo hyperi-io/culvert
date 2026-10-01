@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-WireGuard over HTTPS for culvert, via wstunnel.
+"""WireGuard over HTTPS for culvert, via wstunnel.
 
 Carries the WireGuard UDP tunnel inside WebSocket/TLS on port 4443, so it
 travels as an ordinary HTTPS session. That is what gets a tunnel out of a

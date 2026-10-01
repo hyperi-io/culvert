@@ -6,7 +6,7 @@ probes, SIGTERM drain, autoscaling, external PKI, Prometheus. The chart
 defaults to the simplest working server (OpenVPN UDP, NET_ADMIN,
 `/dev/net/tun`); every other listener is an opt-in.
 
-Read [connection affinity](#connection-affinity-read-this) before you
+Read [connection affinity](#connection-affinity---read-this) before you
 pick a load balancer - it is the one thing that will silently break a
 multi-pod VPN.
 

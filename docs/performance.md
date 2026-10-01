@@ -91,7 +91,7 @@ not for a handful of road-warrior tunnels.
 
 For lossy or high-latency (i.e. mobile) paths, set on the VPN host:
 
-```
+```ini
 net.core.rmem_max = 4194304
 net.core.wmem_max = 4194304
 net.ipv4.tcp_congestion_control = bbr

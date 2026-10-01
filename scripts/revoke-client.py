@@ -7,8 +7,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Revoke OpenVPN and/or WireGuard client configurations.
+"""Revoke OpenVPN and/or WireGuard client configurations.
 
 Usage: revoke-client [--protocol openvpn|wireguard|all] <client-name>
 
@@ -35,6 +34,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
     if _scripts_path not in sys.path:
         sys.path.insert(0, _scripts_path)
 
+from lib.pki import validate_client_name  # noqa: E402
 from lib.process import write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
@@ -54,7 +54,7 @@ class RevocationError(RuntimeError):
 
 
 def _wg_interface_up() -> bool:
-    """True when a wg0 interface exists to remove a peer from.
+    """Return True when a wg0 interface exists to remove a peer from.
 
     A missing `wg` binary means there is no WireGuard here at all, which is the
     same situation as no interface: nothing live to revoke.
@@ -324,6 +324,7 @@ def revoke_wireguard_client(client_name: str) -> bool:
 
 
 def main() -> None:
+    """Revoke a client's certificate and/or WireGuard peer from the CLI args."""
     parser = argparse.ArgumentParser(
         description="Revoke VPN client certificate and/or WireGuard peer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -377,6 +378,13 @@ Examples:
 
     if not args.client_name:
         parser.print_help()
+        sys.exit(1)
+
+    if not validate_client_name(args.client_name):
+        logger.error(
+            f"Invalid client name '{args.client_name}'. "
+            "Use only alphanumeric, dash, underscore."
+        )
         sys.exit(1)
 
     try:

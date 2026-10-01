@@ -53,7 +53,7 @@ the capability.
 in a focused module under `scripts/lib/`, and the entrypoint's job is the
 order.
 
-```
+```text
 config -> directories -> log rotation -> network -> routing control
        -> forward guards -> [OpenVPN branch] -> [WireGuard branch]
        -> observability -> CRL refresh -> client download -> block

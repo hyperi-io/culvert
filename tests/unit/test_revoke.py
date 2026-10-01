@@ -176,3 +176,30 @@ class TestInterfaceDetection:
             lambda *a, **kw: subprocess.CompletedProcess([], 0),
         )
         assert revoke._wg_interface_up() is True
+
+
+class TestClientNameValidation:
+    """A client name reaches PKI_DIR / "issued" / f"{name}.crt" unescaped."""
+
+    def test_rejects_path_traversal(self, revoke):
+        assert revoke.validate_client_name("../ca") is False
+
+    def test_rejects_path_separator(self, revoke):
+        assert revoke.validate_client_name("sub/name") is False
+
+    def test_accepts_safe_name(self, revoke):
+        assert revoke.validate_client_name("alice-2") is True
+
+    def test_main_refuses_before_touching_pki(self, revoke, monkeypatch):
+        """main() must reject an unsafe name before any revoke_* call runs."""
+
+        def boom(*a, **kw):
+            raise AssertionError("revocation attempted with an unvalidated name")
+
+        monkeypatch.setattr(revoke, "revoke_client", boom)
+        monkeypatch.setattr(revoke, "revoke_wireguard_client", boom)
+        monkeypatch.setattr("sys.argv", ["revoke-client", "../ca"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            revoke.main()
+        assert exc_info.value.code == 1

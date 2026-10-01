@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-OAuth2/OIDC SSO configuration for culvert.
+"""OAuth2/OIDC SSO configuration for culvert.
 
 Manages openvpn-auth-oauth2 instances: one per enabled listener.
 Validates TLS certificates against server CN, generates per-listener

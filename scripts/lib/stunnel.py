@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-stunnel configuration for culvert.
+"""stunnel configuration for culvert.
 
 Generates the stunnel config that terminates TLS on the HTTPS port and
 forwards to OpenVPN on an internal localhost port, so the VPN travels as an

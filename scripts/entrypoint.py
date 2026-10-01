@@ -7,8 +7,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Culvert container entrypoint.
+"""Culvert container entrypoint.
 
 Thin orchestrator that delegates to focused modules under lib/.
 Handles container initialisation, PKI setup, and VPN server management.
@@ -91,7 +90,8 @@ def run_server(cfg: Config) -> None:
     metrics = None
     if cfg.metrics_enabled:
         # max_clients is resolved to an int in Config.__post_init__.
-        assert cfg.max_clients is not None
+        if cfg.max_clients is None:
+            raise RuntimeError("max_clients unresolved after Config.__post_init__")
         metrics = init_metrics(
             cfg.max_clients,
             cfg.protocol,
@@ -132,7 +132,7 @@ def run_server(cfg: Config) -> None:
 
 
 def main() -> None:
-    """Main entrypoint."""
+    """Dispatch the container command: server, PKI init, client tools or a probe."""
     parser = argparse.ArgumentParser(description="Culvert entrypoint")
     parser.add_argument(
         "command",
@@ -155,22 +155,17 @@ def main() -> None:
 
     # Healthcheck runs without config loading (lightweight probe)
     if args.command == "healthcheck":
-        import urllib.request
+        import http.client
 
         try:
-            # Probe the observability port (health + metrics share it).
-            # int() keeps the URL authority fixed to localhost: a raw env
-            # string could smuggle '@host' into the authority; a
-            # non-numeric value just fails the probe via ValueError.
+            # Probe the observability port (health + metrics share it). Host
+            # and port go to HTTPConnection separately, so no env value can
+            # redirect the probe off localhost; a non-numeric port fails it.
             addr = os.environ.get("CULVERT_METRICS_ADDR", "0.0.0.0:9090")
             health_port = int(addr.rsplit(":", 1)[-1]) if ":" in addr else 9090
-            # Scheme, host, and (cast) port are fixed, so no file:// or
-            # off-host reach is possible.
-            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-            req = urllib.request.urlopen(
-                f"http://localhost:{health_port}/livez", timeout=3
-            )
-            sys.exit(0 if req.status == 200 else 1)
+            conn = http.client.HTTPConnection("localhost", health_port, timeout=3)
+            conn.request("GET", "/livez")
+            sys.exit(0 if conn.getresponse().status == 200 else 1)
         except Exception:
             sys.exit(1)
 
