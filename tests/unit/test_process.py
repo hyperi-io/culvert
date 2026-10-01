@@ -6,14 +6,15 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
+import signal
 import stat
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from lib.process import (
     ProcessManager,
     run,
-    run_quiet,
     setup_directories,
     setup_scripts,
     write_secret,
@@ -71,22 +72,6 @@ class TestRun:
         """Captures stderr from failing commands."""
         result = run("echo err >&2 && false", check=False, capture=True)
         assert "err" in result.stderr
-
-
-class TestRunQuiet:
-    """Tests for run_quiet() convenience helper."""
-
-    def test_returns_true_on_success(self):
-        """Successful command returns True."""
-        assert run_quiet("true") is True
-
-    def test_returns_false_on_failure(self):
-        """Failed command returns False (no exception)."""
-        assert run_quiet("false") is False
-
-    def test_returns_true_for_list_command(self):
-        """Works with list-style commands."""
-        assert run_quiet(["echo", "test"]) is True
 
 
 class TestSetupDirectories:
@@ -187,3 +172,74 @@ class TestProcessManager:
         """shutdown_requested starts as False."""
         pm = ProcessManager()
         assert pm.shutdown_requested is False
+
+
+@pytest.fixture
+def manager():
+    """A ProcessManager whose children and signal handlers are cleaned up after."""
+    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    saved = {sig: signal.getsignal(sig) for sig in handled}
+    pm = ProcessManager()
+    yield pm
+    for proc in pm.processes.values():
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    for log_f in pm._daemon_logs.values():
+        log_f.close()
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
+
+
+class TestDaemonLogs:
+    """A daemon's output goes to a file, never an unread pipe that blocks it."""
+
+    def test_output_lands_in_a_log_readable_only_by_the_group(self, manager, tmp_path):
+        manager.config = SimpleNamespace(log_dir=tmp_path, protocol="openvpn")
+        proc = manager.start("echoer", ["sh", "-c", "echo hello"], daemon=True)
+        assert proc is not None
+        proc.wait(timeout=10)
+
+        log = tmp_path / "echoer.log"
+        assert log.read_text(encoding="utf-8") == "hello\n"
+        assert stat.S_IMODE(log.stat().st_mode) == 0o640
+
+    def test_unopenable_log_still_starts_the_daemon(self, manager, tmp_path):
+        manager.config = SimpleNamespace(
+            log_dir=tmp_path / "absent", protocol="openvpn"
+        )
+        proc = manager.start("quiet", ["true"], daemon=True)
+        assert proc is not None
+        assert proc.wait(timeout=10) == 0
+        assert not (tmp_path / "absent").exists()
+
+
+class TestShutdown:
+    """Shutdown stops every child and exits with the code the caller chose."""
+
+    def test_children_are_stopped_and_the_code_is_returned(self, manager):
+        from lib.health import health
+
+        proc = manager.start("sleeper", ["sleep", "30"])
+        health.set_ready(True)
+        with pytest.raises(SystemExit) as exc_info:
+            manager.shutdown(3)
+
+        assert exc_info.value.code == 3
+        assert proc.poll() == -signal.SIGTERM
+        assert health.is_ready() is False
+
+    def test_sigterm_handler_shuts_down_cleanly(self, manager):
+        proc = manager.start("sleeper", ["sleep", "30"])
+        with pytest.raises(SystemExit) as exc_info:
+            manager._signal_handler(signal.SIGTERM, None)
+
+        assert exc_info.value.code == 0
+        assert manager.shutdown_requested is True
+        assert proc.poll() is not None
+
+    def test_sighup_is_forwarded_to_running_children(self, manager):
+        """OpenVPN re-reads its CRL and config on SIGHUP."""
+        proc = manager.start("sleeper", ["sleep", "30"])
+        manager._reload_handler(signal.SIGHUP, None)
+        assert proc.wait(timeout=10) == -signal.SIGHUP

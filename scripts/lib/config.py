@@ -79,19 +79,6 @@ def validate_port(value: int, name: str) -> None:
         raise ValidationError(f"{name}={value} must be between 1 and 65535")
 
 
-def validate_bool(value: str, name: str) -> None:
-    """Validate a boolean value."""
-    if value and value.lower() not in (
-        "true",
-        "false",
-        "1",
-        "0",
-        "yes",
-        "no",
-    ):
-        raise ValidationError(f"{name}='{value}' must be 'true' or 'false'")
-
-
 def validate_hostname(value: str, name: str) -> None:
     """Validate a hostname/FQDN."""
     if not value:
@@ -162,12 +149,6 @@ def endpoint_inside_zone(endpoint: str, dns_domain: str) -> bool:
     if not zone or not endpoint:
         return False
     return endpoint == zone or endpoint.endswith(f".{zone}")
-
-
-def validate_url(value: str, name: str) -> None:
-    """Validate a URL."""
-    if not value.startswith(("http://", "https://")):
-        raise ValidationError(f"{name}='{value}' must be a valid URL")
 
 
 def validate_cidr_routes(value: str, name: str) -> None:

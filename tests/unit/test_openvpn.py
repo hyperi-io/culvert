@@ -15,6 +15,8 @@ from lib.config import Config
 from lib.openvpn import (
     _apply_common_options,
     _strip_timestamps,
+    configure_server_https,
+    configure_server_tcp,
     configure_server_udp,
     generate_config,
 )
@@ -261,3 +263,125 @@ class TestConfigGenerationTempFile:
         assert captured["dir"] == server_dir
         assert cfg.server_conf.exists()
         assert "port 1194" in cfg.server_conf.read_text()
+
+
+# Listener name -> (configure function, template, Config field naming its output).
+LISTENERS = {
+    "udp": (configure_server_udp, "server.conf.template", "server_conf"),
+    "tcp": (configure_server_tcp, "server-tcp.conf.template", "server_tcp_conf"),
+    "https": (
+        configure_server_https,
+        "server-https.conf.template",
+        "server_https_conf",
+    ),
+}
+
+
+class TestShippedListenerRender:
+    """Each listener rendered from the template the image ships."""
+
+    @pytest.fixture
+    def server_dir(self, tmp_path):
+        """A server directory holding copies of the shipped templates."""
+        server = tmp_path / "server"
+        server.mkdir()
+        for _, template, _ in LISTENERS.values():
+            (server / template).write_text(
+                (REPO_ROOT / "config" / template).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+        return server
+
+    @staticmethod
+    def _cfg(server_dir, **overrides):
+        cfg = Config(
+            udp_enabled=True,
+            tcp_enabled=True,
+            https_enabled=True,
+            server_conf=server_dir / "server.conf",
+            server_tcp_conf=server_dir / "server-tcp.conf",
+            server_https_conf=server_dir / "server-https.conf",
+        )
+        for name, value in overrides.items():
+            setattr(cfg, name, value)
+        return cfg
+
+    @staticmethod
+    def _render(listener, cfg):
+        configure, _, field = LISTENERS[listener]
+        configure(cfg)
+        return getattr(cfg, field).read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("listener", sorted(LISTENERS))
+    def test_every_placeholder_is_substituted(self, server_dir, listener):
+        """OpenVPN refuses a config that still carries a ${...} placeholder."""
+        rendered = self._render(listener, self._cfg(server_dir))
+        assert "${" not in rendered
+
+    def test_each_listener_binds_its_own_port(self, server_dir):
+        cfg = self._cfg(
+            server_dir, udp_port=11940, tcp_port=11941, https_internal_port=11942
+        )
+        assert "port 11940" in self._render("udp", cfg)
+        assert "port 11941" in self._render("tcp", cfg)
+        assert "port 11942" in self._render("https", cfg)
+
+    @pytest.mark.parametrize("listener", sorted(LISTENERS))
+    def test_stdout_log_mode_reaches_every_listener(self, server_dir, listener):
+        """A listener still logging to a file hides its failure inside the pod."""
+        rendered = self._render(listener, self._cfg(server_dir, log_mode="stdout"))
+        active = [
+            line for line in rendered.splitlines() if line.startswith("log-append")
+        ]
+        assert active == [], f"{listener} still logs to a file: {active}"
+
+    @pytest.mark.parametrize("listener", sorted(LISTENERS))
+    def test_file_log_mode_keeps_each_listeners_own_log(self, server_dir, listener):
+        rendered = self._render(listener, self._cfg(server_dir, log_mode="file"))
+        assert "\nlog-append /var/log/vpn/openvpn" in rendered
+
+    def test_both_log_mode_adds_a_file_log_when_the_template_has_none(self, tmp_path):
+        server = tmp_path / "server"
+        server.mkdir()
+        (server / "server.conf.template").write_text("port ${OPENVPN_UDP_PORT}\n")
+        cfg = Config(
+            server_conf=server / "server.conf",
+            log_mode="both",
+            log_dir=tmp_path / "log",
+        )
+        configure_server_udp(cfg)
+        assert f"log-append {tmp_path / 'log'}/openvpn.log" in (
+            cfg.server_conf.read_text(encoding="utf-8")
+        )
+
+    @pytest.mark.parametrize("listener", sorted(LISTENERS))
+    def test_common_options_reach_every_listener(self, server_dir, listener):
+        cfg = self._cfg(
+            server_dir,
+            dns_domain="corp.example.test",
+            push_routes="10.20.0.0/16",
+            full_tunnel=True,
+        )
+        rendered = self._render(listener, cfg)
+        assert 'push "dhcp-option DOMAIN corp.example.test"' in rendered
+        assert 'push "route 10.20.0.0 255.255.0.0"' in rendered
+        assert 'push "redirect-gateway def1 bypass-dhcp"' in rendered
+
+    @pytest.mark.parametrize("listener", sorted(LISTENERS))
+    def test_disabled_listener_writes_nothing(self, server_dir, listener):
+        cfg = self._cfg(
+            server_dir, udp_enabled=False, tcp_enabled=False, https_enabled=False
+        )
+        configure, _, field = LISTENERS[listener]
+        configure(cfg)
+        assert not getattr(cfg, field).exists()
+
+    @pytest.mark.parametrize("listener", sorted(LISTENERS))
+    def test_missing_template_writes_nothing(self, tmp_path, listener):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        cfg = self._cfg(empty)
+        configure, _, field = LISTENERS[listener]
+        configure(cfg)
+        assert not getattr(cfg, field).exists()
+        assert list(empty.iterdir()) == [], "a temp file was left behind"

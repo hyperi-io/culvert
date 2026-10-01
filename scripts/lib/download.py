@@ -46,7 +46,7 @@ class ClientDownloadHandler(BaseHandler):
         header = self.headers.get("Authorization", "")
         return hmac.compare_digest(header, f"Bearer {self.auth_token}")
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:  # noqa: N802, V105 - BaseHTTPRequestHandler dispatches GET by name
         """Handle GET requests."""
         # Health stays unauthenticated for liveness probes.
         if self.path == "/health":
@@ -271,7 +271,7 @@ def start_client_download_server(
         # endpoint serves .ovpn files with the client private key in them and
         # the rest of culvert is TLS 1.3 only, so state the floor here rather
         # than inherit whatever the base image happens to default to.
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_3  # noqa: V101 - the ssl module reads it
         ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
         server.socket = ctx.wrap_socket(server.socket, server_side=True)
         scheme = "https"

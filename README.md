@@ -339,9 +339,7 @@ retired, so older references to that repo are stale.
 
 `hyperi-ci check` locally, `tests/run-all.sh` for the tiers.
 
-Green in CI is the UNIT tier alone. `.hyperi-ci.yaml` disables integration, e2e
-and k8s, turns coverage off, disables `vulture` and leaves `ty` non-blocking.
-Run the rest yourself:
+Green in CI is the UNIT tier alone, with coverage of `scripts/` held to hyperi-ci's default 80% floor. `.hyperi-ci.yaml` disables integration, e2e and k8s and leaves `ty` non-blocking. Run the rest yourself:
 
 ```bash
 pytest tests/e2e/ -m e2e -v     # needs Docker and TUN

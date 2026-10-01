@@ -140,9 +140,9 @@ python3 -m pytest tests/unit/ -v
 | Module | Unit Tests |
 |--------|-----------|
 | `lib/config.py` | Config defaults, env overrides, validation, network profiles |
-| `lib/process.py` | run/run_quiet, ProcessManager lifecycle, directory setup |
+| `lib/process.py` | run, ProcessManager lifecycle, directory setup |
 | `lib/network.py` | CIDR-to-netmask conversion, edge cases |
-| `lib/pki.py` | External PKI file validation (present/missing/partial) |
+| `lib/pki.py` | PEM validation, external fetch and local-cert fallback, CRL refresh and expiry |
 | `lib/openvpn.py` | Template substitution, common options, timestamp stripping |
 | `lib/stunnel.py` | Config generation with valid/missing certs |
 | `lib/health.py` | Liveness, readiness, state transitions, retired paths 404 |

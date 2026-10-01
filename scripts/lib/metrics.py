@@ -457,12 +457,12 @@ class ScrapeAdapter:
     .content_type properties, and deprecates its get_* accessors.
     """
 
-    def get_metrics(self) -> bytes:
+    def get_metrics(self) -> bytes:  # noqa: V105 - scalo's observability server calls it
         """Refresh the gauges, then return the exposition body."""
         update_metrics()
         return _manager().metrics
 
-    def get_content_type(self) -> str:
+    def get_content_type(self) -> str:  # noqa: V105 - scalo's observability server calls it
         """Return the exposition content type for the active backend."""
         return _manager().content_type
 

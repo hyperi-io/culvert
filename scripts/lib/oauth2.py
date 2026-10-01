@@ -40,7 +40,8 @@ def validate_oauth2_tls_cert(cert_path: str, server_cn: str) -> None:
     if result.returncode == 0:
         match = re.search(r"CN=([^,/]+)", result.stdout)
         if match:
-            cert_cn = match.group(1)
+            # The subject line ends in a newline, which the match would keep.
+            cert_cn = match.group(1).strip()
 
     # Extract SANs
     result = run(

@@ -211,6 +211,7 @@ def configure_server_https(cfg) -> None:
         generate_config(template, tmp_path, variables)
 
         content = tmp_path.read_text()
+        content = _apply_log_mode(content, cfg, "HTTPS")
         content = _apply_common_options(content, cfg, "HTTPS")
 
         tmp_path.write_text(content)
@@ -253,6 +254,7 @@ def configure_server_tcp(cfg) -> None:
         generate_config(template, tmp_path, variables)
 
         content = tmp_path.read_text()
+        content = _apply_log_mode(content, cfg, "TCP")
         content = _apply_common_options(content, cfg, "TCP")
 
         tmp_path.write_text(content)

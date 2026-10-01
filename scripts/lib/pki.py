@@ -258,36 +258,6 @@ def fetch_external_pki(cfg) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def validate_external_pki_files(pki_dir: Path) -> None:
-    """Validate that external PKI files exist at convention paths.
-
-    Expected layout:
-        pki_dir/ca.crt
-        pki_dir/issued/server.crt
-        pki_dir/private/server.key
-        pki_dir/crl.pem
-    """
-    required = [
-        pki_dir / "ca.crt",
-        pki_dir / "issued" / "server.crt",
-        pki_dir / "private" / "server.key",
-        pki_dir / "crl.pem",
-    ]
-
-    missing = [str(p) for p in required if not p.exists()]
-
-    if missing:
-        for path in missing:
-            logger.error(f"External PKI file missing: {path}")
-        logger.error(
-            "External PKI mode requires all certificate files"
-            " to be mounted at convention paths"
-        )
-        sys.exit(1)
-
-    logger.info("External PKI files validated")
-
-
 def init_pki(cfg) -> None:
     """Initialize PKI based on mode.
 
@@ -563,7 +533,7 @@ def crl_refresher(cfg):
     return refetch_external_crl, "re-fetched from the secrets provider"
 
 
-def start_crl_refresh(cfg, proc_manager, interval_hours: int = 24) -> None:
+def start_crl_refresh(cfg, proc_manager, interval_hours: float = 24) -> None:
     """Keep the CRL current in the background, by whichever means applies."""
     import threading
 

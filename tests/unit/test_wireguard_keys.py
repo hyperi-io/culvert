@@ -21,6 +21,7 @@ from lib.wireguard import (
     deallocate_peer_ip,
     generate_server_keys,
     load_or_generate_client_keys,
+    sync_running_interface,
     validate_subnets_no_overlap,
 )
 
@@ -351,3 +352,17 @@ class TestValidateSubnetsNoOverlap:
         ]
         errors = validate_subnets_no_overlap(subnets)
         assert len(errors) == 2
+
+
+class TestSyncRunningInterface:
+    """Issuing a config before the server runs has no interface to update."""
+
+    def test_missing_wg_binary_means_nothing_to_sync(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A host without WireGuard tools must not crash generate-client."""
+        conf = tmp_path / "wg0.conf"
+        conf.write_text("[Interface]\n", encoding="utf-8")
+        monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+        assert sync_running_interface(conf) is False
+        assert not conf.with_suffix(".syncconf").exists()
