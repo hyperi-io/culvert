@@ -9,7 +9,7 @@
 """Process management for culvert container.
 
 Provides ProcessManager for supervised child processes with graceful
-shutdown, plus run()/run_quiet() shell command helpers and directory/
+shutdown, plus the run() shell command helper and directory/
 log rotation setup functions.
 """
 
@@ -37,15 +37,6 @@ def run(
         encoding="utf-8",
         errors="replace",
     )
-
-
-def run_quiet(cmd: str | list) -> bool:
-    """Run a command and return True if successful."""
-    try:
-        run(cmd, check=True, capture=True)
-        return True
-    except subprocess.CalledProcessError:
-        return False
 
 
 def write_secret(path: Path | str, content: str) -> None:
@@ -141,7 +132,7 @@ class ProcessManager:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGHUP, self._reload_handler)
 
-    def _signal_handler(self, signum: int, frame) -> None:
+    def _signal_handler(self, signum: int, frame) -> None:  # noqa: V107 - signal.signal passes the frame
         """Handle shutdown signals."""
         sig_name = signal.Signals(signum).name
         logger.info(
@@ -151,7 +142,7 @@ class ProcessManager:
         self.shutdown_requested = True
         self.shutdown()
 
-    def _reload_handler(self, signum: int, frame) -> None:
+    def _reload_handler(self, signum: int, frame) -> None:  # noqa: V107 - signal.signal passes the frame
         """Handle SIGHUP for config reload."""
         logger.info("Received SIGHUP, signaling OpenVPN processes to reload...")
         for name, proc in self.processes.items():

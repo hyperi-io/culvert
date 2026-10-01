@@ -14,12 +14,10 @@ import pytest
 from lib.config import (
     Config,
     ValidationError,
-    validate_bool,
     validate_cidr_routes,
     validate_hostname,
     validate_ipv4,
     validate_port,
-    validate_url,
 )
 
 
@@ -88,27 +86,6 @@ class TestValidatePort:
             validate_port(65536, "TEST_PORT")
 
 
-class TestValidateBool:
-    """Tests for boolean value validation."""
-
-    def test_valid_bool_values(self):
-        """Valid boolean strings pass validation."""
-        valid_values = ["true", "false", "1", "0", "yes", "no"]
-        for val in valid_values:
-            validate_bool(val, "TEST_BOOL")  # Should not raise
-
-    def test_invalid_bool_values(self):
-        """Invalid boolean strings raise ValidationError."""
-        invalid_values = ["maybe", "2", "enabled", "disabled"]
-        for val in invalid_values:
-            with pytest.raises(ValidationError):
-                validate_bool(val, "TEST_BOOL")
-
-    def test_empty_bool_allowed(self):
-        """Empty string is allowed (not set)."""
-        validate_bool("", "TEST_BOOL")  # Should not raise
-
-
 class TestValidateHostname:
     """Tests for hostname/FQDN validation."""
 
@@ -136,33 +113,6 @@ class TestValidateHostname:
         for hostname in invalid_hostnames:
             with pytest.raises(ValidationError):
                 validate_hostname(hostname, "TEST_HOSTNAME")
-
-
-class TestValidateUrl:
-    """Tests for URL validation."""
-
-    def test_valid_urls(self):
-        """Valid URLs pass validation."""
-        valid_urls = [
-            "http://example.com",
-            "https://example.com",
-            "https://example.com/path",
-            "https://login.microsoftonline.com/tenant/v2.0",
-        ]
-        for url in valid_urls:
-            validate_url(url, "TEST_URL")  # Should not raise
-
-    def test_invalid_urls(self):
-        """Invalid URLs raise ValidationError."""
-        invalid_urls = [
-            "ftp://example.com",
-            "example.com",
-            "//example.com",
-            "not a url",
-        ]
-        for url in invalid_urls:
-            with pytest.raises(ValidationError):
-                validate_url(url, "TEST_URL")
 
 
 class TestValidateCidrRoutes:

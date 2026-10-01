@@ -6,7 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-
+import pytest
 from lib.metrics import (
     _byte_delta,
     _reset_byte_tracking,
@@ -294,3 +294,62 @@ class TestCrlExpiryGauge:
 
         m._pki_dir = ""
         m.update_metrics()
+
+
+class TestParsersSkipMalformedInput:
+    """A garbled line costs that line, never the whole scrape."""
+
+    def test_openvpn_client_with_non_numeric_bytes_is_still_counted(self):
+        line = "CLIENT_LIST\tuser1\t1.2.3.4:1194\t10.0.0.2\t\tlots\t200\t2026-04-01"
+        status = parse_openvpn_status_v3(line)
+        assert status.client_count == 1
+        assert status.clients == []
+        assert status.bytes_received == 0
+
+    def test_wg_transfer_skips_short_and_non_numeric_lines(self):
+        output = "short\tline\nkey1=\tmany\t1\nkey2=\t10\t20\n"
+        peers = parse_wg_transfer(output)
+        assert set(peers) == {"key2="}
+        assert (peers["key2="].rx, peers["key2="].tx) == (10, 20)
+
+    def test_wg_handshakes_skip_short_and_non_numeric_lines(self):
+        output = "lonely\nkey1=\tyesterday\nkey2=\t1700000000\n"
+        peers = parse_wg_handshakes(output)
+        assert set(peers) == {"key2="}
+        assert peers["key2="].timestamp == 1700000000
+
+    def test_unreadable_status_file_reads_as_absent(self, tmp_path):
+        """A path that exists but cannot be read must not raise into the scrape."""
+        assert collect_openvpn_status(str(tmp_path), "udp") is None
+
+
+class TestScrapeAdapter:
+    """The observability port renders whatever the manager holds."""
+
+    def test_wireguard_mode_scrapes_without_a_running_interface(self, tmp_path):
+        """No wg0 (or no wg at all) reads as zero peers, not a failed scrape."""
+        from lib import metrics as m
+
+        adapter = m.init_metrics(max_clients=10, protocol="both", pki_dir="")
+        scrape = adapter.get_metrics().decode()
+
+        assert 'vpn_connected_clients{listener="wg0",protocol="wireguard"} 0.0' in (
+            scrape
+        )
+        assert "vpn_wireguard_up 0.0" in scrape
+        assert "text/plain" in adapter.get_content_type()
+
+    def test_scrape_before_init_is_refused(self, monkeypatch):
+        from lib import metrics as m
+
+        monkeypatch.setattr(m, "_mgr", None)
+        with pytest.raises(RuntimeError, match="before init_metrics"):
+            m.ScrapeAdapter().get_metrics()
+
+    def test_a_backend_error_on_one_gauge_does_not_raise(self):
+        """Setting a labelled gauge without its labels fails inside the backend."""
+        from lib import metrics as m
+
+        m.init_metrics(max_clients=10, protocol="openvpn", pki_dir="")
+        m._gauge_set(m._g_connected, 1)
+        m._gauge_set(None, 1)

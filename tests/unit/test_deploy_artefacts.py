@@ -430,3 +430,67 @@ class TestComposeFragment:
             encoding="utf-8"
         )
         assert "1194:1194/udp" in text
+
+
+def _generator_module():
+    """Load generate-deploy-artefacts.py, whose filename is not a module name."""
+    import importlib.util
+
+    path = REPO_ROOT / "scripts" / "generate-deploy-artefacts.py"
+    spec = importlib.util.spec_from_file_location("generate_deploy_artefacts", path)
+    assert spec is not None and spec.loader is not None, f"cannot load {path}"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _tree(root: Path) -> dict[str, bytes]:
+    """Every file under root, keyed by its path relative to root."""
+    return {
+        p.relative_to(root).as_posix(): p.read_bytes()
+        for p in sorted(root.rglob("*"))
+        if p.is_file()
+    }
+
+
+class TestCommittedArtefactsMatchTheGenerator:
+    """The committed chart and fragment are generator output, byte for byte.
+
+    Every other check in this file reads the committed files. A hand-edit, or a
+    scalo bump that changes the generated shape, would pass all of them and be
+    lost on the next regeneration. Fix a failure by running
+    `python scripts/generate-deploy-artefacts.py` and committing the result.
+    """
+
+    @pytest.fixture
+    def generated(self, tmp_path, monkeypatch):
+        """Run the real generator into tmp_path, leaving the tree untouched."""
+        module = _generator_module()
+        chart_dir = tmp_path / "chart"
+        compose_file = tmp_path / "compose" / "culvert.yaml"
+        monkeypatch.setattr(module, "CHART_DIR", chart_dir)
+        monkeypatch.setattr(module, "COMPOSE_FILE", compose_file)
+        module.main()
+        return chart_dir, compose_file
+
+    def test_chart_matches_the_generator(self, generated):
+        chart_dir, _ = generated
+        committed, fresh = _tree(CHART_DIR), _tree(chart_dir)
+        # The starter values files are written by hand, not generated.
+        assert set(committed) - set(fresh) == set(STARTERS), (
+            "the committed chart and the generator disagree on which files exist"
+        )
+        stale = [name for name in fresh if committed.get(name) != fresh[name]]
+        assert not stale, f"committed chart files differ from the generator: {stale}"
+
+    def test_compose_fragment_matches_the_generator(self, generated):
+        _, compose_file = generated
+        committed = REPO_ROOT / "deploy" / "compose" / "culvert.yaml"
+        assert committed.read_bytes() == compose_file.read_bytes()
+
+    def test_overlay_refuses_a_moved_anchor(self, tmp_path):
+        """A generator whose output shape moved must fail, not ship a bare chart."""
+        target = tmp_path / "values.yaml"
+        target.write_text("nothing the overlay expects\n", encoding="utf-8")
+        with pytest.raises(RuntimeError, match="found 0 times"):
+            _generator_module()._replace_once(target, "anchor\n", "replacement\n")

@@ -505,9 +505,15 @@ def sync_running_interface(conf_path: Path) -> bool:
     connect, with no error anywhere, until the container was restarted.
 
     Returns False when there is no interface to sync, which is the normal case
-    for issuing a config before the server has started.
+    for issuing a config before the server has started. A missing `wg` binary
+    is the same case: there is no WireGuard here to sync.
     """
-    if subprocess.run(["wg", "show", "wg0"], capture_output=True).returncode != 0:
+    try:
+        shown = subprocess.run(["wg", "show", "wg0"], capture_output=True)
+    except FileNotFoundError:
+        logger.info("wg is not installed - no WireGuard interface to sync")
+        return False
+    if shown.returncode != 0:
         logger.info("WireGuard interface wg0 is not up - nothing to sync")
         return False
 

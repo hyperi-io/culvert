@@ -203,3 +203,139 @@ class TestClientNameValidation:
         with pytest.raises(SystemExit) as exc_info:
             revoke.main()
         assert exc_info.value.code == 1
+
+
+class Cli:
+    """revoke-client's main(), plus the paths a test inspects afterwards."""
+
+    def __init__(self, module, pki: Path, clients: Path, server_conf: Path, mp):
+        self.module = module
+        self.pki = pki
+        self.clients = clients
+        self.server_conf = server_conf
+        self._monkeypatch = mp
+
+    def __call__(self, *args: str) -> None:
+        self._monkeypatch.setattr("sys.argv", ["revoke-client", *args])
+        self.module.main()
+
+
+@pytest.fixture
+def cli(revoke, tmp_path, clean_env, monkeypatch):
+    """Run revoke-client's main() with its config cascade pointed at tmp_path."""
+    import lib.config
+
+    pki = revoke.PKI_DIR
+    clients = tmp_path / "clients"
+    server_conf = tmp_path / "server" / "wg0.conf"
+    server_conf.parent.mkdir()
+    real_from_settings = lib.config.Config.from_settings
+
+    def from_settings(*args, **kwargs):
+        cfg = real_from_settings(*args, **kwargs)
+        cfg.pki_dir = pki
+        cfg.wg_conf = server_conf
+        return cfg
+
+    monkeypatch.setattr(lib.config.Config, "from_settings", staticmethod(from_settings))
+    monkeypatch.setenv("OUTPUT_DIR", str(clients))
+    monkeypatch.setattr(revoke, "_wg_interface_up", lambda: False)
+    return Cli(revoke, pki, clients, server_conf, monkeypatch)
+
+
+class TestListing:
+    """--list names every issued client, never the server's own certificate."""
+
+    def test_lists_clients_without_the_server(self, cli, capsys):
+        issued = cli.pki / "issued"
+        issued.mkdir()
+        for name in ("server", "bob", "alice"):
+            (issued / f"{name}.crt").write_text("cert", encoding="utf-8")
+
+        cli("--list")
+        assert capsys.readouterr().out.split() == ["alice", "bob"]
+
+    def test_says_none_when_nothing_is_issued(self, cli, capsys):
+        cli("--list")
+        assert capsys.readouterr().out.split() == ["(none)"]
+
+
+class TestMainRefusals:
+    """Every path that revokes nothing exits non-zero."""
+
+    def test_no_client_name_prints_usage(self, cli, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            cli()
+        assert exc_info.value.code == 1
+        assert "usage:" in capsys.readouterr().out
+
+    def test_openvpn_unknown_client_lists_the_known_ones(self, cli, capsys):
+        issued = cli.pki / "issued"
+        issued.mkdir()
+        (issued / "bob.crt").write_text("cert", encoding="utf-8")
+        with pytest.raises(SystemExit) as exc_info:
+            cli("--protocol", "openvpn", "alice")
+        assert exc_info.value.code == 1
+        assert capsys.readouterr().out.split() == ["bob"]
+
+    def test_all_protocols_with_nothing_found_exits(self, cli):
+        with pytest.raises(SystemExit) as exc_info:
+            cli("alice")
+        assert exc_info.value.code == 1
+
+    def test_wireguard_unknown_client_exits(self, cli):
+        with pytest.raises(SystemExit) as exc_info:
+            cli("--protocol", "wireguard", "alice")
+        assert exc_info.value.code == 1
+
+    def test_refused_live_removal_exits_non_zero(self, cli, revoke, monkeypatch):
+        """The operator must learn the client still has access."""
+        _add_peer(revoke)
+        monkeypatch.setattr(revoke, "_wg_interface_up", lambda: True)
+        monkeypatch.setattr(
+            revoke.subprocess,
+            "run",
+            lambda *a, **kw: subprocess.CompletedProcess([], 1, "", "denied"),
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            cli("--protocol", "wireguard", "alice")
+        assert exc_info.value.code == 1
+
+
+class TestWireGuardRevocationScope:
+    """Revoking a client removes every slot it holds and nothing of anyone else's."""
+
+    def test_every_slot_and_its_files_go_and_other_clients_stay(self, cli, revoke):
+        import json
+
+        peers = cli.pki / "wireguard" / "peers"
+        for peer, key in (
+            ("alice", "AliceKey1="),
+            ("alice.2", "AliceKey2="),
+            ("bob", "BobKey="),
+        ):
+            (peers / f"{peer}.pub").write_text(key + "\n", encoding="utf-8")
+            (peers / f"{peer}.key").write_text("private\n", encoding="utf-8")
+        allocations = cli.pki / "wireguard" / "allocations.json"
+        allocations.write_text(
+            json.dumps({"alice": "10.8.3.2", "alice.2": "10.8.3.3", "bob": "10.8.3.4"})
+        )
+        (cli.pki / "wireguard" / "server_private.key").write_text("ServerPriv=\n")
+        for name in ("alice-wg-split.conf", "alice-wg2-full.conf", "bob-wg-split.conf"):
+            (cli.clients / name).write_text("config", encoding="utf-8")
+
+        cli("--protocol", "wireguard", "alice")
+
+        assert sorted(p.name for p in peers.iterdir()) == ["bob.key", "bob.pub"]
+        assert json.loads(allocations.read_text()) == {"bob": "10.8.3.4"}
+        assert [p.name for p in cli.clients.iterdir()] == ["bob-wg-split.conf"]
+        server = cli.server_conf.read_text(encoding="utf-8")
+        assert "PublicKey = BobKey=" in server
+        assert "AliceKey" not in server
+
+    def test_revocation_without_a_server_key_still_removes_the_peer(self, cli, revoke):
+        """No server key means no config to rebuild; the peer still goes."""
+        peer = _add_peer(revoke)
+        cli("--protocol", "wireguard", "alice")
+        assert not peer.exists()
+        assert not cli.server_conf.exists()

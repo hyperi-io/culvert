@@ -37,8 +37,6 @@ class TestBaseHandler:
                     self.send_json({"status": "ok", "count": 42})
                 elif self.path == "/json-error":
                     self.send_json({"error": "not found"}, status=404)
-                elif self.path == "/text":
-                    self.send_text("Hello, World!")
                 elif self.path == "/html":
                     self.send_html("<h1>Test</h1>")
                 elif self.path == "/html-error":
@@ -80,17 +78,6 @@ class TestBaseHandler:
 
         assert response.status == 404
         assert response.getheader("Content-Type") == "application/json"
-        conn.close()
-
-    def test_send_text(self, test_server):
-        """send_text() returns plain text."""
-        conn = http.client.HTTPConnection("127.0.0.1", test_server)
-        conn.request("GET", "/text")
-        response = conn.getresponse()
-
-        assert response.status == 200
-        assert response.getheader("Content-Type") == "text/plain"
-        assert response.read().decode() == "Hello, World!"
         conn.close()
 
     def test_send_html(self, test_server):
@@ -318,6 +305,20 @@ class TestStartServerFailClosed:
 
         with pytest.raises(ValueError, match="(?i)token"):
             start_client_download_server(0, temp_dir, auth_token="")
+
+    def test_port_in_use_stops_startup(self, temp_dir, monkeypatch):
+        """A taken port must fail loudly rather than leave downloads unserved."""
+        # The server configures the handler class before binding; restore it after.
+        for attr in ("auth_token", "clients_dir"):
+            monkeypatch.setattr(
+                ClientDownloadHandler, attr, getattr(ClientDownloadHandler, attr)
+            )
+        with socket.socket() as holder:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen()
+            port = holder.getsockname()[1]
+            with pytest.raises(OSError):
+                start_client_download_server(port, temp_dir, auth_token="token")
 
 
 class TestClientDownloadHandlerEmptyDir:

@@ -643,6 +643,28 @@ class TestExternalEndpoint:
             cfg.validate()
 
     @pytest.mark.parametrize(
+        ("endpoint", "reason"),
+        [
+            ("[2001:db8::1", "missing its closing bracket"),
+            ("[vpn.example.com]", "not a valid bracketed IPv6 literal"),
+            ("", "is required"),
+        ],
+    )
+    def test_rejects_a_malformed_bracketed_literal(self, endpoint, reason):
+        """validate_endpoint is called on any explicit external endpoint."""
+        from lib.config import ValidationError, validate_endpoint
+
+        with pytest.raises(ValidationError, match=reason):
+            validate_endpoint(endpoint, "CULVERT_EXTERNAL_ENDPOINT")
+
+    def test_a_malformed_endpoint_stops_startup(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_EXTERNAL_ENDPOINT", "[2001:db8::1")
+        exited, errors = _validate_capturing(Config.from_settings())
+        assert exited
+        assert "CULVERT_EXTERNAL_ENDPOINT='[2001:db8::1'" in errors
+
+    @pytest.mark.parametrize(
         ("endpoint", "zone", "inside"),
         [
             # The shape that shipped.
@@ -860,3 +882,139 @@ class TestNetmaskValidation:
         monkeypatch.setenv("CULVERT_UDP_NETMASK", "255.255.0.0")
         cfg = Config.from_settings()
         cfg.validate()
+
+
+def _validate_capturing(cfg: Config, level: str = "ERROR") -> tuple[bool, str]:
+    """Run validate(), returning whether it exited and what it logged at level."""
+    import io
+
+    from scalo.logger import logger
+
+    sink = io.StringIO()
+    sink_id = logger.add(sink, level=level)
+    try:
+        try:
+            cfg.validate()
+            exited = False
+        except SystemExit:
+            exited = True
+    finally:
+        logger.remove(sink_id)
+    return exited, sink.getvalue()
+
+
+class TestOAuth2Validation:
+    """An OIDC listener with a missing setting fails at startup, not at login."""
+
+    @pytest.fixture
+    def oauth2_env(self, clean_env, monkeypatch, tmp_path):
+        """A complete OAuth2 configuration whose TLS files exist."""
+        cert, key = tmp_path / "tls.crt", tmp_path / "tls.key"
+        cert.write_text("cert")
+        key.write_text("key")
+        for name, value in {
+            "CULVERT_SERVER_CN": "vpn.example.com",
+            "CULVERT_OAUTH2_ENABLED": "true",
+            "CULVERT_OAUTH2_ISSUER": "https://idp.example.com/realms/vpn",
+            "CULVERT_OAUTH2_CLIENT_ID": "culvert",
+            "CULVERT_OAUTH2_CLIENT_SECRET": "client-secret",
+            "CULVERT_OAUTH2_TLS_CERT": str(cert),
+            "CULVERT_OAUTH2_TLS_KEY": str(key),
+        }.items():
+            monkeypatch.setenv(name, value)
+        return monkeypatch
+
+    def test_complete_configuration_passes(self, oauth2_env):
+        exited, errors = _validate_capturing(Config.from_settings())
+        assert not exited, errors
+
+    @pytest.mark.parametrize(
+        "variable",
+        [
+            "CULVERT_OAUTH2_ISSUER",
+            "CULVERT_OAUTH2_CLIENT_ID",
+            "CULVERT_OAUTH2_CLIENT_SECRET",
+            "CULVERT_OAUTH2_TLS_CERT",
+            "CULVERT_OAUTH2_TLS_KEY",
+        ],
+    )
+    def test_each_required_setting_is_named(self, oauth2_env, variable):
+        oauth2_env.delenv(variable)
+        exited, errors = _validate_capturing(Config.from_settings())
+        assert exited
+        assert f"{variable} is required when OAuth2 is enabled" in errors
+
+    @pytest.mark.parametrize(
+        "issuer", ["ftp://idp.example.com", "idp.example.com", "//idp.example.com"]
+    )
+    def test_issuer_must_be_an_http_url(self, oauth2_env, issuer):
+        oauth2_env.setenv("CULVERT_OAUTH2_ISSUER", issuer)
+        exited, errors = _validate_capturing(Config.from_settings())
+        assert exited
+        assert "must be a valid URL" in errors
+
+    def test_tls_files_not_yet_present_only_warn(self, oauth2_env, tmp_path):
+        """The cert may be mounted after validation, so absence is not fatal."""
+        oauth2_env.setenv("CULVERT_OAUTH2_TLS_CERT", str(tmp_path / "later.crt"))
+        oauth2_env.setenv("CULVERT_OAUTH2_TLS_KEY", str(tmp_path / "later.key"))
+        exited, warnings = _validate_capturing(Config.from_settings(), "WARNING")
+        assert not exited
+        assert "CULVERT_OAUTH2_TLS_CERT=" in warnings
+        assert "CULVERT_OAUTH2_TLS_KEY=" in warnings
+
+
+class TestServerSettingValidation:
+    """Settings outside their allowed set fail with the variable named."""
+
+    @pytest.mark.parametrize(
+        ("overrides", "expected"),
+        [
+            pytest.param(
+                {"CULVERT_KEY_TYPE": "dsa"}, "CULVERT_KEY_TYPE='dsa'", id="key-type"
+            ),
+            pytest.param(
+                {"CULVERT_PROTOCOL": "ipsec"}, "CULVERT_PROTOCOL='ipsec'", id="protocol"
+            ),
+            pytest.param(
+                {"CULVERT_PKI_MODE": "vault"}, "CULVERT_PKI_MODE='vault'", id="pki-mode"
+            ),
+            pytest.param(
+                {"CULVERT_UDP_ENABLED": "false"},
+                "At least one OpenVPN listener must be enabled",
+                id="no-listener",
+            ),
+            pytest.param(
+                {
+                    "CULVERT_PKI_MODE": "external",
+                    "CULVERT_SECRETS_PROVIDER": "aws",
+                    "CULVERT_SECRETS_CA_CERT_PATH": "ca",
+                    "CULVERT_SECRETS_SERVER_CERT_PATH": "crt",
+                    "CULVERT_SECRETS_SERVER_KEY_PATH": "key",
+                },
+                "CULVERT_SECRETS_AWS_REGION is required",
+                id="aws-region",
+            ),
+            pytest.param(
+                {
+                    "CULVERT_PKI_MODE": "external",
+                    "CULVERT_SECRETS_PROVIDER": "openbao",
+                    "CULVERT_SECRETS_OPENBAO_ADDRESS": "https://bao.example.com",
+                    "CULVERT_SECRETS_OPENBAO_AUTH_METHOD": "kubernetes",
+                    "CULVERT_SECRETS_CA_CERT_PATH": "ca",
+                    "CULVERT_SECRETS_SERVER_CERT_PATH": "crt",
+                    "CULVERT_SECRETS_SERVER_KEY_PATH": "key",
+                },
+                "CULVERT_SECRETS_OPENBAO_ROLE is required",
+                id="openbao-role",
+            ),
+        ],
+    )
+    def test_rejected_with_the_variable_named(
+        self, clean_env, monkeypatch, overrides, expected
+    ):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        for name, value in overrides.items():
+            monkeypatch.setenv(name, value)
+        exited, errors = _validate_capturing(Config.from_settings())
+        assert exited
+        assert expected in errors

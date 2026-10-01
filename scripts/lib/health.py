@@ -63,7 +63,7 @@ def start_observability(addr: str, metrics=None):
 class BaseHandler(BaseHTTPRequestHandler):
     """Base HTTP handler with shared utilities."""
 
-    def log_message(self, format: str, *args) -> None:
+    def log_message(self, format: str, *args) -> None:  # noqa: V105 - BaseHTTPRequestHandler calls it per request
         """Suppress default access logging."""
         pass
 
@@ -73,18 +73,6 @@ class BaseHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
-
-    def send_text(
-        self,
-        text: str,
-        content_type: str = "text/plain",
-        status: int = 200,
-    ) -> None:
-        """Send text response."""
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.end_headers()
-        self.wfile.write(text.encode())
 
     def send_file(self, file_path: Path, filename: str | None = None) -> None:
         """Send file as download."""

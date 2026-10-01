@@ -7,51 +7,12 @@
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
 import stat
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-
-# ---------------------------------------------------------------------------
-# Existing tests (local mode validation)
-# ---------------------------------------------------------------------------
-
-
-def test_external_pki_file_fallback(tmp_path):
-    """External PKI with no provider validates convention paths exist."""
-    from lib.pki import validate_external_pki_files
-
-    pki_dir = tmp_path / "pki"
-    pki_dir.mkdir()
-    (pki_dir / "ca.crt").write_text("CA")
-    (pki_dir / "issued").mkdir()
-    (pki_dir / "issued" / "server.crt").write_text("CERT")
-    (pki_dir / "private").mkdir()
-    (pki_dir / "private" / "server.key").write_text("KEY")
-    (pki_dir / "crl.pem").write_text("CRL")
-    validate_external_pki_files(pki_dir)  # Should not raise
-
-
-def test_external_pki_file_fallback_missing(tmp_path):
-    """External PKI file fallback fails if certs missing."""
-    from lib.pki import validate_external_pki_files
-
-    pki_dir = tmp_path / "pki"
-    pki_dir.mkdir()
-    with pytest.raises(SystemExit):
-        validate_external_pki_files(pki_dir)
-
-
-def test_external_pki_partial_files(tmp_path):
-    """External PKI fails if only some files present."""
-    from lib.pki import validate_external_pki_files
-
-    pki_dir = tmp_path / "pki"
-    pki_dir.mkdir()
-    (pki_dir / "ca.crt").write_text("CA")
-    with pytest.raises(SystemExit):
-        validate_external_pki_files(pki_dir)
-
 
 # ---------------------------------------------------------------------------
 # PEM validation
@@ -375,6 +336,66 @@ class TestCrlRefresh:
         assert refetch_external_crl(cfg) is False
         assert "FAKE_CRL" in (pki / "crl.pem").read_text()
 
+    @staticmethod
+    def _capture(monkeypatch, level):
+        """Collect lib.pki's log lines at one level; loguru does not reach caplog."""
+        import lib.pki
+
+        captured = []
+        monkeypatch.setattr(
+            lib.pki.logger, level, lambda msg, *a, **k: captured.append(str(msg))
+        )
+        return captured
+
+    def test_startup_without_a_refresher_names_the_missing_setting(
+        self, crl_env, monkeypatch
+    ):
+        from lib.pki import start_crl_refresh
+
+        cfg, _, _ = crl_env
+        cfg.secrets_crl_path = ""
+        warnings = self._capture(monkeypatch, "warning")
+        start_crl_refresh(cfg, SimpleNamespace(shutdown_requested=True))
+        assert any("CULVERT_SECRETS_CRL_PATH" in w for w in warnings), warnings
+
+    def test_an_expired_crl_is_reported_at_startup(
+        self, crl_env, write_crl, monkeypatch
+    ):
+        """The loop sleeps before its first pass, so startup reports the margin."""
+        from lib.pki import start_crl_refresh
+
+        cfg, pki, _ = crl_env
+        write_crl(pki / "crl.pem", datetime.now(UTC) - timedelta(days=1))
+        errors = self._capture(monkeypatch, "error")
+        start_crl_refresh(cfg, SimpleNamespace(shutdown_requested=True))
+        assert any("CRL has expired" in e for e in errors), errors
+
+    def test_a_refreshed_crl_makes_openvpn_reread_it(self, crl_env):
+        """OpenVPN reads the CRL at startup, so a new file needs a reload."""
+        from lib.pki import start_crl_refresh
+
+        cfg, pki, src = crl_env
+        (src / "crl.pem").write_text(FAKE_CRL.replace("FAKE_CRL", "REVOKED_BOB"))
+
+        class OneCycle:
+            """Stands in for ProcessManager: stops the loop after its first reload."""
+
+            shutdown_requested = False
+
+            def __init__(self):
+                self.reloaded = threading.Event()
+
+            def _reload_handler(self, signum, frame):
+                self.shutdown_requested = True
+                self.reloaded.set()
+
+        manager = OneCycle()
+        # About one second between passes.
+        start_crl_refresh(cfg, manager, interval_hours=0.0003)
+
+        assert manager.reloaded.wait(timeout=30), "the refreshed CRL was not reloaded"
+        assert "REVOKED_BOB" in (pki / "crl.pem").read_text()
+
 
 class TestCrlExpiry:
     """The CRL's remaining life has to be observable.
@@ -561,3 +582,32 @@ class TestLocalPkiNeverDestroysKeyMaterial:
             assert (local_cfg.pki_dir / name).is_dir(), (
                 f"{name}/ was not created, so build-ca has nothing to write into"
             )
+
+    @staticmethod
+    def _local_pki(cfg, *names: str) -> None:
+        for name in names:
+            path = cfg.pki_dir / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(name, encoding="utf-8")
+
+    def test_a_complete_pki_is_left_alone(self, local_cfg, monkeypatch):
+        """A restart must reuse the CA every issued client already trusts."""
+        import lib.pki as pki_mod
+
+        self._local_pki(local_cfg, "ca.crt", "issued/server.crt", "tc.key")
+
+        def rebuild(cfg):
+            raise AssertionError("a complete local PKI was rebuilt")
+
+        monkeypatch.setattr(pki_mod, "init_pki_local", rebuild)
+        pki_mod.init_pki(local_cfg)
+        assert (local_cfg.pki_dir / "ca.crt").read_text(encoding="utf-8") == "ca.crt"
+
+    def test_a_pki_missing_its_tls_crypt_key_is_completed(self, local_cfg, monkeypatch):
+        import lib.pki as pki_mod
+
+        self._local_pki(local_cfg, "ca.crt", "issued/server.crt")
+        completed = []
+        monkeypatch.setattr(pki_mod, "init_pki_local", completed.append)
+        pki_mod.init_pki(local_cfg)
+        assert completed == [local_cfg]

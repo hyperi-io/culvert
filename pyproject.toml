@@ -36,6 +36,8 @@ otel = ["scalo[opentelemetry]"]
 dev = [
     "ruff>=0.16.1,<0.17",
     "pytest>=9.1,<10",
+    # hyperi-ci measures coverage of scripts/ by passing pytest-cov's --cov flags.
+    "pytest-cov>=7.1,<8",
     # tests/conftest.py builds a real X.509 CRL for the CRL-expiry tests, which
     # shell out to `openssl crl` and so cannot use a stubbed string.
     "cryptography>=50,<51",
@@ -62,6 +64,8 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP"]
 ignore = ["E501"]
+# vulture's own codes, so its `# noqa: V1xx` marks are not reported as invalid.
+external = ["V"]
 
 [tool.ruff.lint.isort]
 force-single-line = false
