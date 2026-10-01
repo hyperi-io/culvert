@@ -35,6 +35,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
     if _scripts_path not in sys.path:
         sys.path.insert(0, _scripts_path)
 
+import scalo.logger  # noqa: E402
 from lib.pki import (  # noqa: E402
     EASYRSA_DIR,
     regenerate_local_crl,
@@ -319,6 +320,9 @@ def revoke_wireguard_client(client_name: str) -> bool:
 
 def main() -> None:
     """Revoke a client's certificate and/or WireGuard peer from the CLI args."""
+    # culvert emits no spans, so no OTLP span exporter is started.
+    scalo.logger.setup(otel_tracing=False)
+
     parser = argparse.ArgumentParser(
         description="Revoke VPN client certificate and/or WireGuard peer",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import scalo.logger
 from lib.config import Config
 from lib.download import start_client_download_server
 from lib.health import health, set_protocol, start_observability
@@ -168,6 +169,10 @@ def main() -> None:
             sys.exit(0 if conn.getresponse().status == 200 else 1)
         except Exception:
             sys.exit(1)
+
+    # The healthcheck above logs nothing and runs every few seconds, so it skips this.
+    # culvert emits no spans, so no OTLP span exporter is started.
+    scalo.logger.setup(otel_tracing=False)
 
     # Load and validate configuration
     cfg = Config.from_settings()
