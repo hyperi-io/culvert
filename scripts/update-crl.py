@@ -24,7 +24,8 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
     if _scripts_path not in sys.path:
         sys.path.insert(0, _scripts_path)
 
-from lib.pki import _regenerate_local_crl  # noqa: E402
+from lib.config import Config  # noqa: E402
+from lib.pki import regenerate_local_crl  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
 # ===============================================================================
@@ -60,12 +61,12 @@ def get_crl_expiry() -> str:
     return "unknown"
 
 
-def update_crl() -> None:
+def update_crl(crl_days: int) -> None:
     """Regenerate the CRL through the shared PKI library and report its expiry."""
     logger.info("Updating CRL...")
 
     # The failure, with Easy-RSA's stderr, is logged by the library.
-    if not _regenerate_local_crl(SimpleNamespace(pki_dir=PKI_DIR)):
+    if not regenerate_local_crl(SimpleNamespace(pki_dir=PKI_DIR, crl_days=crl_days)):
         sys.exit(1)
 
     crl_path = PKI_DIR / "crl.pem"
@@ -91,7 +92,7 @@ def main() -> None:
         logger.error("CA certificate not found. Initialize PKI first.")
         sys.exit(1)
 
-    update_crl()
+    update_crl(Config.from_settings().crl_days)
 
 
 if __name__ == "__main__":

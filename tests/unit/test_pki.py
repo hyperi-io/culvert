@@ -6,6 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
+import os
 import stat
 import threading
 from datetime import UTC, datetime, timedelta
@@ -292,12 +293,12 @@ class TestCrlRefresh:
 
     def test_local_mode_regenerates(self, crl_env):
         """Local mode still regenerates from its own CA."""
-        from lib.pki import _regenerate_local_crl, crl_refresher
+        from lib.pki import crl_refresher, regenerate_local_crl
 
         cfg, _, _ = crl_env
         cfg.pki_mode = "local"
         refresh, how = crl_refresher(cfg)
-        assert refresh is _regenerate_local_crl
+        assert refresh is regenerate_local_crl
         assert "local CA" in how
 
     def test_external_without_crl_path_has_no_refresher(self, crl_env):
@@ -395,6 +396,74 @@ class TestCrlRefresh:
 
         assert manager.reloaded.wait(timeout=30), "the refreshed CRL was not reloaded"
         assert "REVOKED_BOB" in (pki / "crl.pem").read_text()
+
+
+class TestRegenerateLocalCrl:
+    """Every regeneration carries the configured lifetime and stays readable.
+
+    After a restart over an existing PKI nothing initialises it, so no
+    EASYRSA_CRL_DAYS is in the environment and Easy-RSA would fall back to its
+    own 180 days unless the lifetime is passed explicitly.
+    """
+
+    @pytest.fixture
+    def local_cfg(self, tmp_path, clean_env, monkeypatch):
+        """Local-PKI config from the cascade, as the server builds it."""
+        from lib.config import Config
+
+        pki = tmp_path / "pki"
+        pki.mkdir()
+        monkeypatch.setenv("CULVERT_PKI_MODE", "local")
+        monkeypatch.setenv("CULVERT_CRL_DAYS", "30")
+        cfg = Config.from_settings()
+        cfg.pki_dir = pki
+        return cfg
+
+    @staticmethod
+    def _record(cfg) -> dict:
+        import json
+
+        return json.loads((cfg.pki_dir / "crl.pem").read_text(encoding="utf-8"))
+
+    def test_the_refresh_loop_passes_the_configured_lifetime(self, local_cfg, easyrsa):
+        """A process that never initialised the PKI still gets CULVERT_CRL_DAYS."""
+        from lib.pki import crl_refresher
+
+        refresh, _ = crl_refresher(local_cfg)
+        assert refresh(local_cfg) is True
+        assert self._record(local_cfg)["crl_days"] == "30"
+
+    def test_unset_lifetime_is_180_days(self, local_cfg, easyrsa, monkeypatch):
+        from lib.config import Config
+        from lib.pki import regenerate_local_crl
+
+        monkeypatch.delenv("CULVERT_CRL_DAYS")
+        cfg = Config.from_settings()
+        cfg.pki_dir = local_cfg.pki_dir
+        assert regenerate_local_crl(cfg) is True
+        assert self._record(cfg)["crl_days"] == "180"
+
+    def test_a_new_crl_is_readable_by_openvpn(self, local_cfg, easyrsa):
+        """gen-crl creates crl.pem 0600; OpenVPN reads it as nobody."""
+        from lib.pki import regenerate_local_crl
+
+        assert not (local_cfg.pki_dir / "crl.pem").exists()
+        assert regenerate_local_crl(local_cfg) is True
+        mode = stat.S_IMODE((local_cfg.pki_dir / "crl.pem").stat().st_mode)
+        assert mode == 0o644
+
+    def test_a_failure_leaves_the_existing_crl_alone(
+        self, local_cfg, easyrsa, monkeypatch
+    ):
+        from lib.pki import regenerate_local_crl
+
+        crl = local_cfg.pki_dir / "crl.pem"
+        crl.write_text(FAKE_CRL)
+        crl.chmod(0o600)
+        monkeypatch.setenv("FAKE_EASYRSA_FAIL", "gen-crl")
+        assert regenerate_local_crl(local_cfg) is False
+        assert crl.read_text() == FAKE_CRL
+        assert stat.S_IMODE(crl.stat().st_mode) == 0o600
 
 
 class TestCrlExpiry:
@@ -546,7 +615,14 @@ class TestLocalPkiNeverDestroysKeyMaterial:
         commands: list[str] = []
         monkeypatch.setattr(pki_mod, "run", lambda cmd, **kw: commands.append(cmd))
         monkeypatch.setattr(pki_mod, "generate_tc_key", lambda *a, **kw: None)
-        pki_mod.init_pki_local(cfg)
+        # init_pki_local exports Easy-RSA's settings into os.environ, where they
+        # would otherwise outlive this test and reach every later one.
+        saved = os.environ.copy()
+        try:
+            pki_mod.init_pki_local(cfg)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
         return commands
 
     def test_init_pki_is_never_issued_on_a_fresh_directory(

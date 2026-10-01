@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import pytest
 from lib.process import (
-    ProcessManager,
     run,
     setup_directories,
     setup_scripts,
@@ -136,23 +135,6 @@ class TestSetupScripts:
 
         FakeCfg.scripts_dir.mkdir()
         setup_scripts(FakeCfg())  # Should not raise
-
-
-@pytest.fixture
-def manager():
-    """A ProcessManager whose children and signal handlers are cleaned up after."""
-    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
-    saved = {sig: signal.getsignal(sig) for sig in handled}
-    pm = ProcessManager()
-    yield pm
-    for proc in pm.processes.values():
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait()
-    for log_f in pm._daemon_logs.values():
-        log_f.close()
-    for sig, handler in saved.items():
-        signal.signal(sig, handler)
 
 
 class TestProcessManager:

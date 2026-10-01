@@ -28,21 +28,24 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 # Allow importing lib/ modules from scripts directory (container and dev paths)
 for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
     if _scripts_path not in sys.path:
         sys.path.insert(0, _scripts_path)
 
-from lib.pki import validate_client_name  # noqa: E402
+from lib.pki import (  # noqa: E402
+    EASYRSA_DIR,
+    regenerate_local_crl,
+    validate_client_name,
+)
 from lib.process import write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
 # ===============================================================================
 # Configuration
 # ===============================================================================
-
-EASYRSA = Path("/usr/share/easy-rsa")
 
 # Lazy-loaded from CULVERT_* config cascade (populated in main)
 PKI_DIR = Path("/etc/vpn/pki")
@@ -83,8 +86,8 @@ def list_clients() -> list[str]:
     return sorted(clients)
 
 
-def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
-    """Revoke a client certificate.
+def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> bool:
+    """Revoke a client certificate and regenerate the CRL for crl_days.
 
     Returns True when a certificate was revoked. With missing_ok (the
     --protocol all path) a missing certificate is a skip, not an abort,
@@ -116,7 +119,7 @@ def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
     env = os.environ.copy()
     env.update(
         {
-            "EASYRSA": str(EASYRSA),
+            "EASYRSA": str(EASYRSA_DIR),
             "EASYRSA_PKI": str(PKI_DIR),
             "EASYRSA_BATCH": "1",
         }
@@ -126,7 +129,7 @@ def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
     logger.info("Revoking certificate...")
     result = subprocess.run(
         ["./easyrsa", "revoke", client_name],
-        cwd=EASYRSA,
+        cwd=EASYRSA_DIR,
         env=env,
         capture_output=True,
         text=True,
@@ -139,17 +142,8 @@ def revoke_client(client_name: str, missing_ok: bool = False) -> bool:
 
     # Update CRL
     logger.info("Updating CRL...")
-    result = subprocess.run(
-        ["./easyrsa", "gen-crl"],
-        cwd=EASYRSA,
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode != 0:
-        logger.error(f"Failed to update CRL: {result.stderr}")
+    # The failure, with Easy-RSA's stderr, is logged by the library.
+    if not regenerate_local_crl(SimpleNamespace(pki_dir=PKI_DIR, crl_days=crl_days)):
         sys.exit(1)
 
     # Remove client files
@@ -389,7 +383,9 @@ Examples:
 
     try:
         if args.protocol == "all":
-            ovpn_revoked = revoke_client(args.client_name, missing_ok=True)
+            ovpn_revoked = revoke_client(
+                args.client_name, vpn_cfg.crl_days, missing_ok=True
+            )
             wg_revoked = revoke_wireguard_client(args.client_name)
             if not (ovpn_revoked or wg_revoked):
                 logger.error(
@@ -398,7 +394,7 @@ Examples:
                 )
                 sys.exit(1)
         elif args.protocol == "openvpn":
-            revoke_client(args.client_name)
+            revoke_client(args.client_name, vpn_cfg.crl_days)
         elif not revoke_wireguard_client(args.client_name):
             sys.exit(1)
     except RevocationError as exc:
