@@ -163,6 +163,18 @@ def validate_cidr_routes(value: str, name: str) -> None:
             raise ValidationError(f"{name} contains invalid CIDR: '{route}'")
 
 
+def validate_crl_days(value: int, invalid: str, name: str) -> None:
+    """Validate the CRL lifetime: a positive whole number of days.
+
+    `invalid` carries the original text when the raw setting could not be
+    parsed as an integer at all; `value` is then the silent 180 fallback.
+    """
+    if invalid:
+        raise ValidationError(f"{name}='{invalid}' must be a whole number of days")
+    if value <= 0:
+        raise ValidationError(f"{name}={value} must be greater than 0")
+
+
 def _subnet_or_none(network: str, netmask: str) -> str | None:
     """CIDR string for a network/netmask pair, or None if malformed."""
     try:
@@ -354,6 +366,9 @@ class Config:
     ca_expire_days: int = 3650
     cert_expire_days: int = 730
     crl_days: int = 180
+    # The original text when CULVERT_CRL_DAYS could not be parsed as an
+    # integer, so crl_days stays a plain int for every consumer.
+    crl_days_invalid: str = ""
 
     # Client Download Server
     client_download_enabled: bool = False
@@ -519,6 +534,8 @@ class Config:
         else:
             max_clients = int(raw_max)
 
+        crl_days, crl_days_invalid = _settings_crl_days(s)
+
         # Read per-listener OAuth2 with fallback to global
         oauth2_enabled = _settings_bool(s, "oauth2_enabled", False)
         oauth2_udp_enabled = _settings_bool(s, "oauth2_udp_enabled", oauth2_enabled)
@@ -635,7 +652,8 @@ class Config:
             # Certificate lifetimes (local PKI)
             ca_expire_days=_settings_int(s, "ca_expire_days", 3650),
             cert_expire_days=_settings_int(s, "cert_expire_days", 730),
-            crl_days=_settings_int(s, "crl_days", 180),
+            crl_days=crl_days,
+            crl_days_invalid=crl_days_invalid,
             # Client download
             client_download_enabled=_settings_bool(s, "client_download_enabled", False),
             client_download_port=_settings_int(s, "client_download_port", 8443),
@@ -779,6 +797,13 @@ class Config:
             errors.append(
                 f"CULVERT_PKI_MODE='{self.pki_mode}' must be 'local' or 'external'"
             )
+
+        # CRL lifetime -- reaches Easy-RSA as EASYRSA_CRL_DAYS verbatim, so an
+        # invalid value is rejected here rather than silently breaking revocation.
+        try:
+            validate_crl_days(self.crl_days, self.crl_days_invalid, "CULVERT_CRL_DAYS")
+        except ValidationError as e:
+            errors.append(str(e))
 
         # stunnel cert/key required when HTTPS listener enabled
         if self.https_enabled and self.protocol in (
@@ -1023,3 +1048,19 @@ def _settings_int(s, key: str, default: int) -> int:
         return int(val)
     except (ValueError, TypeError):
         return default
+
+
+def _settings_crl_days(s) -> tuple[int, str]:
+    """Read CULVERT_CRL_DAYS as (value, invalid_raw).
+
+    Unlike _settings_int, a non-numeric value does not silently become the
+    default: value falls back to 180 to keep crl_days a plain int, and
+    invalid_raw carries the original text for validate() to reject.
+    """
+    val = s.get("crl_days", 180)
+    if isinstance(val, int):
+        return val, ""
+    try:
+        return int(val), ""
+    except (ValueError, TypeError):
+        return 180, str(val)

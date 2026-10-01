@@ -121,6 +121,7 @@ await manager.close()  # async - pki.py runs it via asyncio.run
 | Need | scalo module | Call site |
 |------|---------------------|-----------|
 | Logging | `scalo.logger.logger` | all `scripts/lib/*.py` |
+| Logging setup | `scalo.logger.setup` | `scripts/entrypoint.py`, `scripts/generate-client.py`, `scripts/revoke-client.py`, `scripts/update-crl.py` |
 | Config | `scalo.config.get_config` | `scripts/lib/config.py` |
 | Metrics | `scalo.metrics.create_metrics` | `scripts/lib/metrics.py` |
 | Secrets | `scalo.secrets.providers.*` | `scripts/lib/pki.py` |

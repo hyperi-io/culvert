@@ -90,6 +90,11 @@ release:
     platforms:
       - linux/amd64
       - linux/arm64
+    # Passed through to `docker build --build-arg`. VERSION feeds the
+    # Dockerfile's `ARG VERSION`, which otherwise defaults to "dev" and is
+    # baked into /etc/vpn/VERSION for runtime inspection.
+    build_args:
+      VERSION: "{version}"
     # GHCR and most registry UIs show org.opencontainers.image.description on
     # the package page. This label replaces the pyproject description hyperi-ci
     # would otherwise use, and because it arrives as `docker build --label`, a
