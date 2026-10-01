@@ -18,6 +18,7 @@ Supports two modes:
 import os
 import random
 import re
+import shlex
 import sys
 import time as _time
 from datetime import UTC, datetime
@@ -26,6 +27,9 @@ from pathlib import Path
 from scalo.logger import logger
 
 from lib.process import run
+
+# Easy-RSA is not on PATH, so it is run from its install directory.
+EASYRSA_DIR = Path("/usr/share/easy-rsa")
 
 # ---------------------------------------------------------------------------
 # Client name validation
@@ -328,9 +332,9 @@ def init_pki_local(cfg) -> None:
     """Initialize local PKI with Easy-RSA."""
     logger.info("Initializing local Easy-RSA PKI...")
 
-    easyrsa = Path("/usr/share/easy-rsa")
+    easyrsa = EASYRSA_DIR
     if not easyrsa.exists():
-        logger.error("Easy-RSA not found at /usr/share/easy-rsa")
+        logger.error(f"Easy-RSA not found at {easyrsa}")
         sys.exit(1)
 
     # Set Easy-RSA environment
@@ -464,11 +468,15 @@ def log_crl_expiry(cfg) -> float | None:
 
 
 def _regenerate_local_crl(cfg) -> bool:
-    """Regenerate the CRL from the local CA. True when it was rewritten."""
-    # easyrsa is not on PATH; run it from its install dir like every other call
-    # site, pointing EASYRSA_PKI at our dir.
+    """Regenerate the CRL from the local CA. True when it was rewritten.
+
+    Shared by the server's refresh loop and the update-crl command.
+    """
+    easyrsa = shlex.quote(str(EASYRSA_DIR))
+    pki_dir = shlex.quote(str(cfg.pki_dir))
     result = run(
-        f"cd /usr/share/easy-rsa && EASYRSA_PKI={cfg.pki_dir} ./easyrsa gen-crl",
+        f"cd {easyrsa} && EASYRSA={easyrsa} EASYRSA_PKI={pki_dir} EASYRSA_BATCH=1"
+        " ./easyrsa gen-crl",
         check=False,
         capture=True,
     )
@@ -476,10 +484,8 @@ def _regenerate_local_crl(cfg) -> bool:
         return True
     # Local regeneration reaches nothing off-box, so a failure is a defect
     # rather than a transient.
-    logger.error(
-        "CRL regeneration failed",
-        stderr=(result.stderr[:200] if result.stderr else ""),
-    )
+    # In the message, not a field: the console log format does not show fields.
+    logger.error(f"CRL regeneration failed: {(result.stderr or '').strip()}")
     return False
 
 

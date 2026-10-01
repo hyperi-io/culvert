@@ -46,6 +46,16 @@ class ClientDownloadHandler(BaseHandler):
         header = self.headers.get("Authorization", "")
         return hmac.compare_digest(header, f"Bearer {self.auth_token}")
 
+    def handle(self) -> None:  # noqa: V105 - socketserver calls it once per connection
+        """Serve one connection, treating a client that hangs up as routine."""
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            # A client gone before its TLS 1.3 session tickets are written lands here.
+            logger.debug(
+                "Client disconnected mid-exchange", client_ip=self.client_address[0]
+            )
+
     def do_GET(self) -> None:  # noqa: N802, V105 - BaseHTTPRequestHandler dispatches GET by name
         """Handle GET requests."""
         # Health stays unauthenticated for liveness probes.
@@ -241,12 +251,14 @@ def start_client_download_server(
     bind: str = "127.0.0.1",
     tls_cert: str = "",
     tls_key: str = "",
-) -> None:
+) -> HTTPServer:
     """Start client download server in a background thread.
 
     Fails closed: refuses to start without a bearer token, since the served
     .ovpn files embed client private keys. Binds to loopback by default; wraps
     the socket in TLS when a cert/key pair is supplied.
+
+    Returns the running server, so a caller can shutdown() and server_close() it.
     """
     if not auth_token:
         raise ValueError(
@@ -292,3 +304,4 @@ def start_client_download_server(
 
     thread = threading.Thread(target=run_server, daemon=True)
     thread.start()
+    return server

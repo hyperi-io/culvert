@@ -24,6 +24,15 @@ from lib.download import ClientDownloadHandler, start_client_download_server
 from lib.health import BaseHandler
 
 
+@pytest.fixture
+def restore_handler_config(monkeypatch):
+    """Put back the handler's class-level config, which the real server sets."""
+    for attr in ("auth_token", "clients_dir"):
+        monkeypatch.setattr(
+            ClientDownloadHandler, attr, getattr(ClientDownloadHandler, attr)
+        )
+
+
 class TestBaseHandler:
     """Tests for BaseHandler shared utilities."""
 
@@ -306,13 +315,8 @@ class TestStartServerFailClosed:
         with pytest.raises(ValueError, match="(?i)token"):
             start_client_download_server(0, temp_dir, auth_token="")
 
-    def test_port_in_use_stops_startup(self, temp_dir, monkeypatch):
+    def test_port_in_use_stops_startup(self, temp_dir, restore_handler_config):
         """A taken port must fail loudly rather than leave downloads unserved."""
-        # The server configures the handler class before binding; restore it after.
-        for attr in ("auth_token", "clients_dir"):
-            monkeypatch.setattr(
-                ClientDownloadHandler, attr, getattr(ClientDownloadHandler, attr)
-            )
         with socket.socket() as holder:
             holder.bind(("127.0.0.1", 0))
             holder.listen()
@@ -395,8 +399,8 @@ class TestDownloadServerTlsFloor:
     """
 
     @pytest.fixture
-    def tls_server(self, temp_dir):
-        """Start the real download server on a self-signed cert."""
+    def tls_server(self, temp_dir, restore_handler_config):
+        """Run the real download server on a self-signed cert for one test."""
         cert, key = temp_dir / "server.pem", temp_dir / "server.key"
         subprocess.run(
             [
@@ -432,23 +436,31 @@ class TestDownloadServerTlsFloor:
 
         clients = temp_dir / "tls-clients"
         clients.mkdir()
-        start_client_download_server(
+        server = start_client_download_server(
             port=port,
             clients_dir=clients,
             auth_token="test-token",
             tls_cert=str(cert),
             tls_key=str(key),
         )
-        return port
+        yield port
+        server.shutdown()
+        server.server_close()
 
     @staticmethod
-    def _handshake(port: int, max_version: ssl.TLSVersion | None) -> str | None:
-        """Negotiated TLS version, or None if the server refused."""
+    def _client_context(max_version: ssl.TLSVersion | None = None) -> ssl.SSLContext:
+        """A client context that trusts the self-signed test certificate."""
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         if max_version is not None:
             ctx.maximum_version = max_version
+        return ctx
+
+    @classmethod
+    def _handshake(cls, port: int, max_version: ssl.TLSVersion | None) -> str | None:
+        """Negotiated TLS version, or None if the server refused."""
+        ctx = cls._client_context(max_version)
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=10) as raw:
                 with ctx.wrap_socket(raw, server_hostname="localhost") as tls:
@@ -467,3 +479,23 @@ class TestDownloadServerTlsFloor:
     def test_tls13_client_connects(self, tls_server):
         """The floor is a floor, not a wall - 1.3 still works."""
         assert self._handshake(tls_server, None) == "TLSv1.3"
+
+    def test_a_client_that_hangs_up_after_the_handshake_is_routine(
+        self, tls_server, capfd
+    ):
+        """A TLS probe that never sends a request must not print a server traceback."""
+        assert self._handshake(tls_server, None) == "TLSv1.3"
+
+        # The server takes one connection at a time, so this reply means the
+        # hang-up above has been fully handled.
+        conn = http.client.HTTPSConnection(
+            "127.0.0.1", tls_server, timeout=10, context=self._client_context()
+        )
+        try:
+            conn.request("GET", "/health")
+            assert conn.getresponse().status == 200
+        finally:
+            conn.close()
+
+        err = capfd.readouterr().err
+        assert "Traceback" not in err, err
