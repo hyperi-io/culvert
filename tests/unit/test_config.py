@@ -1018,3 +1018,46 @@ class TestServerSettingValidation:
         exited, errors = _validate_capturing(Config.from_settings())
         assert exited
         assert expected in errors
+
+
+class TestCrlDaysValidation:
+    """CULVERT_CRL_DAYS: a positive whole number of days, default 180."""
+
+    def test_unset_defaults_to_180(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        cfg = Config.from_settings()
+        assert cfg.crl_days == 180
+        exited, _ = _validate_capturing(cfg)
+        assert not exited
+
+    def test_valid_value_passes(self, clean_env, monkeypatch):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_CRL_DAYS", "365")
+        cfg = Config.from_settings()
+        assert cfg.crl_days == 365
+        exited, _ = _validate_capturing(cfg)
+        assert not exited
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            pytest.param("0", "CULVERT_CRL_DAYS=0 must be greater than 0", id="zero"),
+            pytest.param(
+                "-30", "CULVERT_CRL_DAYS=-30 must be greater than 0", id="negative"
+            ),
+            pytest.param(
+                "forever",
+                "CULVERT_CRL_DAYS='forever' must be a whole number of days",
+                id="non-numeric",
+            ),
+        ],
+    )
+    def test_rejected_with_the_reason_named(
+        self, clean_env, monkeypatch, value, expected
+    ):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_CRL_DAYS", value)
+        cfg = Config.from_settings()
+        exited, errors = _validate_capturing(cfg)
+        assert exited
+        assert expected in errors
