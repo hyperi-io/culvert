@@ -39,6 +39,8 @@ quality:
     # has a few dynamic-pattern diagnostics, so kept non-blocking for now.
     # Promote to `blocking` once tests/ typing is addressed.
     ty: warn
+    # At zero findings over scripts/ and tests/, so new dead code fails the build.
+    vulture: blocking
 
 test:
   enabled: true

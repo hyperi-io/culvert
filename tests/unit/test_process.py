@@ -138,42 +138,6 @@ class TestSetupScripts:
         setup_scripts(FakeCfg())  # Should not raise
 
 
-class TestProcessManager:
-    """Tests for ProcessManager lifecycle."""
-
-    def test_start_tracks_process(self):
-        """Started processes are tracked in the processes dict."""
-        pm = ProcessManager()
-        proc = pm.start("test-sleep", ["sleep", "60"], daemon=True)
-        assert proc is not None
-        assert "test-sleep" in pm.processes
-        proc.kill()
-        proc.wait()
-
-    def test_start_returns_none_on_bad_command(self):
-        """Invalid commands return None."""
-        pm = ProcessManager()
-        proc = pm.start("bad", ["/nonexistent/binary/xyz123"], daemon=True)
-        assert proc is None
-
-    def test_wait_for_main_returns_exit_code(self):
-        """wait_for_main returns process exit code."""
-        pm = ProcessManager()
-        pm.start("quick-exit", ["true"], daemon=False)
-        code = pm.wait_for_main("quick-exit")
-        assert code == 0
-
-    def test_wait_for_main_nonexistent_returns_1(self):
-        """Waiting on unknown process returns 1."""
-        pm = ProcessManager()
-        assert pm.wait_for_main("nonexistent") == 1
-
-    def test_shutdown_requested_flag(self):
-        """shutdown_requested starts as False."""
-        pm = ProcessManager()
-        assert pm.shutdown_requested is False
-
-
 @pytest.fixture
 def manager():
     """A ProcessManager whose children and signal handlers are cleaned up after."""
@@ -189,6 +153,35 @@ def manager():
         log_f.close()
     for sig, handler in saved.items():
         signal.signal(sig, handler)
+
+
+class TestProcessManager:
+    """Tests for ProcessManager lifecycle."""
+
+    def test_start_tracks_process(self, manager):
+        """Started processes are tracked in the processes dict."""
+        proc = manager.start("test-sleep", ["sleep", "60"], daemon=True)
+        assert proc is not None
+        assert "test-sleep" in manager.processes
+
+    def test_start_returns_none_on_bad_command(self, manager):
+        """Invalid commands return None."""
+        proc = manager.start("bad", ["/nonexistent/binary/xyz123"], daemon=True)
+        assert proc is None
+
+    def test_wait_for_main_returns_exit_code(self, manager):
+        """wait_for_main returns process exit code."""
+        manager.start("quick-exit", ["true"], daemon=False)
+        code = manager.wait_for_main("quick-exit")
+        assert code == 0
+
+    def test_wait_for_main_nonexistent_returns_1(self, manager):
+        """Waiting on unknown process returns 1."""
+        assert manager.wait_for_main("nonexistent") == 1
+
+    def test_shutdown_requested_flag(self, manager):
+        """shutdown_requested starts as False."""
+        assert manager.shutdown_requested is False
 
 
 class TestDaemonLogs:

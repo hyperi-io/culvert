@@ -14,19 +14,24 @@ Run periodically (e.g., via cron or entrypoint) to ensure CRL doesn't expire.
 Usage: update-crl
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
-from scalo.logger import logger
+# Allow importing lib/ modules from scripts directory (container and dev paths)
+for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
+    if _scripts_path not in sys.path:
+        sys.path.insert(0, _scripts_path)
+
+from lib.pki import _regenerate_local_crl  # noqa: E402
+from scalo.logger import logger  # noqa: E402
 
 # ===============================================================================
 # Configuration
 # ===============================================================================
 
 PKI_DIR = Path("/etc/vpn/pki")
-EASYRSA = Path("/usr/share/easy-rsa")
 
 
 # ===============================================================================
@@ -56,32 +61,11 @@ def get_crl_expiry() -> str:
 
 
 def update_crl() -> None:
-    """Update the Certificate Revocation List."""
+    """Regenerate the CRL through the shared PKI library and report its expiry."""
     logger.info("Updating CRL...")
 
-    # Set up environment for easy-rsa
-    env = os.environ.copy()
-    env.update(
-        {
-            "EASYRSA": str(EASYRSA),
-            "EASYRSA_PKI": str(PKI_DIR),
-            "EASYRSA_BATCH": "1",
-        }
-    )
-
-    # Generate CRL
-    result = subprocess.run(
-        ["./easyrsa", "gen-crl"],
-        cwd=EASYRSA,
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-    if result.returncode != 0:
-        logger.error(f"Failed to update CRL: {result.stderr}")
+    # The failure, with Easy-RSA's stderr, is logged by the library.
+    if not _regenerate_local_crl(SimpleNamespace(pki_dir=PKI_DIR)):
         sys.exit(1)
 
     crl_path = PKI_DIR / "crl.pem"
