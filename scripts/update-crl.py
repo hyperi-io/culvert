@@ -24,6 +24,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
     if _scripts_path not in sys.path:
         sys.path.insert(0, _scripts_path)
 
+import scalo.logger  # noqa: E402
 from lib.config import Config  # noqa: E402
 from lib.pki import regenerate_local_crl  # noqa: E402
 from scalo.logger import logger  # noqa: E402
@@ -84,6 +85,9 @@ def update_crl(crl_days: int) -> None:
 
 def main() -> None:
     """Regenerate the CRL from the local PKI."""
+    # culvert emits no spans, so no OTLP span exporter is started.
+    scalo.logger.setup(otel_tracing=False)
+
     if not PKI_DIR.exists():
         logger.error("PKI directory not found. Initialize PKI first.")
         sys.exit(1)

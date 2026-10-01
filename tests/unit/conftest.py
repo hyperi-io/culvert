@@ -41,6 +41,16 @@ Path(os.environ["EASYRSA_PKI"], "crl.pem").write_text(json.dumps(record))
 """
 
 
+@pytest.fixture(autouse=True)
+def _no_logger_sinks(monkeypatch):
+    """Stop an entry point's scalo logger setup installing sinks during a test.
+
+    A sink bound to one test's captured stderr outlives it, and loguru reports a
+    handler error when a later test logs to the closed stream.
+    """
+    monkeypatch.setattr("scalo.logger.setup", lambda **_kwargs: None)
+
+
 @pytest.fixture
 def manager():
     """A ProcessManager whose children and signal handlers are cleaned up after."""
