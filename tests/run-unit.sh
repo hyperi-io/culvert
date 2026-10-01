@@ -20,11 +20,10 @@ log_error() { echo -e "\033[0;31m[ERROR]\033[0m $*" >&2; }
 #===============================================================================
 # Check Dependencies
 #===============================================================================
-check_bats() {
-    if ! command -v bats >/dev/null 2>&1; then
-        log_error "BATS not found. Install with:"
-        log_error "  macOS: brew install bats-core"
-        log_error "  Ubuntu: sudo apt install bats"
+check_uv() {
+    if ! command -v uv >/dev/null 2>&1; then
+        log_error "uv not found. Install with:"
+        log_error "  curl -LsSf https://astral.sh/uv/install.sh | sh"
         exit 1
     fi
 }
@@ -33,17 +32,17 @@ check_bats() {
 # Main
 #===============================================================================
 main() {
-    check_bats
+    check_uv
 
     log_info "Running unit tests..."
     echo ""
 
-    cd "${SCRIPT_DIR}"
+    cd "${SCRIPT_DIR}/.."
 
     if [[ "${1:-}" == "--verbose" ]] || [[ "${1:-}" == "-v" ]]; then
-        bats --verbose-run unit/
+        uv run --frozen --extra dev pytest tests/unit -v
     else
-        bats unit/
+        uv run --frozen --extra dev pytest tests/unit
     fi
 }
 

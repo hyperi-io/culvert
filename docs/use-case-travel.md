@@ -42,7 +42,7 @@ directly), and mobile-tolerant timers:
 
 Publish the ports you use:
 
-```
+```bash
 -p 443:443/tcp     # OpenVPN via stunnel
 -p 4443:4443/tcp   # WireGuard via wstunnel
 ```

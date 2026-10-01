@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Process management for culvert container.
+"""Process management for culvert container.
 
 Provides ProcessManager for supervised child processes with graceful
 shutdown, plus run()/run_quiet() shell command helpers and directory/
@@ -129,6 +128,7 @@ class ProcessManager:
     """Manages VPN child processes with proper signal handling."""
 
     def __init__(self):
+        """Start with no children and install the shutdown signal handlers."""
         self.processes: dict[str, subprocess.Popen] = {}
         self.shutdown_requested = False
         self.config = None
@@ -136,7 +136,7 @@ class ProcessManager:
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self) -> None:
-        """Setup handlers for SIGTERM and SIGINT."""
+        """Install handlers for SIGTERM and SIGINT."""
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGHUP, self._reload_handler)

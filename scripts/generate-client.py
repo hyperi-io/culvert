@@ -7,8 +7,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Generate OpenVPN and WireGuard client configurations.
+"""Generate OpenVPN and WireGuard client configurations.
 
 Each run issues material for ONE named client: its own certificate and its
 own tls-crypt-v2 key, so a client can be revoked individually. Pass --name
@@ -46,6 +45,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
     if _scripts_path not in sys.path:
         sys.path.insert(0, _scripts_path)
 
+from lib.pki import validate_client_name  # noqa: E402
 from lib.process import write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
@@ -62,6 +62,7 @@ class Config:
     """
 
     def __init__(self):
+        """Load the CULVERT_* cascade and derive the client-generation fields."""
         from lib.config import Config as VpnConfig
 
         vpn = VpnConfig.from_settings()
@@ -110,13 +111,6 @@ class Config:
 # ===============================================================================
 # Validation
 # ===============================================================================
-
-
-def validate_client_name(name: str) -> bool:
-    """Validate client name contains only safe characters."""
-    if not name:
-        return False
-    return bool(re.match(r"^[a-zA-Z0-9_-]+$", name))
 
 
 def validate_wg_pubkey(key: str) -> bool:
@@ -215,7 +209,6 @@ def generate_ovpn_config(
     proxy_auth: bool = False,
 ) -> None:
     """Generate a single .ovpn configuration file."""
-
     # Determine remote line based on protocol
     stunnel_config = None
     if protocol == "udp":
@@ -637,6 +630,7 @@ def generate_wireguard_configs(
 
 
 def main() -> None:
+    """Generate a client's OpenVPN and/or WireGuard config from the CLI args."""
     cfg = Config()
 
     # Unvalidated, a bad setting reaches a client file and fails only on

@@ -58,6 +58,7 @@ def _metrics_port(addr: str) -> int:
 
     Raises:
         ValueError: If ``addr`` has no parseable trailing port.
+
     """
     _, sep, port = addr.rpartition(":")
     if not sep:
@@ -82,6 +83,7 @@ def deployment_contract(
 
     Returns:
         The populated :class:`DeploymentContract`.
+
     """
     cfg = cfg or Config()
 

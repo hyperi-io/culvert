@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-PKI management for culvert.
+"""PKI management for culvert.
 
 Supports two modes:
 - local: Easy-RSA managed PKI (default)
@@ -18,6 +17,7 @@ Supports two modes:
 
 import os
 import random
+import re
 import sys
 import time as _time
 from datetime import UTC, datetime
@@ -26,6 +26,23 @@ from pathlib import Path
 from scalo.logger import logger
 
 from lib.process import run
+
+# ---------------------------------------------------------------------------
+# Client name validation
+# ---------------------------------------------------------------------------
+
+
+def validate_client_name(name: str) -> bool:
+    """Validate a client name contains only safe characters.
+
+    Shared by generate-client.py and revoke-client.py: both interpolate the
+    name into PKI file paths (PKI_DIR / "issued" / f"{name}.crt"), so a name
+    carrying "../" or a path separator must be refused before it reaches one.
+    """
+    if not name:
+        return False
+    return bool(re.match(r"^[a-zA-Z0-9_-]+$", name))
+
 
 # ---------------------------------------------------------------------------
 # PEM validation
@@ -135,7 +152,7 @@ def _health_check_with_retry(manager, provider_name: str, retries: int = 3) -> b
                 f"Provider health check attempt {attempt + 1}/{retries}: {e}"
             )
         if attempt < retries - 1:
-            delay = 5 + random.uniform(0, 2)
+            delay = 5 + random.uniform(0, 2)  # noqa: S311 - retry jitter, not a secret
             _time.sleep(delay)
     return False
 
@@ -232,8 +249,8 @@ def fetch_external_pki(cfg) -> bool:
             import asyncio
 
             asyncio.run(manager.close())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Secrets provider close failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -525,8 +542,8 @@ def refetch_external_crl(cfg) -> bool:
             import asyncio
 
             asyncio.run(manager.close())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Secrets provider close failed: {e}")
 
 
 def crl_refresher(cfg):

@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Metrics collection for culvert.
+"""Metrics collection for culvert.
 
 Uses scalo MetricsManager for dual Prometheus/OTel export.
 When OTel is configured, the same metrics push via OTLP AND serve on
@@ -459,13 +458,25 @@ class ScrapeAdapter:
     """
 
     def get_metrics(self) -> bytes:
+        """Refresh the gauges, then return the exposition body."""
         update_metrics()
-        assert _mgr is not None  # init_metrics sets it before handing out
-        return _mgr.metrics
+        return _manager().metrics
 
     def get_content_type(self) -> str:
-        assert _mgr is not None
-        return _mgr.content_type
+        """Return the exposition content type for the active backend."""
+        return _manager().content_type
+
+
+def _manager():
+    """Return the metrics manager, which init_metrics sets before handing out.
+
+    Raises:
+        RuntimeError: If init_metrics has not run.
+
+    """
+    if _mgr is None:
+        raise RuntimeError("metrics requested before init_metrics ran")
+    return _mgr
 
 
 def init_metrics(

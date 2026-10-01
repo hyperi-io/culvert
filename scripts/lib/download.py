@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Client config download server for culvert.
+"""Client config download server for culvert.
 
 Provides a simple web interface for employees to download their
 VPN .ovpn configuration files.
@@ -41,7 +40,7 @@ class ClientDownloadHandler(BaseHandler):
     auth_token: str = ""
 
     def _authorised(self) -> bool:
-        """True when no token is configured, or a matching Bearer is presented."""
+        """Return True when no token is configured, or a matching Bearer is presented."""
         if not self.auth_token:
             return True
         header = self.headers.get("Authorization", "")

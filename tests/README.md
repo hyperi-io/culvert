@@ -4,7 +4,7 @@ This directory contains the test framework for the culvert deployment.
 
 ## Test Structure
 
-```
+```text
 tests/
 |-- unit/           # Python unit tests (pytest)
 |-- smoke/          # Container startup smoke test (BATS)

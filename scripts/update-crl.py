@@ -7,8 +7,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Update Certificate Revocation List.
+"""Update Certificate Revocation List.
 
 Run periodically (e.g., via cron or entrypoint) to ensure CRL doesn't expire.
 
@@ -99,6 +98,7 @@ def update_crl() -> None:
 
 
 def main() -> None:
+    """Regenerate the CRL from the local PKI."""
     if not PKI_DIR.exists():
         logger.error("PKI directory not found. Initialize PKI first.")
         sys.exit(1)

@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Configuration for culvert using scalo Dynaconf cascade.
+"""Configuration for culvert using scalo Dynaconf cascade.
 
 All environment variables use the CULVERT_ prefix exclusively.
 No legacy VPN_* or OPENVPN_* aliases.
@@ -16,6 +15,7 @@ Example:
     CULVERT_SERVER_CN=vpn.example.com
     CULVERT_PROTOCOL=both
     CULVERT_UDP_PORT=1194
+
 """
 
 import ipaddress
@@ -411,7 +411,7 @@ class Config:
         # No hard-coded performance presets here: tuning is data, carried by the
         # profile YAML (profiles/*.yaml or a user-supplied file). network_profile
         # is only a label. Values arrive already set via the settings cascade.
-        logger.info("Network profile: %s", self.network_profile)
+        logger.info(f"Network profile: {self.network_profile}")
 
         # Per-listener OAuth2 inheritance: if no explicit per-listener
         # setting, inherit from global oauth2_enabled

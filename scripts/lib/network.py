@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Network configuration for culvert container.
+"""Network configuration for culvert container.
 
 Handles iptables NAT rules, IP forwarding, and CIDR utilities.
 """

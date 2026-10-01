@@ -7,8 +7,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-WireGuard management for culvert.
+"""WireGuard management for culvert.
 
 Merges key management, IP allocation, config generation, and
 interface lifecycle into a single module.

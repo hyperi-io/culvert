@@ -44,7 +44,7 @@ appliances are not on CGNAT WANs.
 
 State it exactly:
 
-```
+```text
 outbound (data):  appliance      -> culvert -> receiver
 inbound  (admin): admin / repos  -> culvert (back down tunnel) -> appliance
 ```

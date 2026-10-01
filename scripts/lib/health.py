@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-Health state and observability listener for culvert.
+"""Health state and observability listener for culvert.
 
 Uses scalo's HealthManager + observability server: ONE port (default
 0.0.0.0:9090) serves /livez, /readyz and /metrics. That is the whole

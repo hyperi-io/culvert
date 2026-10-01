@@ -219,11 +219,12 @@ class TestImageReference:
     def test_app_version_tracks_the_latest_release(self, chart):
         """The chart must not point at an image older than the last release.
 
-        Agreeing with VERSION is not enough: the release pipeline stamps VERSION
-        only for the build and commits just the CHANGELOG, so VERSION and
-        Chart.yaml stay in step with each other while both fall behind what was
-        actually published. That is how the chart shipped seven releases stale
-        (fixed in dab7919) and then three releases stale again.
+        The release pipeline stamps VERSION and commits VERSION, CHANGELOG.md
+        and deploy/helm/culvert/Chart.yaml together (release.stamp_cmd and
+        release.stamp_paths), so a chart drifting from the published tag means
+        that commit was skipped or the chart was hand-edited afterwards. That
+        is how the chart shipped seven releases stale (fixed in dab7919) and
+        then three releases stale again.
 
         Fix a failure by bumping VERSION to the tag and regenerating:
         `python scripts/generate-deploy-artefacts.py`.

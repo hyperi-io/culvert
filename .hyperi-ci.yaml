@@ -23,6 +23,15 @@ quality:
         iptables NAT, and bind privileged ports, which needs root/NET_ADMIN at
         startup. OpenVPN itself drops to nobody after init; a Dockerfile USER
         would break interface setup.
+    - tool: ruff
+      ids:
+        - S603
+        - S606
+        - S607
+      reason: >-
+        The VPN server drives openvpn, wg, iptables, easyrsa and openssl by
+        design. Every call passes a list argv with no shell (nothing trips
+        S602), and the operator-facing commands exec fixed /usr/local/bin paths.
   python:
     ruff: blocking
     bandit: blocking
@@ -69,28 +78,30 @@ container:
   enabled: true
   mode: custom
 
-publish:
+release:
   enabled: true
-  target: oss
   channel: release
   # culvert ships ONLY its GHCR container - it is not a Python package.
   # Opt out of the default PyPI publish while keeping the container.
-  destinations_oss:
+  destinations:
     python: false
+  # The chart's version and appVersion come from VERSION, so the release
+  # regenerates it after stamping VERSION and commits it back. Without this the
+  # chart lags the published image, and tests/unit/test_deploy_artefacts.py
+  # fails the first PR after every release.
+  stamp_cmd: uv run --frozen --extra dev python scripts/generate-deploy-artefacts.py
+  stamp_paths:
+    - deploy/helm/culvert/Chart.yaml
   container:
     enabled: true
-    # hyperi-ci's bundled defaults.yaml sets registry: ghcr (bare string),
-    # which resolves to docker.io/ghcr/ at push time. Override explicitly.
-    registry: ghcr.io/hyperi-io
     dockerfile: Dockerfile
     platforms:
       - linux/amd64
       - linux/arm64
     # GHCR and most registry UIs show org.opencontainers.image.description on
-    # the package page. hyperi-ci emits that label on every build and has no
-    # source for its value, so it ships empty unless set here - and because it
-    # arrives as `docker build --label`, a LABEL in the Dockerfile cannot
-    # supply it either: the CLI flag wins.
+    # the package page. This label replaces the pyproject description hyperi-ci
+    # would otherwise use, and because it arrives as `docker build --label`, a
+    # LABEL in the Dockerfile cannot override it.
     labels:
       org.opencontainers.image.description: >-
         The VPN server that installs like a container, because it is one.

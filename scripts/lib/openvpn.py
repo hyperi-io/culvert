@@ -6,8 +6,7 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""
-OpenVPN server configuration and lifecycle management.
+"""OpenVPN server configuration and lifecycle management.
 
 Generates server configs from templates, starts OpenVPN processes,
 and handles auto-generation of client configs.
@@ -92,6 +91,7 @@ def _apply_log_mode(content: str, cfg, listener: str = "") -> str:
 
     Returns:
         The config with its logging destination applied.
+
     """
     prefix = f"{listener}: " if listener else ""
     match = _LOG_APPEND.search(content)
