@@ -8,7 +8,6 @@
 
 from dataclasses import dataclass
 
-from lib.process import ProcessManager
 from lib.wstunnel import _build_wstunnel_command, start_wstunnel
 
 
@@ -24,10 +23,11 @@ class FakeWstunnelCfg:
 class TestStartWstunnel:
     """start_wstunnel side-effect gate."""
 
-    def test_returns_none_when_disabled(self):
+    def test_returns_none_when_disabled(self, manager):
         """No process is started when the HTTPS tunnel is disabled."""
         cfg = FakeWstunnelCfg(wg_https_tunnel_enabled=False)
-        assert start_wstunnel(cfg, ProcessManager()) is None
+        assert start_wstunnel(cfg, manager) is None
+        assert manager.processes == {}
 
 
 class TestBuildWstunnelCommand:

@@ -16,9 +16,9 @@ Two ways that used to happen, both covered here:
   the path the server reads, so a restart brought the revoked peer back.
 """
 
-from __future__ import annotations
-
 import importlib.util
+import json
+import stat
 import subprocess
 from pathlib import Path
 
@@ -306,8 +306,6 @@ class TestWireGuardRevocationScope:
     """Revoking a client removes every slot it holds and nothing of anyone else's."""
 
     def test_every_slot_and_its_files_go_and_other_clients_stay(self, cli, revoke):
-        import json
-
         peers = cli.pki / "wireguard" / "peers"
         for peer, key in (
             ("alice", "AliceKey1="),
@@ -339,3 +337,36 @@ class TestWireGuardRevocationScope:
         cli("--protocol", "wireguard", "alice")
         assert not peer.exists()
         assert not cli.server_conf.exists()
+
+
+class TestOpenVpnRevocation:
+    """The OpenVPN path regenerates the CRL through lib.pki, as update-crl does."""
+
+    @pytest.fixture
+    def alice(self, cli, easyrsa, monkeypatch):
+        """An issued certificate for alice, with Easy-RSA swapped for the stand-in."""
+        monkeypatch.setattr(cli.module, "EASYRSA_DIR", easyrsa)
+        issued = cli.pki / "issued"
+        issued.mkdir()
+        (issued / "alice.crt").write_text("cert", encoding="utf-8")
+        return cli
+
+    def test_the_crl_carries_the_configured_lifetime(self, alice, monkeypatch):
+        """revoke-client runs in its own process, so only the config can carry it."""
+        monkeypatch.setenv("CULVERT_CRL_DAYS", "30")
+        alice("--protocol", "openvpn", "alice")
+        crl = json.loads((alice.pki / "crl.pem").read_text(encoding="utf-8"))
+        assert crl["argv"] == ["gen-crl"]
+        assert crl["crl_days"] == "30"
+
+    def test_a_new_crl_is_readable_by_openvpn(self, alice):
+        alice("--protocol", "openvpn", "alice")
+        assert stat.S_IMODE((alice.pki / "crl.pem").stat().st_mode) == 0o644
+
+    def test_a_failed_regeneration_exits_1(self, alice, monkeypatch):
+        """A revocation the CRL does not yet carry is not enforced."""
+        monkeypatch.setenv("FAKE_EASYRSA_FAIL", "gen-crl")
+        with pytest.raises(SystemExit) as exc_info:
+            alice("--protocol", "openvpn", "alice")
+        assert exc_info.value.code == 1
+        assert not (alice.pki / "crl.pem").exists()

@@ -467,20 +467,27 @@ def log_crl_expiry(cfg) -> float | None:
     return remaining
 
 
-def _regenerate_local_crl(cfg) -> bool:
+def regenerate_local_crl(cfg) -> bool:
     """Regenerate the CRL from the local CA. True when it was rewritten.
 
-    Shared by the server's refresh loop and the update-crl command.
+    Shared by the server's refresh loop, update-crl and revoke-client. Reads
+    cfg.pki_dir and cfg.crl_days.
     """
     easyrsa = shlex.quote(str(EASYRSA_DIR))
     pki_dir = shlex.quote(str(cfg.pki_dir))
+    # Passed on every run: a process that did not initialise the PKI has no
+    # EASYRSA_CRL_DAYS, and Easy-RSA then falls back to its own 180 days.
+    crl_days = shlex.quote(str(cfg.crl_days))
     result = run(
         f"cd {easyrsa} && EASYRSA={easyrsa} EASYRSA_PKI={pki_dir} EASYRSA_BATCH=1"
-        " ./easyrsa gen-crl",
+        f" EASYRSA_CRL_DAYS={crl_days} ./easyrsa gen-crl",
         check=False,
         capture=True,
     )
     if result.returncode == 0:
+        # gen-crl creates a missing crl.pem as 0600, which OpenVPN cannot read
+        # once it has dropped to nobody.
+        (Path(cfg.pki_dir) / "crl.pem").chmod(0o644)
         return True
     # Local regeneration reaches nothing off-box, so a failure is a defect
     # rather than a transient.
@@ -533,7 +540,7 @@ def crl_refresher(cfg):
     Returns (callable, description) or None.
     """
     if cfg.pki_mode != "external":
-        return _regenerate_local_crl, "regenerated from the local CA"
+        return regenerate_local_crl, "regenerated from the local CA"
     if not cfg.secrets_crl_path:
         return None
     return refetch_external_crl, "re-fetched from the secrets provider"

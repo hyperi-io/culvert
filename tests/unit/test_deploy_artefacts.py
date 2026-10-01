@@ -14,6 +14,7 @@ that are visible in the shipped files alone - the ones that would otherwise be
 found by whoever runs `helm install` first, or read by whoever clones the repo.
 """
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -161,23 +162,35 @@ def _changelog_versions() -> list[tuple[int, int, int]]:
 
 
 def _latest_release_tag() -> str | None:
-    """The highest vX.Y.Z tag git knows about, or None when there are none.
+    """The highest vX.Y.Z tag on origin, or None when origin cannot be read.
 
-    None is the honest answer in a shallow clone: `actions/checkout` fetches no
-    tags unless asked, and inventing a comparison there would fail a test on
-    what the checkout omitted rather than on anything in the tree.
+    Asked of the remote, not the clone: `actions/checkout` fetches no tags
+    unless asked, so a local lookup finds none in CI, and `ls-remote` reads the
+    tag list without fetching anything into the clone.
     """
-    result = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "tag", "--list", "v*", "--sort=-v:refname"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=60,
-    )
-    tags = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    return tags[0] if tags else None
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-remote", "--tags", "--refs", "origin"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=60,
+            # An unreachable or private origin must fail, never wait on a prompt.
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+
+    releases = []
+    for line in result.stdout.splitlines():
+        tag = line.rpartition("refs/tags/")[2]
+        if match := re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag):
+            releases.append((tuple(int(part) for part in match.groups()), tag))
+    return max(releases)[1] if releases else None
 
 
 class TestImageReference:
@@ -190,12 +203,11 @@ class TestImageReference:
         assert chart["version"] == version.lstrip("v")
 
     def test_app_version_is_not_behind_the_changelog(self, chart):
-        """The in-tree guard, for a checkout with no tags.
+        """The in-tree guard, for a checkout that cannot reach origin.
 
-        The tag check below is the precise one, and it skips wherever
-        `actions/checkout` was not asked for tags -- which is CI, the one place
-        a stale chart most needs stopping. CHANGELOG.md is committed by the
-        release job, so it is in the tree whatever the fetch depth.
+        The tag check below is the precise one, and it skips wherever origin's
+        tag list cannot be read. CHANGELOG.md is committed by the release job,
+        so it is in the tree whatever the fetch depth or network.
 
         Weaker on purpose: it only proves the chart is not BEHIND a release the
         changelog already records, so being ahead (just after a backfill) is
@@ -231,7 +243,7 @@ class TestImageReference:
         """
         latest = _latest_release_tag()
         if latest is None:
-            pytest.skip("no release tags in this clone - nothing to compare against")
+            pytest.skip("no release tag readable from origin - nothing to compare")
 
         assert chart["appVersion"] == latest, (
             f"chart appVersion {chart['appVersion']} is not the latest release"
