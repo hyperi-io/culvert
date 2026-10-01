@@ -151,6 +151,31 @@ class TestRevocationPersists:
         )
 
 
+class TestOpenVpnConfigRemoval:
+    """Revoking one client must not delete another client's credentials."""
+
+    def test_client_name_prefix_preserves_longer_clients_configs(
+        self, revoke, monkeypatch
+    ):
+        issued = revoke.PKI_DIR / "issued"
+        issued.mkdir()
+        (issued / "foo.crt").write_text("certificate", encoding="utf-8")
+        own_config = revoke.OUTPUT_DIR / "foo-udp-split.ovpn"
+        other_config = revoke.OUTPUT_DIR / "foo-bar-udp-split.ovpn"
+        own_config.write_text("foo key", encoding="utf-8")
+        other_config.write_text("foo-bar key", encoding="utf-8")
+        monkeypatch.setattr(
+            revoke.subprocess,
+            "run",
+            lambda *a, **kw: subprocess.CompletedProcess(a[0], 0, "", ""),
+        )
+
+        assert revoke.revoke_client("foo") is True
+
+        assert not own_config.exists()
+        assert other_config.exists()
+
+
 class TestInterfaceDetection:
     """ "wg is not installed" and "wg0 refused the change" are different faults."""
 

@@ -517,6 +517,30 @@ class TestBundleClientZip:
         assert names == {"alice-udp-split.ovpn", "alice-wg-split.conf"}
         assert stat.S_IMODE(zip_path.stat().st_mode) == 0o600
 
+    def test_client_name_prefix_does_not_bundle_another_clients_keys(
+        self, tmp_path: Path
+    ) -> None:
+        """A client named foo must not receive foo-bar's private configs."""
+        import zipfile
+
+        (tmp_path / "foo-udp-split.ovpn").write_text("foo key", encoding="utf-8")
+        (tmp_path / "foo-wg-split.conf").write_text("foo wg key", encoding="utf-8")
+        (tmp_path / "foo-bar-udp-split.ovpn").write_text(
+            "foo-bar key", encoding="utf-8"
+        )
+        (tmp_path / "foo-bar-wg-split.conf").write_text(
+            "foo-bar wg key", encoding="utf-8"
+        )
+
+        zip_path = self._module()._bundle_client_zip("foo", tmp_path)
+
+        assert zip_path is not None
+        with zipfile.ZipFile(zip_path) as zf:
+            assert set(zf.namelist()) == {
+                "foo-udp-split.ovpn",
+                "foo-wg-split.conf",
+            }
+
     def test_excludes_existing_zip_and_returns_none_when_empty(
         self, tmp_path: Path
     ) -> None:
