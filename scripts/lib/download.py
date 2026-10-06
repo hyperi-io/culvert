@@ -50,7 +50,7 @@ class ClientDownloadHandler(BaseHandler):
         """Serve one connection, treating a client that hangs up as routine."""
         try:
             super().handle()
-        except (BrokenPipeError, ConnectionResetError):
+        except BrokenPipeError, ConnectionResetError:
             # A client gone before its TLS 1.3 session tickets are written lands here.
             logger.debug(
                 "Client disconnected mid-exchange", client_ip=self.client_address[0]

@@ -40,7 +40,7 @@
 
 # Base image pinned by digest so builds are reproducible. Override
 # BASE_IMAGE to rebuild on a newer base. hadolint ignore=DL3006
-ARG BASE_IMAGE="ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb"
+ARG BASE_IMAGE="ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7"
 ARG VERSION="dev"
 ARG COMMIT=""
 
@@ -169,9 +169,9 @@ ENV ENV_PREFIX=CULVERT
 # There is no apt repo, and the upstream container image's binary links
 # against a glibc newer than the base image's, so the tarball is the only
 # option that runs here. BSD-3-Clause Rust binary.
-ARG WSTUNNEL_VERSION="10.6.2"
-ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e19241311e34868e6e"
-ARG WSTUNNEL_SHA256_ARM64="26bb36b856948255bec7cd71a39df5f8912acdd7a47a9ccd4044a9b80ced108d"
+ARG WSTUNNEL_VERSION="10.7.1"
+ARG WSTUNNEL_SHA256_AMD64="fa842ed53fbb14b1c69cd98829f9895d7f8a6b0d562c57c1175851a52cea9ea2"
+ARG WSTUNNEL_SHA256_ARM64="99f9506d01d1b4073254609600ec5056dab8dc58aec75c32f6eb0508335a8fd2"
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
          amd64) WSTUNNEL_SHA256="${WSTUNNEL_SHA256_AMD64}" ;; \

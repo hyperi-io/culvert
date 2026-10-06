@@ -159,7 +159,7 @@ def validate_cidr_routes(value: str, name: str) -> None:
         route = route.strip()
         try:
             ipaddress.IPv4Network(route, strict=False)
-        except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
+        except ipaddress.AddressValueError, ipaddress.NetmaskValueError:
             raise ValidationError(f"{name} contains invalid CIDR: '{route}'")
 
 
@@ -179,7 +179,7 @@ def _subnet_or_none(network: str, netmask: str) -> str | None:
     """CIDR string for a network/netmask pair, or None if malformed."""
     try:
         return str(ipaddress.IPv4Network(f"{network}/{netmask}", strict=False))
-    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
+    except ipaddress.AddressValueError, ipaddress.NetmaskValueError:
         return None
 
 
@@ -460,7 +460,7 @@ class Config:
                         1,
                         math.ceil(int(quota) / int(period)),
                     )
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 pass
 
         # Try cgroup v1
@@ -475,7 +475,7 @@ class Config:
                         1,
                         math.ceil(quota / period),
                     )
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 pass
 
         # Fall back to os.cpu_count()
@@ -493,7 +493,7 @@ class Config:
                 content = mem_max.read_text().strip()
                 if content != "max":
                     return max(0.5, int(content) / (1024**3))
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 pass
 
         # Try cgroup v1
@@ -504,7 +504,7 @@ class Config:
                 # Not effectively unlimited
                 if limit < 9223372036854771712:
                     return max(0.5, limit / (1024**3))
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 pass
 
         # Fall back to /proc/meminfo
@@ -514,13 +514,13 @@ class Config:
                     if line.startswith("MemTotal:"):
                         kb = int(line.split()[1])
                         return max(0.5, kb / (1024**2))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             pass
 
         return 0.5
 
     @classmethod
-    def from_settings(cls) -> "Config":
+    def from_settings(cls) -> Config:
         """Build Config from scalo settings cascade.
 
         Reads all fields from Dynaconf settings with CULVERT_ env prefix.
@@ -766,7 +766,7 @@ class Config:
         ]:
             try:
                 ipaddress.IPv4Network(f"{network}/{netmask}", strict=False)
-            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
+            except ipaddress.AddressValueError, ipaddress.NetmaskValueError:
                 errors.append(
                     f"{name}_NETWORK/{name}_NETMASK is not a valid subnet:"
                     f" {network}/{netmask}"
@@ -1046,7 +1046,7 @@ def _settings_int(s, key: str, default: int) -> int:
         return val
     try:
         return int(val)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return default
 
 
@@ -1062,5 +1062,5 @@ def _settings_crl_days(s) -> tuple[int, str]:
         return val, ""
     try:
         return int(val), ""
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return 180, str(val)

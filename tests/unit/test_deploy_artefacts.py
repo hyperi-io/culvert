@@ -93,7 +93,7 @@ class TestRetiredDependencies:
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, FileNotFoundError):
+            except UnicodeDecodeError, FileNotFoundError:
                 continue
             for lineno, line in enumerate(text.splitlines(), start=1):
                 if any(name in line for name in RETIRED_DEPENDENCIES):
@@ -129,7 +129,7 @@ class TestCanonicalPaths:
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, FileNotFoundError):
+            except UnicodeDecodeError, FileNotFoundError:
                 continue
             for lineno, line in enumerate(text.splitlines(), start=1):
                 if any(legacy in line for legacy in LEGACY_CONTAINER_PATHS):

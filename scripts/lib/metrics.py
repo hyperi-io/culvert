@@ -87,7 +87,7 @@ def parse_openvpn_status_v3(content: str) -> OpenVPNStatus:
             result.client_count += 1
             result.bytes_received += client["bytes_received"]
             result.bytes_sent += client["bytes_sent"]
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             result.client_count += 1
 
     return result
@@ -109,7 +109,7 @@ def parse_wg_transfer(output: str) -> dict[str, WgPeerTransfer]:
                 rx=int(parts[1]),
                 tx=int(parts[2]),
             )
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             continue
 
     return peers
@@ -132,7 +132,7 @@ def parse_wg_handshakes(
             peers[pubkey] = WgPeerHandshake(
                 timestamp=int(parts[1]),
             )
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             continue
 
     return peers

@@ -51,7 +51,7 @@ def run_teardowns() -> None:
     for signum in (signal.SIGINT, signal.SIGTERM):
         try:
             previous[signum] = signal.signal(signum, signal.SIG_IGN)
-        except (ValueError, OSError):
+        except ValueError, OSError:
             # Not the main thread, or the platform refuses - press on unguarded
             # rather than skipping cleanup altogether.
             pass
@@ -78,7 +78,7 @@ def run_teardowns() -> None:
         for signum, handler in previous.items():
             try:
                 signal.signal(signum, handler)
-            except (ValueError, OSError):
+            except ValueError, OSError:
                 pass
 
 
