@@ -3,6 +3,22 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.17](https://github.com/hyperi-io/culvert/compare/v2.1.16...v2.1.17) (2026-10-06)
+
+### Bug Fixes
+
+* declare least-privilege CI token permissions ([#53](https://github.com/hyperi-io/culvert/issues/53)) ([6a4bea3](https://github.com/hyperi-io/culvert/commit/6a4bea32a9503675272ed26e55f7c71d04d16363))
+* **deps:** update dependencies for GA ([#63](https://github.com/hyperi-io/culvert/issues/63)) ([792088c](https://github.com/hyperi-io/culvert/commit/792088c909ddbec2f7dd71f0242dd33f67075009))
+* honour CULVERT_CRL_DAYS and keep crl.pem 0644 ([#59](https://github.com/hyperi-io/culvert/issues/59)) ([d8fd86e](https://github.com/hyperi-io/culvert/commit/d8fd86ef7612a480730416ba5854a1fa931fb35b))
+* install urllib3 2.8.0 in the image for GHSA-8988-9cw3-xx77 and GHSA-vxq7-64xx-v4gw ([#55](https://github.com/hyperi-io/culvert/issues/55)) ([151443e](https://github.com/hyperi-io/culvert/commit/151443ea0c9d140af27a97757af2aef968ebf32d))
+* move openvpn-auth-oauth2 to 2.2.0 ([#54](https://github.com/hyperi-io/culvert/issues/54)) ([5ddfc28](https://github.com/hyperi-io/culvert/commit/5ddfc285b83696531f1c31c6f1b8e96716628904))
+* regenerate the Helm chart when the release stamps VERSION ([#56](https://github.com/hyperi-io/culvert/issues/56)) ([a993680](https://github.com/hyperi-io/culvert/commit/a9936806bd326d0a89eb5a9b64f294a1c402e74d))
+* replace our resolver and domain in test fixtures ([#51](https://github.com/hyperi-io/culvert/issues/51)) ([88960f8](https://github.com/hyperi-io/culvert/commit/88960f83625650c1e957b2b8b8cb3d01273ff9b4))
+* run vulture and coverage on scripts/ now hyperi-ci finds it ([#57](https://github.com/hyperi-io/culvert/issues/57)) ([18198b3](https://github.com/hyperi-io/culvert/commit/18198b3f95922da77681260fde6c64ae9749303d))
+* set up scalo's logger in every culvert entry point ([#60](https://github.com/hyperi-io/culvert/issues/60)) ([5709ca0](https://github.com/hyperi-io/culvert/commit/5709ca0829286bca3dc836d19ef430b6722a731c))
+* stamp the real version into the image and bound CULVERT_CRL_DAYS ([#61](https://github.com/hyperi-io/culvert/issues/61)) ([d5aa744](https://github.com/hyperi-io/culvert/commit/d5aa744e6c17471ffd32fb1299f3678a96ae3cbd))
+* test hygiene and one CRL regeneration path ([#58](https://github.com/hyperi-io/culvert/issues/58)) ([91ad85e](https://github.com/hyperi-io/culvert/commit/91ad85e8c123585c5f2d2e83d847cca365f9fb60))
+
 ## [2.1.16](https://github.com/hyperi-io/culvert/compare/v2.1.15...v2.1.16) (2026-09-23)
 
 ### Bug Fixes
