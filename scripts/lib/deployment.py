@@ -26,8 +26,6 @@ This module imports ``scalo.deployment``, which is gated behind the
 runtime never imports it.
 """
 
-from __future__ import annotations
-
 from scalo.deployment import (
     DeploymentContract,
     HealthContract,
@@ -67,10 +65,9 @@ def _metrics_port(addr: str) -> int:
 
 
 # scalo gates its deployment types behind the [deployment] extra, rebinding each
-# name to a stub when pydantic is absent. ty therefore reads every one as
-# `Stub | Class` and rejects both the annotation and each argument. pydantic IS
-# installed here (the dev extra), so the ty: ignore comments below are that shim,
-# not a real type error.
+# name to a stub when pydantic is absent. ty therefore reads each one as
+# `Stub | Class` and rejects it as a return annotation. pydantic IS installed here
+# (the dev extra), so the ty: ignore below is that shim, not a real type error.
 def deployment_contract(
     cfg: Config | None = None,
 ) -> DeploymentContract:  # ty: ignore[invalid-type-form]
@@ -95,7 +92,7 @@ def deployment_contract(
         ),
         # The observability port: health probes always, /metrics when enabled.
         metrics_port=_metrics_port(cfg.metrics_addr),
-        health=HealthContract(  # ty: ignore[invalid-argument-type]
+        health=HealthContract(
             liveness_path="/livez",
             readiness_path="/readyz",
             metrics_path="/metrics",
@@ -108,10 +105,10 @@ def deployment_contract(
         # other listener (TCP, HTTPS/stunnel, WireGuard, wstunnel, OIDC,
         # client download) is a deliberate opt-in, added via the chart's
         # `extraPorts` values rather than the always-on contract ports.
-        extra_ports=[  # ty: ignore[invalid-argument-type]
+        extra_ports=[
             PortContract(name="openvpn-udp", port=cfg.udp_port, protocol="UDP"),
         ],
-        oci_labels=OciLabels(  # ty: ignore[invalid-argument-type]
+        oci_labels=OciLabels(
             title=APP_NAME,
             description=(
                 "OpenVPN + WireGuard, optionally tunnelled over HTTPS,"

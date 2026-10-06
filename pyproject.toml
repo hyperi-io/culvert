@@ -18,7 +18,7 @@ license = {text = "Apache-2.0"}
 # [secrets] extra would drag in ansible-vault + GCP + Azure (~180MB) that
 # no culvert backend uses.
 dependencies = [
-    "scalo[metrics,secrets-vault,secrets-aws]>=2.29.14,<3",
+    "scalo[metrics,secrets-vault,secrets-aws]>=2.31.1,<3",
     # Imported directly in lib/oauth2.py (yaml.safe_dump) and for the profile
     # cascade; also a transitive dep of dynaconf, pinned here so it is declared.
     "pyyaml>=6,<7",
@@ -43,7 +43,7 @@ dev = [
     "cryptography>=50,<51",
     # Deployment-contract generators (Helm chart, compose fragment). Pulls in
     # pydantic. Dev/CI-only: culvert's runtime never imports scalo.deployment.
-    "scalo[deployment]>=2.29.14,<3",
+    "scalo[deployment]>=2.31.1,<3",
 ]
 
 # culvert is distributed as a container image, not a Python package.
