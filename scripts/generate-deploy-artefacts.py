@@ -309,14 +309,16 @@ def _apply_vpn_overlay(chart_dir: Path) -> None:
         f'version: {version}\nappVersion: "v{version}"\n',
     )
 
-    # Chart.yaml: replace the generator's default keywords, which name another
-    # product, with culvert's own, and set the icon Artifact Hub renders.
+    # Chart.yaml: the generator's only keyword is the app name and it writes no
+    # maintainer, so set culvert's keywords, maintainer and the icon Artifact Hub
+    # renders.
     _replace_once(
         chart,
-        "keywords:\n  - hyperi\n  - dfe\n",
+        "keywords:\n  - culvert\n",
         "icon: https://raw.githubusercontent.com/hyperi-io/culvert/main/"
         "assets/brand/product-culvert/light/product-culvert_square_400w.png\n\n"
-        "keywords:\n  - vpn\n  - openvpn\n  - wireguard\n  - hyperi\n",
+        "keywords:\n  - vpn\n  - openvpn\n  - wireguard\n  - hyperi\n\n"
+        "maintainers:\n  - name: HyperI\n    url: https://github.com/hyperi-io\n",
     )
 
     # values.yaml: swap the generated non-root floor for the VPN's root +

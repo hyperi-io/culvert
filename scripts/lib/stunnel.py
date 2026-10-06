@@ -68,7 +68,7 @@ def configure_stunnel(cfg) -> None:
     os.chmod(stunnel_log, 0o640)
     try:
         shutil.chown(stunnel_log, user="nobody", group="nogroup")
-    except (PermissionError, LookupError, OSError):
+    except PermissionError, LookupError, OSError:
         pass
 
     logger.info(

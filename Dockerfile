@@ -40,7 +40,7 @@
 
 # Base image pinned by digest so builds are reproducible. Override
 # BASE_IMAGE to rebuild on a newer base. hadolint ignore=DL3006
-ARG BASE_IMAGE="ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb"
+ARG BASE_IMAGE="ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7"
 ARG VERSION="dev"
 ARG COMMIT=""
 
@@ -66,9 +66,10 @@ LABEL openvpn.features="DCO,TLS1.3,AEAD,4G-optimized,OIDC-SSO"
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENVPN_MIN_VERSION="2.7.0"
-ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.0"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="a4871c30666afd5cd6504501ae83653dfcb2c31a147f3450ba8092a471203e3c"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="d33fdf6b8a5f701f689bd427df476209f2f8b70ff96b726a2ec67fd5f64f9508"
+ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.2"
+# Public release checksums. BuildKit's SecretsUsedInArgOrEnv check flags these two only for the AUTH in their name.
+ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="56bb8edcd61dfd559af188e1bd51653cfd184fff17c599529b78a1cf0e041164"
+ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="f9eecf48b3c06b11607d402d71904db101f287734518fc08d1101e27030c157a"
 
 # openvpn from the project's signed apt repo. The downloaded keyring must carry
 # EXACTLY ONE primary key and its fingerprint must be the pinned one, so neither
@@ -154,8 +155,10 @@ RUN ARCH=$(dpkg --print-architecture) \
 # the lockfile; regenerate on any uv.lock change with:
 #   uv export --frozen --no-dev --no-emit-project --extra otel \
 #     --format requirements-txt -o requirements-docker.txt
+# The image has no venv by design, so pip's warning about installing as root
+# into the system site-packages is switched off.
 COPY requirements-docker.txt /tmp/requirements-docker.txt
-RUN pip3 install --no-cache-dir --break-system-packages \
+RUN pip3 install --no-cache-dir --break-system-packages --root-user-action=ignore \
         --require-hashes -r /tmp/requirements-docker.txt \
     && rm /tmp/requirements-docker.txt
 
@@ -166,9 +169,9 @@ ENV ENV_PREFIX=CULVERT
 # There is no apt repo, and the upstream container image's binary links
 # against a glibc newer than the base image's, so the tarball is the only
 # option that runs here. BSD-3-Clause Rust binary.
-ARG WSTUNNEL_VERSION="10.6.2"
-ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e19241311e34868e6e"
-ARG WSTUNNEL_SHA256_ARM64="26bb36b856948255bec7cd71a39df5f8912acdd7a47a9ccd4044a9b80ced108d"
+ARG WSTUNNEL_VERSION="10.7.1"
+ARG WSTUNNEL_SHA256_AMD64="fa842ed53fbb14b1c69cd98829f9895d7f8a6b0d562c57c1175851a52cea9ea2"
+ARG WSTUNNEL_SHA256_ARM64="99f9506d01d1b4073254609600ec5056dab8dc58aec75c32f6eb0508335a8fd2"
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
          amd64) WSTUNNEL_SHA256="${WSTUNNEL_SHA256_AMD64}" ;; \

@@ -1,12 +1,12 @@
 # The same base, by digest, that the server image pins. A test client on an
 # older Ubuntu line still passes every check while sharing none of the runtime
 # libraries the thing under test actually ships with.
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 # Match the production Dockerfile's wstunnel version + per-arch SHA256.
-ARG WSTUNNEL_VERSION="10.6.2"
-ARG WSTUNNEL_SHA256_AMD64="db6064cca0515b67f8652e201cff8e27553b8cbb7216b2e19241311e34868e6e"
-ARG WSTUNNEL_SHA256_ARM64="26bb36b856948255bec7cd71a39df5f8912acdd7a47a9ccd4044a9b80ced108d"
+ARG WSTUNNEL_VERSION="10.7.1"
+ARG WSTUNNEL_SHA256_AMD64="fa842ed53fbb14b1c69cd98829f9895d7f8a6b0d562c57c1175851a52cea9ea2"
+ARG WSTUNNEL_SHA256_ARM64="99f9506d01d1b4073254609600ec5056dab8dc58aec75c32f6eb0508335a8fd2"
 
 # OpenVPN comes from the upstream repo, the same one the server image uses, so
 # the client under test is 2.7 rather than whatever the Ubuntu archive carries.

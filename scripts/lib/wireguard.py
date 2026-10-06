@@ -248,7 +248,7 @@ def check_kernel_module() -> bool:
             capture_output=True,
         )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError, FileNotFoundError:
         return False
 
 

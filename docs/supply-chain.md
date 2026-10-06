@@ -5,13 +5,13 @@ GitHub releases during image build:
 
 | Dependency | Source | Pinned version |
 |------------|--------|----------------|
-| Base image | `ubuntu:24.04` | pinned by `sha256` digest in `BASE_IMAGE` |
-| `openvpn-auth-oauth2` | [github.com/jkroepke/openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2) | `2.2.0`, `sha256`-verified per arch |
-| `wstunnel` | [github.com/erebe/wstunnel](https://github.com/erebe/wstunnel) | `10.6.2`, `sha256`-verified per arch |
+| Base image | `ubuntu:26.04` | pinned by `sha256` digest in `BASE_IMAGE` |
+| `openvpn-auth-oauth2` | [github.com/jkroepke/openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2) | `2.2.2`, `sha256`-verified per arch |
+| `wstunnel` | [github.com/erebe/wstunnel](https://github.com/erebe/wstunnel) | `10.7.1`, `sha256`-verified per arch |
 | `openvpn` (server) | [build.openvpn.net](https://build.openvpn.net) (official APT repo) | stable channel, 2.7.x+ |
 | `easy-rsa` | Ubuntu archive | System package (from digest-pinned base) |
 | `stunnel4` | Ubuntu archive | System package (from digest-pinned base) |
-| `scalo` (HyperI-own) | PyPI | image installs `==2.29.11` from the hash-pinned `requirements-docker.txt`; source range is `>=2.29.11,<3`; ships immediately (no cooldown); `uv.lock` pins the dev/CI tree with hashes |
+| `scalo` (HyperI-own) | PyPI | image installs `==2.31.1` from the hash-pinned `requirements-docker.txt`; source range is `>=2.31.1,<3`; ships immediately (no cooldown); `uv.lock` pins the dev/CI tree with hashes |
 
 External dependencies track "latest stable released at least 7 days ago"
 -- the org `minimumReleaseAge` cooldown, a buffer against fresh-release
@@ -62,9 +62,9 @@ downloaded binaries are `sha256`-verified per architecture before
 install:
 
 ```dockerfile
-ARG BASE_IMAGE="ubuntu:24.04@sha256:..."   # base image pinned by digest
-ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.0"    # + SHA256_AMD64 / SHA256_ARM64
-ARG WSTUNNEL_VERSION="10.6.2"              # + SHA256_AMD64 / SHA256_ARM64
+ARG BASE_IMAGE="ubuntu:26.04@sha256:..."   # base image pinned by digest
+ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.2"    # + SHA256_AMD64 / SHA256_ARM64
+ARG WSTUNNEL_VERSION="10.7.1"              # + SHA256_AMD64 / SHA256_ARM64
 ```
 
 ## Updating Dependencies
