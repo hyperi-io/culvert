@@ -67,6 +67,7 @@ LABEL openvpn.features="DCO,TLS1.3,AEAD,4G-optimized,OIDC-SSO"
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENVPN_MIN_VERSION="2.7.0"
 ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.2"
+# Public release checksums. BuildKit's SecretsUsedInArgOrEnv check flags these two only for the AUTH in their name.
 ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="56bb8edcd61dfd559af188e1bd51653cfd184fff17c599529b78a1cf0e041164"
 ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="f9eecf48b3c06b11607d402d71904db101f287734518fc08d1101e27030c157a"
 
@@ -154,8 +155,10 @@ RUN ARCH=$(dpkg --print-architecture) \
 # the lockfile; regenerate on any uv.lock change with:
 #   uv export --frozen --no-dev --no-emit-project --extra otel \
 #     --format requirements-txt -o requirements-docker.txt
+# The image has no venv by design, so pip's warning about installing as root
+# into the system site-packages is switched off.
 COPY requirements-docker.txt /tmp/requirements-docker.txt
-RUN pip3 install --no-cache-dir --break-system-packages \
+RUN pip3 install --no-cache-dir --break-system-packages --root-user-action=ignore \
         --require-hashes -r /tmp/requirements-docker.txt \
     && rm /tmp/requirements-docker.txt
 
