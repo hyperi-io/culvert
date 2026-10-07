@@ -52,6 +52,17 @@ from scalo.logger import logger  # noqa: E402
 PKI_DIR = Path("/etc/vpn/pki")
 OUTPUT_DIR = Path("/etc/vpn/clients")
 
+OPENVPN_CONFIG_SUFFIXES = (
+    "udp-split.ovpn",
+    "udp-full.ovpn",
+    "tcp-split.ovpn",
+    "tcp-full.ovpn",
+    "https-split.ovpn",
+    "https-full.ovpn",
+    "proxy-split.ovpn",
+    "proxy-full.ovpn",
+)
+
 
 class RevocationError(RuntimeError):
     """Revocation could not be completed, so the client still has access."""
@@ -155,9 +166,12 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
         PKI_DIR / "reqs" / f"{client_name}.req",
     ]
 
-    # Remove .ovpn files
-    for ovpn_file in OUTPUT_DIR.glob(f"{client_name}-*.ovpn"):
-        files_to_remove.append(ovpn_file)
+    # Remove only filenames generate-client can create for this exact client.
+    # A prefix glob also matches another client such as foo-bar when revoking
+    # foo, silently deleting that client's private configuration.
+    files_to_remove.extend(
+        OUTPUT_DIR / f"{client_name}-{suffix}" for suffix in OPENVPN_CONFIG_SUFFIXES
+    )
 
     removed = 0
     for f in files_to_remove:
