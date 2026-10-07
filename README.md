@@ -1,6 +1,6 @@
 # <img src="assets/brand/product-culvert/tertiary/product-culvert_square.svg" alt="Culvert icon" width="40"> Culvert
 
-The VPN server that installs like a container.
+The VPN server that installs as a container.
 OpenVPN and WireGuard in a single image, each optionally tunnelled over
 HTTPS, with OIDC SSO and external PKI -- `docker run` it standalone or
 drop it into Kubernetes.
@@ -23,14 +23,13 @@ switching - and what you give up:
 
 | If you use | What you gain with Culvert |
 |------------|----------------------------|
-| [AWS Client VPN](https://aws.amazon.com/vpn/) | Flat cost of a node instead of per-subnet-association plus per-connection charges. Adds WireGuard, any-IdP OIDC, and the HTTPS-tunnelled listeners; AWS Client VPN is OpenVPN-only with a 50 Mbps per-connection baseline. You give up the managed control plane. |
-| [kylemanna/docker-openvpn](https://github.com/kylemanna/docker-openvpn) | Unmaintained since 2020 and its published image ships OpenVPN 2.4. Culvert is the maintained successor shape: OpenVPN 2.7 with DCO, plus everything above. |
+| [AWS Client VPN](https://aws.amazon.com/vpn/) | Flat cost of a node instead of per-subnet-association plus per-connection charges. Adds WireGuard, any-IdP OIDC, and the HTTPS-tunnelled listeners; AWS Client VPN is OpenVPN-only with a 50 Mbps per-connection baseline. You lose the managed control plane. |
+| [kylemanna/docker-openvpn](https://github.com/kylemanna/docker-openvpn) | Appears unmaintained since 2020 and its published image ships OpenVPN 2.4. Culvert a maintained alt: OpenVPN 2.7 with DCO, plus everything above. |
 | [angristan/openvpn-install](https://github.com/angristan/openvpn-install) | Same result (plus the extras) without a host-mutating bash script - the server is an image, config is env vars, upgrades are a `docker pull`. |
 | [OpenVPN Access Server](https://openvpn.net/access-server/) | No per-connection licensing. Culvert adds WireGuard and provider-neutral OIDC. |
 | [wg-easy](https://github.com/wg-easy/wg-easy) | Keep the WireGuard simplicity, add OpenVPN for the clients that need it, external PKI, and the option to run either protocol over HTTPS. wg-easy's OAuth (15.4+) signs users into its web UI; culvert's OIDC gates the VPN session itself. |
 
-If you want a mesh overlay (Tailscale, NetBird) this is a different
-thing: Culvert is a classic hub VPN server you run yourself, for the
+Culvert is a classic hub VPN server you run yourself, for the
 cases that need OpenVPN client compatibility, certificate-based
 compliance, or a VPN that travels over HTTPS.
 
@@ -60,7 +59,7 @@ graph TD
 ## Quick start
 
 The default is the simplest working server: OpenVPN over UDP, local PKI,
-nothing else. Every other capability is a deliberate opt-in.
+nothing else. Everything else is opt-in.
 
 ```bash
 docker run -d \
@@ -88,24 +87,24 @@ Opt-ins, each with its own port publish:
 Then generate a client config:
 
 ```bash
-docker exec -it <container> generate-client --name alice
+docker exec -it <container> generate-client --name zahpod
 ```
 
 That mints a real credential, so treat the output accordingly:
 
-- The `.ovpn` it writes into the `culvert-clients` volume EMBEDS alice's
-  private key. Whoever holds that file can connect as alice - move it to
-  the client over a channel you trust and do not leave copies about.
+- The `.ovpn` it writes into the `culvert-clients` volume EMBEDS Zaphod's
+  private key. Whoever holds that file can connect as Zaphod - move it to
+  the client over a channel you trust.
 - Access ends when you revoke it, not when you delete the file:
-  `docker exec -it <container> revoke-client alice`.
+  `docker exec -it <container> revoke-client zaphod`.
 - The `culvert-pki` volume holds the CA that signs every client. Back it up
   and keep it private; losing it invalidates every issued config, and
   leaking it lets someone else issue their own.
 
-One identity covers alice's devices concurrently, laptop and phone both
+One identity covers Zaphod's devices concurrently, laptop and phone both
 connected. OpenVPN shares the certificate across sessions; WireGuard cannot
-share a key, so alice gets one peer per device slot (`alice-wg-split.conf`,
-`alice-wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
+share a key, so alice gets one peer per device slot (`zaphod-wg-split.conf`,
+`zaphod-wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
 `CULVERT_ALLOW_SHARED_CLIENTS=false` where a credential must identify a single
 device.
 
@@ -114,8 +113,8 @@ client connection guide.
 
 ## Use cases
 
-The quick start above is the tyre-kicker path. From there, culvert
-ships opinionated profiles for the shapes we actually run it in - each
+The quick start above is the quickstart path. From there, culvert
+ships opinionated profiles for the deploy types we actually run IRL with - each
 usable as-is with one `CULVERT_PROFILE=` switch, or as a base to tweak.
 Each has a full walkthrough (deploy, client, ops) under [docs/](docs/):
 
@@ -159,7 +158,7 @@ Site-specific defaults ship as YAML files under `profiles/` and load
 opt-in via `CULVERT_PROFILE`. Explicit env vars always override
 profile values.
 
-Culvert ships opinionated presets for the common shapes. Each is
+Culvert ships opinionated presets for the common deploy types. Each is
 usable as-is once you set `CULVERT_SERVER_CN` (and the secrets a
 preset needs), or as a starting point to copy and tweak:
 
@@ -217,9 +216,9 @@ starts and dev environments.
 
 ## Cryptography and CNSA 2.0
 
-The OpenVPN path ships the CNSA 2.0 *classical* suite by default, and
-we are straight about where the limits are - no OSS VPN stack you can
-commonly deploy today is fully CNSA 2.0 (the gap everywhere is ML-DSA).
+The OpenVPN path ships the CNSA 2.0 *classical* suite by default, aligned
+to technical deployment reality vs policy here - no OSS VPN stack you can
+commonly deploy today is fully CNSA 2.0 (DT hot tip: the gap everywhere is ML-DSA).
 
 What the defaults give you (OpenVPN, both the plain and the
 HTTPS-tunnelled listeners):
@@ -237,7 +236,7 @@ HTTPS-tunnelled listeners):
 - `tls-crypt-v2` wraps the TLS handshake in a pre-shared symmetric
   layer (metadata protection and DoS mitigation)
 
-The limits:
+The limits, for those cryptanalysis inclined:
 
 - **ChaCha20-Poly1305 and X25519 are accepted as secondary options**
   for client compatibility. Strict deployments can pin
@@ -246,7 +245,7 @@ The limits:
 - **WireGuard is outside CNSA by design.** Its suite is fixed
   (Curve25519, ChaCha20-Poly1305, BLAKE2s) and not configurable -
   that is a WireGuard protocol property, not a Culvert choice. Use the
-  OpenVPN path where CNSA alignment matters.
+  OpenVPN path where more stringent CNSA alignment matters.
 - **No post-quantum key exchange yet.** OpenVPN takes its TLS groups from
   the crypto library, and the OpenSSL 3.0.13 in our Ubuntu 24.04 base has
   no ML-KEM - so CNSA 2.0's headline items (ML-KEM-1024, ML-DSA-87) are
