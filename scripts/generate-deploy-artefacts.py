@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 #  Project:      culvert
 #  File:         generate-deploy-artefacts.py
-#  Purpose:      Generate the reference Helm chart + Compose fragment from the
-#                scalo deployment contract, then layer culvert's VPN overlay.
+#  Purpose:      Write the scalo deployment contract, and generate the reference
+#                Helm chart + Compose fragment from it with culvert's VPN overlay.
 #  Language:     Python
 #
 #  License:      Apache-2.0
@@ -10,18 +10,24 @@
 
 """Generate culvert's deployment artefacts from its scalo deployment contract.
 
-Run this to (re)produce the committed reference chart and Compose fragment::
+Run this to (re)produce the committed contract, reference chart and Compose
+fragment::
 
     .venv/bin/python scripts/generate-deploy-artefacts.py
 
-It does two things:
+It does three things:
 
-1. Calls scalo's ``generate_chart`` / ``generate_compose_fragment`` to emit the
+1. Writes the contract to ``deploy/deployment-contract.json``. hyperi-ci's
+   ``release.helm`` assembles the published thin chart from that file on the
+   scalo-service library chart, which renders every contract field.
+
+2. Calls scalo's ``generate_chart`` / ``generate_compose_fragment`` to emit the
    conventional boilerplate (~80%): identity, the metrics/health probe wiring
    on the observability port, the Service, ConfigMap, ServiceAccount, HPA and
-   NOTES.
+   NOTES. They are handed the contract without its gated ports and secret
+   groups (see ``_reference_contract``).
 
-2. Layers culvert's VPN overlay (~20%) onto the generated chart. A generic
+3. Layers culvert's VPN overlay (~20%) onto the generated chart. A generic
    Python-service generator has no field for the runtime surface a VPN needs, so
    these are applied here, on top of the generated files, via anchored inserts
    that fail loudly if scalo's output shape changes:
@@ -40,8 +46,6 @@ overlay``. The chart is standalone: culvert depends on nothing beyond its own
 image, so consumers can adopt it without inheriting anything else.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -51,8 +55,30 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 from lib.deployment import deployment_contract  # noqa: E402
 from scalo.deployment import generate_chart, generate_compose_fragment  # noqa: E402
 
+CONTRACT_FILE = _REPO_ROOT / "deploy" / "deployment-contract.json"
 CHART_DIR = _REPO_ROOT / "deploy" / "helm" / "culvert"
 COMPOSE_FILE = _REPO_ROOT / "deploy" / "compose" / "culvert.yaml"
+
+
+def _reference_contract(contract):
+    """Return the contract as scalo-py's chart and Compose generators can take it.
+
+    Those generators read no port ``when`` and carry every port they are given,
+    so a gated port is dropped and stays an opt-in ``extraPorts`` entry in the
+    reference chart. Secret groups are dropped too: the reference chart takes
+    sensitive CULVERT_* through its own ``existingSecret`` envFrom, and
+    ``generate_chart`` writes a key name with a hyphen into a template field
+    reference, which helm refuses to parse.
+
+    Args:
+        contract: The deployment contract.
+
+    Returns:
+        A copy without gated ports or secret groups.
+
+    """
+    ungated = [port for port in contract.extra_ports if port.when is None]
+    return contract.model_copy(update={"extra_ports": ungated, "secrets": []})
 
 
 def _replace_once(path: Path, old: str, new: str) -> None:
@@ -700,13 +726,17 @@ def _write_compose(contract, path: Path) -> None:
 
 
 def main() -> None:
-    """Generate the chart + Compose fragment and apply the VPN overlay."""
+    """Write the contract, generate the chart + Compose fragment, apply the overlay."""
     contract = deployment_contract()
+    CONTRACT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CONTRACT_FILE.write_text(contract.to_json() + "\n", encoding="utf-8", newline="\n")
 
-    generate_chart(contract, CHART_DIR)
+    reference = _reference_contract(contract)
+    generate_chart(reference, CHART_DIR)
     _apply_vpn_overlay(CHART_DIR)
-    _write_compose(contract, COMPOSE_FILE)
+    _write_compose(reference, COMPOSE_FILE)
 
+    print(f"Wrote contract:         {CONTRACT_FILE}")
     print(f"Wrote Helm chart:       {CHART_DIR}")
     print(f"Wrote Compose fragment: {COMPOSE_FILE}")
 
