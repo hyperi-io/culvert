@@ -3,6 +3,12 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.18](https://github.com/hyperi-io/culvert/compare/v2.1.17...v2.1.18) (2026-10-09)
+
+### Bug Fixes
+
+* build the thin chart from contract v4 ([#68](https://github.com/hyperi-io/culvert/issues/68)) ([034df91](https://github.com/hyperi-io/culvert/commit/034df91604e6d04797dff1308a0aff136d572258))
+
 ## [2.1.17](https://github.com/hyperi-io/culvert/compare/v2.1.16...v2.1.17) (2026-10-06)
 
 ### Bug Fixes
