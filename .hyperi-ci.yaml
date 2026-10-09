@@ -34,7 +34,7 @@ quality:
         S602), and the operator-facing commands exec fixed /usr/local/bin paths.
   python:
     ruff: blocking
-    bandit: blocking
+    ruff_security: blocking
     # ty (Astral type checker): scripts/ shipped code is clean; tests/ still
     # has a few dynamic-pattern diagnostics, so kept non-blocking for now.
     # Promote to `blocking` once tests/ typing is addressed.
