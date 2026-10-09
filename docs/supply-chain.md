@@ -11,7 +11,7 @@ GitHub releases during image build:
 | `openvpn` (server) | [build.openvpn.net](https://build.openvpn.net) (official APT repo) | stable channel, 2.7.x+ |
 | `easy-rsa` | Ubuntu archive | System package (from digest-pinned base) |
 | `stunnel4` | Ubuntu archive | System package (from digest-pinned base) |
-| `scalo` (HyperI-own) | PyPI | image installs `==2.31.1` from the hash-pinned `requirements-docker.txt`; source range is `>=2.31.1,<3`; ships immediately (no cooldown); `uv.lock` pins the dev/CI tree with hashes |
+| `scalo` (HyperI-own) | PyPI | image installs `==2.31.3` from the hash-pinned `requirements-docker.txt`; source range is `>=2.31.3,<3`; ships immediately (no cooldown); `uv.lock` pins the dev/CI tree with hashes |
 
 External dependencies track "latest stable released at least 7 days ago"
 -- the org `minimumReleaseAge` cooldown, a buffer against fresh-release

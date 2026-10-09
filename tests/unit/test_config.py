@@ -1061,3 +1061,38 @@ class TestCrlDaysValidation:
         exited, errors = _validate_capturing(cfg)
         assert exited
         assert expected in errors
+
+
+class TestDotenvScope:
+    """culvert reads the .env in its working directory and none above it.
+
+    A .env in a parent directory belongs to whatever else lives there, and
+    walking up to it would hand that project's values to the VPN server.
+    """
+
+    @pytest.fixture
+    def server_cn_restored(self, clean_env, monkeypatch):
+        """Undo the CULVERT_SERVER_CN a loaded .env writes into the environment."""
+        monkeypatch.setenv("CULVERT_SERVER_CN", "placeholder")
+        monkeypatch.delenv("CULVERT_SERVER_CN")
+
+    def test_a_parent_directory_env_file_is_not_read(
+        self, server_cn_restored, monkeypatch, tmp_path
+    ):
+        (tmp_path / ".env").write_text(
+            "CULVERT_SERVER_CN=from-parent.example\n", encoding="utf-8"
+        )
+        child = tmp_path / "child"
+        child.mkdir()
+        monkeypatch.chdir(child)
+        assert Config.from_settings().server_cn == ""
+
+    def test_the_working_directory_env_file_is_read(
+        self, server_cn_restored, monkeypatch, tmp_path
+    ):
+        """The control: the same file one level down is read."""
+        (tmp_path / ".env").write_text(
+            "CULVERT_SERVER_CN=from-cwd.example\n", encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        assert Config.from_settings().server_cn == "from-cwd.example"

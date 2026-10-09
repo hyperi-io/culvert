@@ -34,7 +34,7 @@ quality:
         S602), and the operator-facing commands exec fixed /usr/local/bin paths.
   python:
     ruff: blocking
-    bandit: blocking
+    ruff_security: blocking
     # ty (Astral type checker): scripts/ shipped code is clean; tests/ still
     # has a few dynamic-pattern diagnostics, so kept non-blocking for now.
     # Promote to `blocking` once tests/ typing is addressed.
@@ -62,14 +62,6 @@ test:
       # this repo (tests/k8s/.env, gitignored). They skip without it.
       # Run against your own cluster with: pytest tests/k8s/ -m k8s -v
 
-# Top-level container section gates whether the Container job runs in CI
-# (python-ci.yml reads container.enabled) and selects build mode.
-# `custom` = use the repo's own Dockerfile (template mode would auto-generate
-# a Python-project Dockerfile, which doesn't fit a VPN server container).
-container:
-  enabled: true
-  mode: custom
-
 release:
   enabled: true
   channel: release
@@ -84,6 +76,13 @@ release:
   stamp_cmd: uv run --frozen --extra dev python scripts/generate-deploy-artefacts.py
   stamp_paths:
     - deploy/helm/culvert/Chart.yaml
+  # The thin chart, assembled from the committed contract on the scalo-service
+  # library chart. culvert has no CLI to emit the contract at release time, so
+  # scripts/generate-deploy-artefacts.py writes it and a unit test holds it there.
+  helm:
+    enabled: true
+    contract: deploy/deployment-contract.json
+    library: "2.14.4"
   container:
     enabled: true
     dockerfile: Dockerfile

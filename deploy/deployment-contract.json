@@ -1,0 +1,113 @@
+{
+  "schema_version": 4,
+  "app_name": "culvert",
+  "binary_name": "",
+  "description": "OpenVPN + WireGuard VPN server, optionally tunnelled over HTTPS, with OIDC SSO and external PKI",
+  "metrics_port": 9090,
+  "health": {
+    "liveness_path": "/livez",
+    "readiness_path": "/readyz",
+    "metrics_path": "/metrics",
+    "startup_budget_seconds": 150
+  },
+  "env_prefix": "CULVERT",
+  "metric_prefix": "culvert",
+  "config_mount_path": "/etc/vpn/profiles/culvert.yaml",
+  "image_registry": "ghcr.io/hyperi-io",
+  "extra_ports": [
+    {
+      "name": "wireguard",
+      "port": 51820,
+      "protocol": "UDP",
+      "when": {
+        "kind": "one_of",
+        "path": "config.protocol",
+        "values": [
+          "wireguard",
+          "both"
+        ]
+      },
+      "public": true
+    },
+    {
+      "name": "openvpn-udp",
+      "port": 1194,
+      "protocol": "UDP",
+      "public": true
+    }
+  ],
+  "entrypoint_args": [],
+  "secrets": [
+    {
+      "group_name": "oauth2",
+      "env_vars": [
+        {
+          "env_var": "CULVERT_OAUTH2_CLIENT_SECRET",
+          "key_name": "client-secret",
+          "secret_key": "CULVERT_OAUTH2_CLIENT_SECRET"
+        },
+        {
+          "env_var": "CULVERT_OAUTH2_HTTP_SECRET",
+          "key_name": "http-secret",
+          "secret_key": "CULVERT_OAUTH2_HTTP_SECRET"
+        }
+      ],
+      "optional": true
+    }
+  ],
+  "default_config": null,
+  "depends_on": [],
+  "keda": null,
+  "base_image": "",
+  "builder_image": "",
+  "python_version": "3.14",
+  "native_deps": {
+    "apt_repos": [],
+    "apt_packages": [],
+    "distro_codename": "trixie"
+  },
+  "image_profile": "production",
+  "emit_healthcheck": true,
+  "oci_labels": {
+    "title": "culvert",
+    "description": "OpenVPN + WireGuard, optionally tunnelled over HTTPS, with OIDC SSO and external PKI",
+    "vendor": "",
+    "label_namespace": "io.scalo",
+    "licenses": "Apache-2.0",
+    "copyright": ""
+  },
+  "config_schema": null,
+  "capabilities": [],
+  "writable_paths": [
+    {
+      "name": "pki",
+      "path": "/etc/vpn/pki",
+      "persistent": true,
+      "size": "1Gi"
+    }
+  ],
+  "termination_grace_seconds": 30,
+  "resources": {
+    "requests": {
+      "cpu": "250m",
+      "memory": "256Mi"
+    },
+    "limits": {
+      "cpu": "2",
+      "memory": "1Gi"
+    }
+  },
+  "security": {
+    "run_as_user": 0,
+    "run_as_group": 0,
+    "fs_group": 0,
+    "read_only_root_filesystem": false,
+    "capabilities_add": [
+      "NET_ADMIN",
+      "SETPCAP",
+      "SETGID",
+      "SETUID"
+    ]
+  },
+  "singleton": true
+}

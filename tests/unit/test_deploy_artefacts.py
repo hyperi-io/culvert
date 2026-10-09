@@ -14,6 +14,7 @@ that are visible in the shipped files alone - the ones that would otherwise be
 found by whoever runs `helm install` first, or read by whoever clones the repo.
 """
 
+import dataclasses
 import os
 import re
 import subprocess
@@ -21,6 +22,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+from lib.config import Config
+from lib.deployment import deployment_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHART_DIR = REPO_ROOT / "deploy" / "helm" / "culvert"
@@ -466,7 +469,7 @@ def _tree(root: Path) -> dict[str, bytes]:
 
 
 class TestCommittedArtefactsMatchTheGenerator:
-    """The committed chart and fragment are generator output, byte for byte.
+    """The committed contract, chart and fragment are generator output, byte for byte.
 
     Every other check in this file reads the committed files. A hand-edit, or a
     scalo bump that changes the generated shape, would pass all of them and be
@@ -478,15 +481,23 @@ class TestCommittedArtefactsMatchTheGenerator:
     def generated(self, tmp_path, monkeypatch):
         """Run the real generator into tmp_path, leaving the tree untouched."""
         module = _generator_module()
+        contract_file = tmp_path / "deployment-contract.json"
         chart_dir = tmp_path / "chart"
         compose_file = tmp_path / "compose" / "culvert.yaml"
+        monkeypatch.setattr(module, "CONTRACT_FILE", contract_file)
         monkeypatch.setattr(module, "CHART_DIR", chart_dir)
         monkeypatch.setattr(module, "COMPOSE_FILE", compose_file)
         module.main()
-        return chart_dir, compose_file
+        return chart_dir, compose_file, contract_file
+
+    def test_contract_matches_the_generator(self, generated):
+        """release.helm assembles the published chart from the committed contract."""
+        _, _, contract_file = generated
+        committed = REPO_ROOT / "deploy" / "deployment-contract.json"
+        assert committed.read_bytes() == contract_file.read_bytes()
 
     def test_chart_matches_the_generator(self, generated):
-        chart_dir, _ = generated
+        chart_dir, _, _ = generated
         committed, fresh = _tree(CHART_DIR), _tree(chart_dir)
         # The starter values files are written by hand, not generated.
         assert set(committed) - set(fresh) == set(STARTERS), (
@@ -496,7 +507,7 @@ class TestCommittedArtefactsMatchTheGenerator:
         assert not stale, f"committed chart files differ from the generator: {stale}"
 
     def test_compose_fragment_matches_the_generator(self, generated):
-        _, compose_file = generated
+        _, compose_file, _ = generated
         committed = REPO_ROOT / "deploy" / "compose" / "culvert.yaml"
         assert committed.read_bytes() == compose_file.read_bytes()
 
@@ -506,3 +517,34 @@ class TestCommittedArtefactsMatchTheGenerator:
         target.write_text("nothing the overlay expects\n", encoding="utf-8")
         with pytest.raises(RuntimeError, match="found 0 times"):
             _generator_module()._replace_once(target, "anchor\n", "replacement\n")
+
+
+def _secret_env_vars() -> list[tuple[str, str]]:
+    """Each (group, env var) pair the contract's secret groups hand the pod."""
+    return [
+        (group.group_name, entry.env_var)
+        for group in deployment_contract().secrets
+        for entry in group.env_vars
+    ]
+
+
+class TestSecretEnvVarsAreRead:
+    """A chart sets every env var a secret group names, so culvert must read each.
+
+    One culvert does not read is a Secret key the deployer fills and the server
+    ignores: OIDC then fails at runtime with a value that looks configured.
+    """
+
+    def test_the_contract_declares_secret_env_vars(self):
+        assert _secret_env_vars(), "the contract declares no secret env vars"
+
+    @pytest.mark.parametrize(
+        ("group", "env_var"), _secret_env_vars(), ids=lambda value: str(value)
+    )
+    def test_config_reads_the_env_var(self, group, env_var, clean_env, monkeypatch):
+        marker = f"marker-{env_var.lower()}"
+        monkeypatch.setenv(env_var, marker)
+        # A bool, so a failure never prints the config's values.
+        read = marker in dataclasses.asdict(Config.from_settings()).values()
+        # The message carries the env var and group names only, never a value.
+        assert read, f"{env_var} (secret group {group}) is not read by Config"

@@ -11,7 +11,7 @@ In `pyproject.toml` (granular extras - one per backend culvert actually
 uses, not the blanket `[secrets]`):
 
 ```toml
-dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.31.1,<3"]
+dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.31.3,<3"]
 ```
 
 The container installs the full runtime tree (scalo + those extras +
