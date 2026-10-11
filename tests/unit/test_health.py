@@ -118,6 +118,18 @@ class TestObservabilityEndpoints:
         assert status3 == 503
 
 
+class TestVpnChecksWithoutTheirTools:
+    """A host missing pgrep or iproute2 reads as VPN down, never an exception."""
+
+    @pytest.mark.parametrize("check", ["_check_openvpn", "_check_wireguard"])
+    def test_missing_binary_reads_as_down(self, monkeypatch, check):
+        def missing(*_args: Any, **_kwargs: Any) -> None:
+            raise FileNotFoundError(2, "No such file or directory")
+
+        monkeypatch.setattr(lib_health.subprocess, "run", missing)
+        assert getattr(lib_health, check)() is False
+
+
 class TestMetricsOnObservabilityPort:
     """A wired metrics object is served from the same port."""
 
