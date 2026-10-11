@@ -36,7 +36,7 @@ otel = ["scalo[opentelemetry]"]
 # unpinned dev dependency moves silently on the next lock refresh.
 [dependency-groups]
 dev = [
-    "ruff>=0.16.1,<0.17",
+    "ruff>=0.17,<0.18",
     "pytest>=9.1,<10",
     # hyperi-ci measures coverage of scripts/ by passing pytest-cov's --cov flags.
     "pytest-cov>=7.1,<8",
