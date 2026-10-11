@@ -19,11 +19,9 @@ Two consumers read it:
   from ``deploy/deployment-contract.json``. It renders every field below,
   including the port gate, the PKI claim, the root identity and the
   capabilities;
-- scalo-py's ``generate_chart``, behind the reference chart under
-  ``deploy/helm/culvert``. It reads none of the v4 fields (writable paths,
-  resources, security, singleton) and carries every port it is given, so
-  ``scripts/generate-deploy-artefacts.py`` hands it the always-on ports only and
-  layers the VPN surface on top.
+- scalo-py's ``generate_compose_fragment``, behind ``deploy/compose/culvert.yaml``.
+  It carries every port it is given, so ``scripts/generate-deploy-artefacts.py``
+  hands it the always-on ports only.
 
 This module imports ``scalo.deployment``, which is gated behind the
 ``[deployment]`` extra (pydantic). It is a dev/CI-time import only; the culvert

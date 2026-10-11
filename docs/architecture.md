@@ -157,16 +157,15 @@ the VPN listeners.
 
 ## Deployment artefacts are generated, not authored
 
-`deploy/deployment-contract.json`, `deploy/helm/culvert` and the compose
-fragment are rendered from culvert's scalo deployment contract by
-`scripts/generate-deploy-artefacts.py`. Editing any of them by hand puts it out
-of step with the contract, and a unit test compares the committed output
-against a fresh render. The release assembles a thin chart from the contract
-file on the scalo-service library chart, which renders every contract field:
-the WireGuard port gate, the PKI claim, the root identity and the capabilities. The chart's `appVersion`
-is a known weak point: the release commit stamps `VERSION` and the changelog
-without re-rendering, so the chart can ship pointing at the previous image
-([issue #38](https://github.com/hyperi-io/culvert/issues/38)).
+`deploy/deployment-contract.json` and the compose fragment are rendered from
+culvert's scalo deployment contract by `scripts/generate-deploy-artefacts.py`.
+Editing either by hand puts it out of step with the contract, and a unit test
+compares the committed output against a fresh render. The release assembles the
+Helm chart from the contract file on the scalo-service library chart, which
+renders every contract field: the WireGuard port gate, the PKI claim, the root
+identity, the capabilities and the single replica. The chart's `version` and
+`appVersion` come from the release, so the chart and the image it deploys move
+together. No chart is committed to this repository.
 
 ## Invariants, collected
 

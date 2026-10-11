@@ -41,7 +41,7 @@ dev = [
     # tests/conftest.py builds a real X.509 CRL for the CRL-expiry tests, which
     # shell out to `openssl crl` and so cannot use a stubbed string.
     "cryptography>=50,<51",
-    # Deployment-contract generators (Helm chart, compose fragment). Pulls in
+    # Deployment-contract generators (contract JSON, compose fragment). Pulls in
     # pydantic. Dev/CI-only: culvert's runtime never imports scalo.deployment.
     "scalo[deployment]>=2.31.3,<3",
 ]

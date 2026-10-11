@@ -1,13 +1,14 @@
 #  Project:      culvert
 #  File:         test_chart_deploy.py
-#  Purpose:      Install the Helm chart on a real cluster and prove it works
+#  Purpose:      Install the published Helm chart on a real cluster and prove it works
 #  Language:     Python
 #
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""Install the shipped Helm chart on a real cluster and exercise it.
+"""Install the published Helm chart on a real cluster and exercise it.
 
+The chart is installed with the values docs/use-case-kubernetes.md documents.
 `helm template` and kubeconform prove the chart is well-formed. They cannot
 tell you the kubelet will accept the pod, that the probes answer, or that a
 client outside the cluster gets a tunnel. That is what these do.
@@ -63,7 +64,7 @@ class TestChartInstalls:
         )
 
     def test_runs_as_root_with_net_admin(self, deployed):
-        """The VPN data plane needs both; the chart substitutes the non-root floor."""
+        """The VPN data plane needs both; the contract names root and the caps."""
         result = deployed(
             "get",
             "pod",
@@ -100,8 +101,8 @@ class TestChartInstalls:
         pod = _pod_name(deployed)
         result = deployed("exec", pod, "--", "cat", "/proc/sys/net/ipv4/ip_forward")
         assert result.stdout.strip() == "1", (
-            "net.ipv4.ip_forward is off in the pod network namespace - is"
-            " ipForward.enabled set, and did the init container run?"
+            "net.ipv4.ip_forward is off in the pod network namespace - did the"
+            " enable-ip-forward init container run?"
         )
 
     def test_service_account_token_not_mounted(self, deployed):

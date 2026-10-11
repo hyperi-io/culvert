@@ -99,20 +99,17 @@ starts on a local CA (external PKI - a fleet CA in OpenBao or a mounted
 Secret - is typical here; set `CULVERT_PKI_MODE=external` +
 `CULVERT_SECRETS_*` to swap).
 
-Run it on the Helm chart the same way as any scaled deploy - see
-[use-case-k8s-scale.md](use-case-k8s-scale.md). The load balancer MUST be
-connection-sticky: a single UDP or TCP flow has to stay pinned to one
-culvert pod, because the client-IP allocation and certificate state are
-per-pod. A per-packet LB will break the tunnels.
-
-A `values-edge-fleet.yaml` starter lives alongside the chart in
-[`deploy/helm/culvert`](../deploy/helm/culvert) with this shape's knobs
-already set - copy it and pass `-f values-edge-fleet.yaml`.
+Run it on the Kubernetes chart - see
+[use-case-kubernetes.md](use-case-kubernetes.md). The chart runs one replica,
+so a single pod holds every appliance's client-IP allocation and certificate
+state. Keep `publicService.externalTrafficPolicy: Local`, as the install
+values there do, so the pod sees each appliance's real source address, which
+per-client routing rules and the connection log need.
 
 ## See also
 
-- [use-case-k8s-scale.md](use-case-k8s-scale.md) - the chart, the
-  privileged namespace, and the connection-affinity requirement in full
+- [use-case-kubernetes.md](use-case-kubernetes.md) - the chart, the
+  privileged namespace and the PKI volume
 - [addressing.md](addressing.md) - why `100.64/10` here and why it is
   wrong for laptops
 - [Routing Control in .env.example](../.env.example) - the exact
