@@ -30,9 +30,11 @@ secrets-aws = ["scalo[secrets-aws]"]
 secrets-gcp = ["scalo[secrets-gcp]"]
 secrets-azure = ["scalo[secrets-azure]"]
 otel = ["scalo[opentelemetry]"]
-# Bounded, like the runtime deps. An unpinned dev dependency is not a loose
-# constraint but an invisible one: nothing proposes an update, and the version
-# moves silently on the next lock refresh.
+
+# A group, not an extra: uv syncs it by default, so ty and pytest under
+# `uv run` resolve the test imports. Bounded, like the runtime deps -- an
+# unpinned dev dependency moves silently on the next lock refresh.
+[dependency-groups]
 dev = [
     "ruff>=0.16.1,<0.17",
     "pytest>=9.1,<10",

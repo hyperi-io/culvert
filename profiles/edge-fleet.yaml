@@ -36,11 +36,9 @@ routing_control_enabled: true
 # reaches them). Isolation stays ON.
 client_isolation: true
 
-# Sharing is left at the shipped default deliberately. This preset runs 2-8
-# replicas, and duplicate-cn is enforced per OpenVPN process, so opting out
-# would give per-pod exclusivity while reading as a fleet-wide guarantee. Each
-# appliance already holds its own certificate; a cloned one is caught by the
-# connection log and revoked with revoke-client, not by duplicate-cn.
+# Sharing is left at the shipped default deliberately. Each appliance holds
+# its own certificate, and a cloned one is caught by the connection log and
+# revoked with revoke-client, not by duplicate-cn.
 
 # Outbound allow-list: appliances may only INITIATE to the receiver
 # network. Set this to your receiver's service CIDR.
@@ -59,9 +57,8 @@ downstream_admin_cidrs: "10.10.0.0/16"
 # allowed_destinations + downstream_admin_cidrs.
 push_routes: "10.20.0.0/16,10.10.0.0/16"
 
-# K8s behind a connection-based LB: log to stdout for the cluster log
-# pipeline. The LB must be connection-sticky (a single UDP/TCP flow
-# stays pinned to one culvert pod); see docs/use-case-edge-fleet.md.
+# Log to stdout for the cluster log pipeline; see
+# docs/use-case-kubernetes.md for the single-replica chart install.
 log_mode: stdout
 
 # External PKI is typical here (fleet CA in OpenBao / a mounted secret).

@@ -40,9 +40,9 @@ main() {
     cd "${SCRIPT_DIR}/.."
 
     if [[ "${1:-}" == "--verbose" ]] || [[ "${1:-}" == "-v" ]]; then
-        uv run --frozen --extra dev pytest tests/unit -v
+        uv run --frozen --group dev pytest tests/unit -v
     else
-        uv run --frozen --extra dev pytest tests/unit
+        uv run --frozen --group dev pytest tests/unit
     fi
 }
 
