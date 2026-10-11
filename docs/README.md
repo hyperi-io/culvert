@@ -23,8 +23,8 @@ for one of the opinionated `CULVERT_PROFILE=` presets.
   OIDC SSO, group gating, TCP fallback, offboarding.
 - [use-case-travel.md](use-case-travel.md) - the VPN over HTTPS, for networks
   that only pass web traffic. Includes what that does and does not defeat.
-- [use-case-k8s-scale.md](use-case-k8s-scale.md) - the Helm chart behind a load
-  balancer: probes, drain, autoscaling, external PKI, metrics.
+- [use-case-kubernetes.md](use-case-kubernetes.md) - the published Helm chart,
+  one replica: install values, the PKI volume, external PKI, probes, metrics.
 - [use-case-edge-fleet.md](use-case-edge-fleet.md) - an appliance fleet into a
   central receiver, with reverse admin back down the tunnels.
 

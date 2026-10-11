@@ -8,26 +8,24 @@
 
 """Checks on what culvert actually ships, runnable without a cluster.
 
-The cluster tier in tests/k8s/ proves the chart works on a real cluster, but it
-needs a kubeconfig and never runs in CI. These assertions cover the failures
-that are visible in the shipped files alone - the ones that would otherwise be
-found by whoever runs `helm install` first, or read by whoever clones the repo.
+The chart is published, not committed, so what an operator installs is the
+contract plus the values docs/use-case-kubernetes.md documents. The cluster tier
+in tests/k8s/ proves those work on a real cluster, but it needs a kubeconfig and
+never runs in CI. These assertions cover the failures that are visible in the
+contract, the documented values and the tracked tree alone - the ones that would
+otherwise be found by whoever installs the chart first, or reads the repo.
 """
 
 import dataclasses
-import os
-import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
+import doc_values
 import pytest
-import yaml
 from lib.config import Config
 from lib.deployment import deployment_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CHART_DIR = REPO_ROOT / "deploy" / "helm" / "culvert"
-STARTERS = ("values-k8s-scale.yaml", "values-edge-fleet.yaml")
 
 # Decommissioned org libraries. culvert runs on scalo, their Apache-2.0
 # successor, and has done since the rebrand. A reference in a tracked file
@@ -55,9 +53,18 @@ LEGACY_CONTAINER_PATHS = (
     "/var/log/openvpn",
 )
 
-
-def _load(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+# The documented opt-in listeners: port name -> the Config fields that carry its
+# default port and the switch that turns the feature on. The walkthrough's
+# extraPorts and its switch table are checked against these.
+OPT_IN_LISTENERS = {
+    "openvpn-tcp": ("tcp_port", "tcp_enabled"),
+    "openvpn-https": ("https_port", "https_enabled"),
+    "wg-https": ("wg_https_tunnel_port", "wg_https_tunnel_enabled"),
+    "oauth2-udp": ("oauth2_udp_port", "oauth2_enabled"),
+    "oauth2-https": ("oauth2_https_port", "oauth2_enabled"),
+    "oauth2-tcp": ("oauth2_tcp_port", "oauth2_enabled"),
+    "client-download": ("client_download_port", "client_download_enabled"),
+}
 
 
 def _tracked_text_files() -> list[Path]:
@@ -146,295 +153,197 @@ class TestCanonicalPaths:
 
 
 @pytest.fixture(scope="module")
-def values() -> dict:
-    return _load(CHART_DIR / "values.yaml")
+def contract():
+    return deployment_contract()
 
 
 @pytest.fixture(scope="module")
-def chart() -> dict:
-    return _load(CHART_DIR / "Chart.yaml")
+def install() -> dict:
+    """The install values from the Kubernetes walkthrough."""
+    return doc_values.install_values()
 
 
-def _changelog_versions() -> list[tuple[int, int, int]]:
-    """Every `## [X.Y.Z]` release heading in CHANGELOG.md, as sortable tuples."""
-    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    return [
-        (int(m[0]), int(m[1]), int(m[2]))
-        for m in re.findall(r"^## \[(\d+)\.(\d+)\.(\d+)\]", text, re.MULTILINE)
-    ]
+@pytest.fixture(scope="module")
+def external_pki() -> dict:
+    """The external PKI values from the Kubernetes walkthrough."""
+    return doc_values.external_pki_values()
 
 
-def _latest_release_tag() -> str | None:
-    """The highest vX.Y.Z tag on origin, or None when origin cannot be read.
+def _volume(values: dict, name: str) -> dict:
+    return next(v for v in values["extraVolumes"] if v["name"] == name)
 
-    Asked of the remote, not the clone: `actions/checkout` fetches no tags
-    unless asked, so a local lookup finds none in CI, and `ls-remote` reads the
-    tag list without fetching anything into the clone.
+
+def _mount(values: dict, name: str) -> dict:
+    return next(m for m in values["extraVolumeMounts"] if m["name"] == name)
+
+
+def _documented_env(values: dict) -> dict[str, str]:
+    """The documented extraEnv, minus CULVERT_PROFILE.
+
+    A profile name loads /etc/vpn/profiles/<name>.yaml and exits when it is
+    absent, and the file only exists inside the pod.
     """
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "ls-remote", "--tags", "--refs", "origin"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=60,
-            # An unreachable or private origin must fail, never wait on a prompt.
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-        )
-    except subprocess.TimeoutExpired:
-        return None
-    if result.returncode != 0:
-        return None
-
-    releases = []
-    for line in result.stdout.splitlines():
-        tag = line.rpartition("refs/tags/")[2]
-        if match := re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag):
-            releases.append((tuple(int(part) for part in match.groups()), tag))
-    return max(releases)[1] if releases else None
+    return {
+        name: str(value)
+        for name, value in values["extraEnv"].items()
+        if name != "CULVERT_PROFILE"
+    }
 
 
-class TestImageReference:
-    """A plain `helm install` must resolve to an image that exists."""
+class TestPodSurface:
+    """The pod must hold everything the VPN data plane needs.
 
-    def test_app_version_tracks_the_version_file(self, chart):
-        """image.tag defaults to appVersion, so a stale one is ImagePullBackOff."""
-        version = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
-        assert chart["appVersion"] == f"v{version.lstrip('v')}"
-        assert chart["version"] == version.lstrip("v")
+    The chart renders only what the contract names, so the root identity and the
+    capabilities come from the contract, and the tun device and ip_forward come
+    from the documented values.
+    """
 
-    def test_app_version_is_not_behind_the_changelog(self, chart):
-        """The in-tree guard, for a checkout that cannot reach origin.
-
-        The tag check below is the precise one, and it skips wherever origin's
-        tag list cannot be read. CHANGELOG.md is committed by the release job,
-        so it is in the tree whatever the fetch depth or network.
-
-        Weaker on purpose: it only proves the chart is not BEHIND a release the
-        changelog already records, so being ahead (just after a backfill) is
-        fine. It would still have caught the drift this test was written for --
-        the chart sat at 2.1.10 while the changelog recorded 2.1.12.
-        """
-        released = _changelog_versions()
-        if not released:
-            pytest.skip("no released versions recorded in CHANGELOG.md")
-
-        newest = max(released)
-        actual = tuple(
-            int(part) for part in chart["appVersion"].lstrip("v").split(".")[:3]
-        )
-        assert actual >= newest, (
-            f"chart appVersion {chart['appVersion']} is behind"
-            f" {'.'.join(str(n) for n in newest)}, the newest release in"
-            " CHANGELOG.md, so `helm install` deploys an image that old"
-        )
-
-    def test_app_version_tracks_the_latest_release(self, chart):
-        """The chart must not point at an image older than the last release.
-
-        The release pipeline stamps VERSION and commits VERSION, CHANGELOG.md
-        and deploy/helm/culvert/Chart.yaml together (release.stamp_cmd and
-        release.stamp_paths), so a chart drifting from the published tag means
-        that commit was skipped or the chart was hand-edited afterwards. That
-        is how the chart shipped seven releases stale (fixed in dab7919) and
-        then three releases stale again.
-
-        Fix a failure by bumping VERSION to the tag and regenerating:
-        `python scripts/generate-deploy-artefacts.py`.
-        """
-        latest = _latest_release_tag()
-        if latest is None:
-            pytest.skip("no release tag readable from origin - nothing to compare")
-
-        assert chart["appVersion"] == latest, (
-            f"chart appVersion {chart['appVersion']} is not the latest release"
-            f" {latest}, so `helm install` deploys an image that old"
-        )
-
-
-class TestCapabilities:
-    """The pod must hold every capability the VPN data plane needs."""
-
-    def test_privilege_drop_capabilities_are_granted(self, values):
+    def test_privilege_drop_capabilities_are_granted(self, contract):
         """OpenVPN drops to user nobody at startup and exits 1 if it cannot.
 
         NET_ADMIN alone is not enough: retaining it across the drop needs
         SETPCAP, and the drop itself needs SETUID and SETGID.
         """
-        added = values["securityContext"]["capabilities"]["add"]
-        for cap in ("NET_ADMIN", "SETPCAP", "SETGID", "SETUID"):
-            assert cap in added, f"{cap} missing from securityContext.capabilities"
+        granted = set(contract.security.capabilities_add)
+        assert {"NET_ADMIN", "SETPCAP", "SETGID", "SETUID"} <= granted
 
-    def test_non_root_floor_is_not_reimposed(self, values):
+    def test_runs_as_root(self, contract):
         """OpenVPN and wg-quick create the tun device and program routing."""
-        assert "runAsNonRoot" not in values["podSecurityContext"]
+        assert contract.security.run_as_user == 0
 
-    def test_unsafe_sysctl_is_not_requested_by_default(self, values):
+    def test_tun_device_is_passed_through(self, install):
+        assert _volume(install, "tun")["hostPath"] == {
+            "path": "/dev/net/tun",
+            "type": "CharDevice",
+        }
+        assert _mount(install, "tun")["mountPath"] == "/dev/net/tun"
+
+    def test_ip_forward_is_set_by_a_privileged_init_container(self, install):
+        """/proc/sys is read-only to an unprivileged container, capabilities or not.
+
+        Off, the server accepts clients and forwards none of their traffic.
+        """
+        (init,) = install["initContainers"]
+        assert init["command"] == ["sysctl", "-w", "net.ipv4.ip_forward=1"]
+        assert init["securityContext"]["privileged"] is True
+
+    def test_unsafe_sysctl_is_not_requested(self, install):
         """A kubelet without --allowed-unsafe-sysctls rejects the pod outright."""
-        assert "sysctls" not in values["podSecurityContext"]
-
-    def test_tun_device_is_passed_through(self, values):
-        assert values["tunDevice"]["enabled"] is True
-
-    def test_ip_forwarding_is_enabled_by_default(self, values):
-        """Off, the server accepts clients and forwards none of their traffic."""
-        assert values["ipForward"]["enabled"] is True
-
-    def test_ip_forward_init_container_is_privileged(self):
-        """/proc/sys is read-only to an unprivileged container, capabilities or not."""
-        text = (CHART_DIR / "templates" / "deployment.yaml").read_text(encoding="utf-8")
-        assert "net.ipv4.ip_forward=1" in text
-        assert "privileged: true" in text
+        assert "sysctls" not in install.get("podSecurityContext", {})
 
 
-class TestObservabilityIsNotExposedByAccident:
-    """One Service carries the VPN ports and the unauthenticated :9090."""
+class TestSingleReplica:
+    """The walkthrough says one replica, so the contract has to say it too."""
 
-    @pytest.mark.parametrize("starter", STARTERS)
-    def test_loadbalancer_starters_ship_fail_closed(self, starter):
-        """A LoadBalancer with no source ranges publishes /metrics to the world.
+    def test_the_contract_is_a_singleton(self, contract):
+        """The chart renders one Recreate pod and no autoscaler for a singleton.
 
-        Both starters carry a deliberately invalid placeholder so the API server
-        rejects the Service until an operator names their own CIDRs.
+        WireGuard mints its server key in the pod, so a second pod would issue
+        client configs the first rejects.
         """
-        service = _load(CHART_DIR / starter)["service"]
-        if service.get("type") != "LoadBalancer":
-            pytest.skip(f"{starter} does not use a LoadBalancer")
-        ranges = service.get("loadBalancerSourceRanges") or []
-        assert ranges, f"{starter} exposes an unrestricted LoadBalancer"
-        assert any("REPLACE-ME" in str(r) for r in ranges), (
-            f"{starter} ships a usable source range - it must not install"
-            " until the operator supplies their own"
-        )
+        assert contract.singleton is True
 
 
-class TestFlowAffinity:
-    """Tunnel state is per-pod, so a flow must not move between replicas."""
+class TestConfigFile:
+    """`config` has to reach the server, and the server has to log somewhere."""
 
-    @pytest.mark.parametrize("starter", STARTERS)
-    def test_multi_replica_starters_pin_flows(self, starter):
-        values_file = _load(CHART_DIR / starter)
-        replicas = values_file.get("autoscaling", {}).get(
-            "minReplicas", values_file.get("replicaCount", 1)
-        )
-        if int(replicas) < 2:
-            pytest.skip(f"{starter} runs a single replica - affinity is moot")
-        service = values_file["service"]
-        assert (
-            service.get("sessionAffinity") == "ClientIP"
-            or service.get("externalTrafficPolicy") == "Local"
-        ), f"{starter} runs {replicas} replicas with no flow pinning"
+    def test_config_is_mounted_as_a_single_file(self, install):
+        assert install["configMount"]["subPath"] is True
 
-    @pytest.mark.parametrize("starter", STARTERS)
-    def test_multi_replica_starters_use_external_pki(self, starter):
-        """Local PKI would give each replica its own CA; the chart refuses it."""
-        values_file = _load(CHART_DIR / starter)
-        replicas = values_file.get("autoscaling", {}).get(
-            "minReplicas", values_file.get("replicaCount", 1)
-        )
-        if int(replicas) < 2:
-            pytest.skip(f"{starter} runs a single replica")
-        assert values_file["env"].get("CULVERT_PKI_MODE") == "external", (
-            f"{starter} runs {replicas} replicas without external PKI, so the"
-            " chart's own guard makes it uninstallable"
-        )
+    def test_profile_names_the_mounted_file(self, install, contract):
+        """CULVERT_PROFILE=<name> loads /etc/vpn/profiles/<name>.yaml.
 
-
-class TestSharedPkiMaterial:
-    """More than one replica only works when every one holds the same material."""
-
-    def test_guard_counts_the_autoscaler_ceiling_not_its_floor(self):
-        """minReplicas defaults to 1, so a floor check waves an HPA straight past.
-
-        `--set autoscaling.enabled=true` alone rendered a Deployment plus an HPA
-        that could reach 10 local-PKI replicas, each minting its own CA - the
-        exact failure the guard's message describes preventing.
+        Without it the mounted file is never read.
         """
-        text = (CHART_DIR / "templates" / "deployment.yaml").read_text(encoding="utf-8")
-        assert "autoscaling.maxReplicas" in text, (
-            "the replica guard does not read autoscaling.maxReplicas, so an HPA"
-            " can scale past it unchecked"
-        )
-        assert "autoscaling.minReplicas" not in text, (
-            "the replica guard still reads minReplicas, which is the floor and"
-            " not what the autoscaler can reach"
-        )
+        mounted = PurePosixPath(contract.config_mount_path)
+        assert mounted.parent == PurePosixPath("/etc/vpn/profiles")
+        assert install["extraEnv"]["CULVERT_PROFILE"] == mounted.stem
 
-    def test_pki_secret_is_off_by_default(self, values):
-        """The five-minute path is a single server minting its own PKI."""
-        assert values["pkiSecret"] == ""
-        assert values["pkiSecretMountPath"].startswith("/")
-
-    @pytest.mark.parametrize("starter", STARTERS)
-    def test_multi_replica_starters_document_the_requirement(self, starter):
-        """The starters cannot name a Secret, so the install command must."""
-        values_file = _load(CHART_DIR / starter)
-        replicas = values_file.get("autoscaling", {}).get(
-            "minReplicas", values_file.get("replicaCount", 1)
-        )
-        if int(replicas) < 2:
-            pytest.skip(f"{starter} runs a single replica")
-        text = (CHART_DIR / starter).read_text(encoding="utf-8")
-        assert "pkiSecret" in text, (
-            f"{starter} runs {replicas} replicas but never mentions pkiSecret,"
-            " so the chart's guard will reject it with no hint in the file"
-        )
+    def test_log_goes_to_stdout(self, install):
+        """The image default writes it to a file inside a dead container."""
+        assert install["extraEnv"]["CULVERT_LOG_MODE"] == "stdout"
 
 
-class TestWireGuardReplicaGuard:
-    """WireGuard has no shared-key path, so it cannot be scaled out.
+class TestOptInListeners:
+    """The documented listener ports must be the ones the server binds."""
 
-    Nothing in lib/pki.py sources WireGuard material, so every replica mints its
-    own server keypair and keeps its own allocations.json: a client config
-    reaches exactly one pod and the tunnel addresses collide. pkiSecret does not
-    excuse it -- that Secret carries no WireGuard key -- so this guard has to be
-    independent of the two beside it.
-    """
+    def test_every_opt_in_listener_is_documented(self, install):
+        documented = {port["name"] for port in install["extraPorts"]}
+        assert documented == set(OPT_IN_LISTENERS)
 
-    def test_guard_is_present_and_independent_of_the_pki_guards(self):
-        text = (CHART_DIR / "templates" / "deployment.yaml").read_text(encoding="utf-8")
-        assert "CULVERT_PROTOCOL" in text, (
-            "the deployment template never reads CULVERT_PROTOCOL, so a"
-            " multi-replica WireGuard install renders without complaint"
-        )
-        assert 'list "wireguard" "both"' in text, (
-            "the guard does not cover both WireGuard-carrying protocol values"
-        )
+    @pytest.mark.parametrize("name", OPT_IN_LISTENERS)
+    def test_port_is_the_config_default(self, install, name):
+        port = next(p for p in install["extraPorts"] if p["name"] == name)
+        port_field, _ = OPT_IN_LISTENERS[name]
+        assert port["port"] == getattr(Config(), port_field)
+        assert port["protocol"] == "TCP"
+        assert port["public"] is True
 
-    def test_guard_reads_the_autoscaler_ceiling(self):
-        """An HPA that CAN reach 2 replicas is already broken for WireGuard."""
-        text = (CHART_DIR / "templates" / "deployment.yaml").read_text(encoding="utf-8")
-        wg_guard = text.split("$wg :=")[1]
-        assert "$replicas" in wg_guard, (
-            "the WireGuard guard does not use the shared $replicas value, so it"
-            " does not inherit the autoscaler-ceiling handling"
-        )
+    @pytest.mark.parametrize("name", OPT_IN_LISTENERS)
+    def test_switch_is_a_config_flag_and_is_in_the_table(self, name):
+        _, switch_field = OPT_IN_LISTENERS[name]
+        assert isinstance(getattr(Config(), switch_field), bool)
+        assert f"CULVERT_{switch_field.upper()}=true" in doc_values.doc_text()
 
-    @pytest.mark.parametrize("starter", STARTERS)
-    def test_multi_replica_starters_do_not_enable_wireguard(self, starter):
-        """A starter that trips the chart's own guard is uninstallable."""
-        values_file = _load(CHART_DIR / starter)
-        replicas = values_file.get("autoscaling", {}).get(
-            "maxReplicas", values_file.get("replicaCount", 1)
-        )
-        if int(replicas) < 2:
-            pytest.skip(f"{starter} runs a single replica")
-        protocol = values_file.get("env", {}).get("CULVERT_PROTOCOL", "openvpn")
-        assert protocol not in ("wireguard", "both"), (
-            f"{starter} scales to {replicas} replicas with"
-            f" CULVERT_PROTOCOL={protocol}; each would mint its own WireGuard"
-            " server key, so the chart's guard rejects the install"
-        )
+    def test_names_do_not_repeat_the_contract_ports(self, install, contract):
+        """The library renders the contract's ports, so a repeat is a duplicate."""
+        names = [port["name"] for port in install["extraPorts"]]
+        assert len(names) == len(set(names))
+        assert not set(names) & {port.name for port in contract.extra_ports}
+
+    def test_the_metrics_port_is_not_public(self, install, contract):
+        """The LoadBalancer must not publish /livez, /readyz or /metrics."""
+        assert all(p["port"] != contract.metrics_port for p in install["extraPorts"])
 
 
-class TestLogging:
-    """A pod that dies must say why in `kubectl logs`."""
+class TestDocumentedEnvironment:
+    """Config must accept the environment the walkthrough tells an operator to set."""
 
-    def test_chart_sends_openvpn_log_to_stdout(self, values):
-        """The image default writes it to a file inside the dead container."""
-        assert values["env"]["CULVERT_LOG_MODE"] == "stdout"
+    def test_install_environment_is_accepted(self, install, clean_env, monkeypatch):
+        for name, value in _documented_env(install).items():
+            monkeypatch.setenv(name, value)
+        cfg = Config.from_settings()
+        cfg.validate()
+        assert cfg.server_cn == install["extraEnv"]["CULVERT_SERVER_CN"]
+        assert cfg.log_mode == "stdout"
+
+    def test_external_pki_environment_is_accepted(
+        self, install, external_pki, clean_env, monkeypatch
+    ):
+        env = {**_documented_env(install), **_documented_env(external_pki)}
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        cfg = Config.from_settings()
+        cfg.validate()
+        assert cfg.pki_mode == "external"
+        assert cfg.secrets_provider == "file"
+        assert cfg.secrets_ca_cert_path == env["CULVERT_SECRETS_CA_CERT_PATH"]
+        assert cfg.secrets_server_key_path == env["CULVERT_SECRETS_SERVER_KEY_PATH"]
+
+
+class TestExternalPki:
+    """The file provider reads a mounted Secret, so the mount has to line up."""
+
+    def test_lists_carry_the_tun_entries(self, external_pki):
+        """Helm replaces a list rather than merging it.
+
+        A block that set only the Secret volume would drop the tun device from
+        the pod, and OpenVPN would fail to start with no device to open.
+        """
+        assert _volume(external_pki, "tun")
+        assert _mount(external_pki, "tun")
+
+    def test_paths_sit_under_the_read_only_secret_mount(self, external_pki):
+        mount = _mount(external_pki, "pki-external")
+        assert mount["readOnly"] is True
+        assert _volume(external_pki, "pki-external")["secret"]["secretName"]
+        paths = [
+            value
+            for name, value in external_pki["extraEnv"].items()
+            if name.startswith("CULVERT_SECRETS_") and name.endswith("_PATH")
+        ]
+        assert len(paths) == 5
+        assert all(path.startswith(mount["mountPath"] + "/") for path in paths)
 
 
 class TestComposeFragment:
@@ -445,6 +354,13 @@ class TestComposeFragment:
             encoding="utf-8"
         )
         assert "1194:1194/udp" in text
+
+    def test_gated_wireguard_port_is_not_published(self):
+        """A default server opens no WireGuard port, so the fragment has none."""
+        text = (REPO_ROOT / "deploy" / "compose" / "culvert.yaml").read_text(
+            encoding="utf-8"
+        )
+        assert "51820" not in text
 
 
 def _generator_module():
@@ -459,17 +375,8 @@ def _generator_module():
     return module
 
 
-def _tree(root: Path) -> dict[str, bytes]:
-    """Every file under root, keyed by its path relative to root."""
-    return {
-        p.relative_to(root).as_posix(): p.read_bytes()
-        for p in sorted(root.rglob("*"))
-        if p.is_file()
-    }
-
-
 class TestCommittedArtefactsMatchTheGenerator:
-    """The committed contract, chart and fragment are generator output, byte for byte.
+    """The committed contract and fragment are generator output, byte for byte.
 
     Every other check in this file reads the committed files. A hand-edit, or a
     scalo bump that changes the generated shape, would pass all of them and be
@@ -482,41 +389,26 @@ class TestCommittedArtefactsMatchTheGenerator:
         """Run the real generator into tmp_path, leaving the tree untouched."""
         module = _generator_module()
         contract_file = tmp_path / "deployment-contract.json"
-        chart_dir = tmp_path / "chart"
         compose_file = tmp_path / "compose" / "culvert.yaml"
         monkeypatch.setattr(module, "CONTRACT_FILE", contract_file)
-        monkeypatch.setattr(module, "CHART_DIR", chart_dir)
         monkeypatch.setattr(module, "COMPOSE_FILE", compose_file)
         module.main()
-        return chart_dir, compose_file, contract_file
+        return compose_file, contract_file
 
     def test_contract_matches_the_generator(self, generated):
         """release.helm assembles the published chart from the committed contract."""
-        _, _, contract_file = generated
+        _, contract_file = generated
         committed = REPO_ROOT / "deploy" / "deployment-contract.json"
         assert committed.read_bytes() == contract_file.read_bytes()
 
-    def test_chart_matches_the_generator(self, generated):
-        chart_dir, _, _ = generated
-        committed, fresh = _tree(CHART_DIR), _tree(chart_dir)
-        # The starter values files are written by hand, not generated.
-        assert set(committed) - set(fresh) == set(STARTERS), (
-            "the committed chart and the generator disagree on which files exist"
-        )
-        stale = [name for name in fresh if committed.get(name) != fresh[name]]
-        assert not stale, f"committed chart files differ from the generator: {stale}"
-
     def test_compose_fragment_matches_the_generator(self, generated):
-        _, compose_file, _ = generated
+        compose_file, _ = generated
         committed = REPO_ROOT / "deploy" / "compose" / "culvert.yaml"
         assert committed.read_bytes() == compose_file.read_bytes()
 
-    def test_overlay_refuses_a_moved_anchor(self, tmp_path):
-        """A generator whose output shape moved must fail, not ship a bare chart."""
-        target = tmp_path / "values.yaml"
-        target.write_text("nothing the overlay expects\n", encoding="utf-8")
-        with pytest.raises(RuntimeError, match="found 0 times"):
-            _generator_module()._replace_once(target, "anchor\n", "replacement\n")
+    def test_no_chart_is_committed(self):
+        """The chart is assembled from the contract at release, not kept here."""
+        assert not (REPO_ROOT / "deploy" / "helm").exists()
 
 
 def _secret_env_vars() -> list[tuple[str, str]]:

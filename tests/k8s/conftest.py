@@ -8,10 +8,11 @@
 
 """Configuration for the Kubernetes chart tests.
 
-These tests install the real Helm chart on a real cluster, so they need a
-cluster to point at. Every site-specific value - context, addresses, hostnames,
-image reference, pull secret - is read from the environment, never hardcoded,
-so nothing about any particular cluster lands in this repository.
+These tests install the published Helm chart on a real cluster, with the values
+docs/use-case-kubernetes.md documents, so they need a cluster to point at. Every
+site-specific value - context, addresses, hostnames, image reference, pull
+secret - is read from the environment, never hardcoded, so nothing about any
+particular cluster lands in this repository.
 
 Put your values in ``tests/k8s/.env`` (gitignored) and they are picked up
 automatically. ``tests/k8s/.env.example`` lists what is available.
@@ -31,6 +32,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
+from doc_values import install_values
 from tidy import register_teardown
 
 ENV_FILE = Path(__file__).parent / ".env"
@@ -45,7 +48,17 @@ DEFAULT_RELEASE = "culvert-test"
 TIER_PODS = ("culvert-test-k8s-client", "culvert-test-k8s-target")
 TIER_NETPOLS = ("culvert-test-k8s-target-isolation",)
 
-CHART_DIR = Path(__file__).resolve().parents[2] / "deploy" / "helm" / "culvert"
+# The chart is published with each release, at the release's version. Point
+# CULVERT_K8S_CHART at a local chart directory or another OCI reference to test a
+# chart that is not published yet.
+DEFAULT_CHART = "oci://ghcr.io/hyperi-io/charts/culvert"
+VERSION_FILE = Path(__file__).resolve().parents[2] / "VERSION"
+
+# The library names every object after the chart, never the release, so a second
+# release in the namespace needs its own fullnameOverride. This label, set on
+# every server pod, is what the target's NetworkPolicy admits instead.
+SERVER_LABEL_KEY = "culvert-test-tier"
+SERVER_LABEL = "culvert-test-server"
 
 
 def _load_env_file() -> None:
@@ -104,6 +117,18 @@ class Kubectl:
         )
 
 
+def chart_args() -> list[str]:
+    """The chart reference and version `helm upgrade --install` takes.
+
+    The version is ignored for a local chart directory, so it is always passed.
+    """
+    chart = os.environ.get("CULVERT_K8S_CHART", "").strip() or DEFAULT_CHART
+    version = os.environ.get("CULVERT_K8S_CHART_VERSION", "").strip()
+    if not version:
+        version = VERSION_FILE.read_text(encoding="utf-8").strip().lstrip("v")
+    return [chart, "--version", version]
+
+
 def ready_pod(kubectl: Kubectl, release: str) -> str:
     """Name of a Ready, non-terminating pod for a release.
 
@@ -138,15 +163,37 @@ def kubectl() -> Kubectl:
 
 
 @pytest.fixture(scope="session")
-def helm_values() -> list[str]:
-    """Build the --set arguments for a chart install on the target cluster.
+def helm_values(tmp_path_factory) -> list[str]:
+    """Build the values arguments for a chart install on the target cluster.
 
-    Everything here is site-specific and therefore env-driven.
+    The install values come from the walkthrough itself, minus the
+    LoadBalancer, which a test cluster rarely has. Everything else here is
+    site-specific and therefore env-driven.
     """
+    documented = install_values()
+    documented.pop("publicService", None)
+    values_file = tmp_path_factory.mktemp("culvert-values") / "install.yaml"
+    values_file.write_text(yaml.safe_dump(documented), encoding="utf-8")
+
     args = [
+        "-f",
+        str(values_file),
         "--set",
-        f"env.CULVERT_SERVER_CN={_require('CULVERT_K8S_SERVER_CN')}",
+        f"extraEnv.CULVERT_SERVER_CN={_require('CULVERT_K8S_SERVER_CN')}",
+        "--set-string",
+        f"podLabels.{SERVER_LABEL_KEY}={SERVER_LABEL}",
     ]
+
+    # The chart renders a PKI claim by default, which stays Pending on a cluster
+    # with no default StorageClass and holds helm --wait for the full timeout.
+    storage_class = os.environ.get("CULVERT_K8S_STORAGE_CLASS", "").strip()
+    if storage_class:
+        args += [
+            "--set",
+            f"writablePaths.pki.persistence.storageClass={storage_class}",
+        ]
+    else:
+        args += ["--set", "writablePaths.pki.persistence.enabled=false"]
 
     image = os.environ.get("CULVERT_K8S_IMAGE", "").strip()
     if image:
@@ -154,6 +201,9 @@ def helm_values() -> list[str]:
         args += ["--set", f"image.repository={repository or image}"]
         if tag:
             args += ["--set", f"image.tag={tag}"]
+        # The published chart pins the image it was built with by digest, which
+        # would otherwise sit beside this tag and win.
+        args += ["--set", "image.digest=null"]
         # The tag under test is usually a moving one rebuilt from the working
         # tree, and IfNotPresent would keep serving whatever a node cached.
         args += ["--set", "image.pullPolicy=Always"]
@@ -162,36 +212,29 @@ def helm_values() -> list[str]:
     if pull_secret:
         args += ["--set", f"imagePullSecrets[0].name={pull_secret}"]
 
-    # The chart does not request net.ipv4.ip_forward by default - it is an unsafe
-    # sysctl and a kubelet without --allowed-unsafe-sysctls rejects the pod, so a
-    # privileged init container sets it in the pod's network namespace instead.
-    # Where the cluster does permit the sysctl, ask for it declaratively and cover
-    # that path too.
+    # The documented values set ip_forward from a privileged init container,
+    # because a kubelet without --allowed-unsafe-sysctls rejects the sysctl.
+    # Where the cluster does permit it, ask for it declaratively as well and
+    # cover that path too.
     if os.environ.get("CULVERT_K8S_ALLOW_UNSAFE_SYSCTLS", "").lower() == "true":
         args += [
             "--set-json",
             'podSecurityContext.sysctls=[{"name":"net.ipv4.ip_forward","value":"1"}]',
         ]
 
+    # The protocol goes in `config`: the chart opens the WireGuard port only
+    # where config.protocol starts it, and culvert reads the same value from
+    # the profile file the chart mounts.
     protocol = os.environ.get("CULVERT_K8S_PROTOCOL", "").strip()
     if protocol:
-        args += ["--set", f"env.CULVERT_PROTOCOL={protocol}"]
-
-    # Listener ports beyond OpenVPN's UDP 1194 are opt-in per capability, so
-    # turning WireGuard on in `env` is only half the job - its port has to be
-    # published on the Service too or the handshake goes nowhere.
-    if protocol in ("both", "wireguard"):
-        args += [
-            "--set-json",
-            'extraPorts=[{"name":"wireguard","port":51820,"protocol":"UDP"}]',
-        ]
+        args += ["--set", f"config.protocol={protocol}"]
 
     # A split-tunnel client routes only what the server pushes. Pushing the pod
     # CIDR is what lets it reach the target pod through the tunnel instead of
     # around it; the full-tunnel configs do not need it and are unaffected.
     pod_cidr = os.environ.get("CULVERT_K8S_POD_CIDR", "").strip()
     if pod_cidr:
-        args += ["--set", f"env.CULVERT_PUSH_ROUTES={pod_cidr}"]
+        args += ["--set", f"extraEnv.CULVERT_PUSH_ROUTES={pod_cidr}"]
 
     return args
 
@@ -394,7 +437,7 @@ def deployed(kubectl, helm_values):
         "upgrade",
         "--install",
         release,
-        str(CHART_DIR),
+        *chart_args(),
         "--wait",
         "--timeout",
         "5m",

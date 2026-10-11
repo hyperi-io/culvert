@@ -8,7 +8,7 @@
 
 """A real VPN connection inside Kubernetes, not a liveness probe.
 
-The other cluster module proves the chart is admitted and the probes answer.
+The other cluster module proves the pod is admitted and the probes answer.
 That is not the same as the product working. These tests generate a client
 config with ``generate-client`` on the running server pod, carry it to a client
 pod, bring an actual tunnel up, and require traffic to flow through it to a
@@ -33,7 +33,16 @@ import subprocess
 import time
 
 import pytest
-from conftest import CHART_DIR, Kubectl, ready_pod, release_name
+import yaml
+from conftest import (
+    SERVER_LABEL,
+    SERVER_LABEL_KEY,
+    Kubectl,
+    chart_args,
+    ready_pod,
+    release_name,
+)
+from doc_values import external_pki_values
 
 pytestmark = pytest.mark.k8s
 
@@ -50,9 +59,9 @@ TIER_LABEL_KEY = "culvert-test-tier"
 
 # Pod networks are flat by default, so the client could reach the target without
 # any tunnel and every connectivity assertion below would prove nothing. This
-# policy admits the culvert pod only. Traffic that arrives through the tunnel is
-# masqueraded to the server's pod IP, so it passes; the client's own packets do
-# not.
+# policy admits the culvert pods only, by the label helm_values puts on them.
+# Traffic that arrives through the tunnel is masqueraded to the server's pod IP,
+# so it passes; the client's own packets do not.
 _TARGET_NETWORK_POLICY = {
     "apiVersion": "networking.k8s.io/v1",
     "kind": "NetworkPolicy",
@@ -63,11 +72,7 @@ _TARGET_NETWORK_POLICY = {
         "ingress": [
             {
                 "from": [
-                    {
-                        "podSelector": {
-                            "matchLabels": {"app.kubernetes.io/name": "culvert"}
-                        }
-                    }
+                    {"podSelector": {"matchLabels": {SERVER_LABEL_KEY: SERVER_LABEL}}}
                 ]
             }
         ],
@@ -569,8 +574,12 @@ class TestExternalPKI:
 
     @pytest.fixture(scope="class")
     @classmethod
-    def extpki_release(cls, kubectl, pki_secret, helm_values):
+    def extpki_release(cls, kubectl, pki_secret, helm_values, tmp_path_factory):
         """A second release running entirely on the supplied PKI material.
+
+        The values are the walkthrough's external PKI block with its Secret name
+        swapped for the one under test. The library names every object after the
+        chart, so the second release takes its own fullnameOverride.
 
         A classmethod because pytest 9.1 deprecates a class-scoped fixture
         written as an instance method: the fixture runs once per class while
@@ -579,6 +588,12 @@ class TestExternalPKI:
         is an error here and would otherwise take the whole class down.
         """
         release = release_name() + "-extpki"
+        values = external_pki_values()
+        for volume in values["extraVolumes"]:
+            if volume["name"] == "pki-external":
+                volume["secret"]["secretName"] = pki_secret
+        values_file = tmp_path_factory.mktemp("culvert-extpki") / "extpki.yaml"
+        values_file.write_text(yaml.safe_dump(values), encoding="utf-8")
         result = subprocess.run(
             [
                 "helm",
@@ -589,13 +604,15 @@ class TestExternalPKI:
                 "upgrade",
                 "--install",
                 release,
-                str(CHART_DIR),
+                *chart_args(),
                 "--wait",
                 "--timeout",
                 "5m",
                 *helm_values,
+                "-f",
+                str(values_file),
                 "--set",
-                f"pkiSecret={pki_secret}",
+                f"fullnameOverride={release}",
             ],
             capture_output=True,
             text=True,
@@ -649,7 +666,7 @@ class TestExternalPKI:
     def test_shared_tls_crypt_key_is_the_supplied_one(
         self, kubectl, pki_secret, extpki_release
     ):
-        """A locally minted key here would break every sibling replica."""
+        """A locally minted key here would reject clients issued against the supplied one."""
         from_secret = kubectl(
             "get",
             "secret",
@@ -663,7 +680,7 @@ class TestExternalPKI:
         on_disk = _exec(kubectl, pod, "base64 -w0 /etc/vpn/pki/tc.key").stdout.strip()
         assert on_disk == from_secret, (
             "the server minted its own tls-crypt-v2 key instead of using the"
-            " shared one, so clients issued by a sibling replica would be"
+            " supplied one, so clients issued against the supplied key would be"
             " rejected"
         )
 
@@ -674,8 +691,8 @@ class TestExternalPKI:
 
         The config is issued by the server that OWNS the CA and then dialled at
         the external-PKI server, which never had the CA key and cannot sign
-        anything. That is the property multi-replica depends on: a client issued
-        once is accepted by any server holding the same material.
+        anything. A client issued once is accepted by any server holding the
+        same material.
         """
         config = _issue_and_fetch_config(
             kubectl, release_name(), "udp-full.ovpn", dial=extpki_release

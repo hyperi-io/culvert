@@ -101,7 +101,7 @@ section of [.env.example](../.env.example).
 
 - [vpn-client-setup.md](vpn-client-setup.md) - OAuth2-capable clients
   (OpenVPN Connect 3.4.0+ / OpenVPN GUI) and provider setup
-- [use-case-k8s-scale.md](use-case-k8s-scale.md) - running this shape on
+- [use-case-kubernetes.md](use-case-kubernetes.md) - running this shape on
   the Helm chart with external PKI and metrics
 - [use-case-travel.md](use-case-travel.md) - run the VPN over HTTPS for
   users on networks that block VPNs outright

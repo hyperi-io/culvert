@@ -10,7 +10,7 @@ tests/
 |-- smoke/          # Container startup smoke test (BATS)
 |-- integration/    # Docker-based integration tests (BATS)
 |-- e2e/            # Full VPN connectivity over docker-compose (pytest)
-|-- k8s/            # Helm chart on a real cluster (pytest, opt-in)
+|-- k8s/            # Published Helm chart on a real cluster (pytest, opt-in)
 |-- fixtures/       # Test data and mock files
 |-- helpers/        # Shared BATS helpers
 |-- cleanup.py      # Remove infrastructure an interrupted run left behind
@@ -71,9 +71,10 @@ pytest tests/e2e/ -m e2e -v
 
 ### Cluster Tests (`tests/k8s/`)
 
-Install the real Helm chart on a real cluster and assert on what the cluster
-does with it - capabilities, ip_forward in the pod netns, probes, SIGTERM
-drain, external PKI, and real client tunnels carrying traffic.
+Install the published Helm chart on a real cluster, with the values
+`docs/use-case-kubernetes.md` documents, and assert on what the cluster does
+with it - capabilities, ip_forward in the pod netns, probes, SIGTERM drain,
+external PKI, and real client tunnels carrying traffic.
 
 - **Framework:** pytest + kubectl + helm
 - **Dependencies:** a cluster you can install into, and an image reference it
