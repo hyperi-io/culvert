@@ -102,17 +102,29 @@ class BaseHandler(BaseHTTPRequestHandler):
 
 
 def _check_openvpn() -> bool:
-    """Check if at least one OpenVPN process is running."""
-    result = subprocess.run(["pgrep", "-x", "openvpn"], capture_output=True)
+    """Check if at least one OpenVPN process is running.
+
+    A host without pgrep reads as not running, so a /metrics scrape still answers.
+    """
+    try:
+        result = subprocess.run(["pgrep", "-x", "openvpn"], capture_output=True)
+    except FileNotFoundError:
+        return False
     return result.returncode == 0
 
 
 def _check_wireguard() -> bool:
-    """Check if wg0 interface exists and has a listening port."""
-    result = subprocess.run(
-        ["ip", "link", "show", "wg0"],
-        capture_output=True,
-    )
+    """Check if wg0 interface exists and has a listening port.
+
+    A host without iproute2 reads as no interface, so a /metrics scrape still answers.
+    """
+    try:
+        result = subprocess.run(
+            ["ip", "link", "show", "wg0"],
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        return False
     return result.returncode == 0
 
 
