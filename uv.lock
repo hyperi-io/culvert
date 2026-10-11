@@ -588,13 +588,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "cryptography" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "scalo", extra = ["deployment"] },
-]
 otel = [
     { name = "scalo", extra = ["opentelemetry"] },
 ]
@@ -611,14 +604,18 @@ secrets-vault = [
     { name = "scalo", extra = ["secrets-vault"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "cryptography" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "scalo", extra = ["deployment"] },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "cryptography", marker = "extra == 'dev'", specifier = ">=50,<51" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1,<10" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.1,<8" },
     { name = "pyyaml", specifier = ">=6,<7" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16.1,<0.17" },
-    { name = "scalo", extras = ["deployment"], marker = "extra == 'dev'", specifier = ">=2.31.3,<3" },
     { name = "scalo", extras = ["metrics", "secrets-vault", "secrets-aws"], specifier = ">=2.31.3,<3" },
     { name = "scalo", extras = ["opentelemetry"], marker = "extra == 'otel'" },
     { name = "scalo", extras = ["secrets-aws"], marker = "extra == 'secrets-aws'" },
@@ -626,7 +623,16 @@ requires-dist = [
     { name = "scalo", extras = ["secrets-gcp"], marker = "extra == 'secrets-gcp'" },
     { name = "scalo", extras = ["secrets-vault"], marker = "extra == 'secrets-vault'" },
 ]
-provides-extras = ["secrets-vault", "secrets-aws", "secrets-gcp", "secrets-azure", "otel", "dev"]
+provides-extras = ["secrets-vault", "secrets-aws", "secrets-gcp", "secrets-azure", "otel"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "cryptography", specifier = ">=50,<51" },
+    { name = "pytest", specifier = ">=9.1,<10" },
+    { name = "pytest-cov", specifier = ">=7.1,<8" },
+    { name = "ruff", specifier = ">=0.16.1,<0.17" },
+    { name = "scalo", extras = ["deployment"], specifier = ">=2.31.3,<3" },
+]
 
 [[package]]
 name = "detect-secrets"

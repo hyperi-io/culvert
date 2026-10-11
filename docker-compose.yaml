@@ -30,7 +30,8 @@
 services:
   openvpn:
     # Pulls the published multi-arch image from GHCR - the five-minute path.
-    # Set CULVERT_IMAGE to pin a tag (e.g. ...culvert:v2.1.3) or point at a
+    # Risk accepted: the :latest default serves that path only. A deployment
+    # sets CULVERT_IMAGE to a digest pin (...culvert:vX.Y.Z@sha256:...) or a
     # private mirror. To build locally instead, uncomment the build: block
     # below and run `docker compose up --build`.
     image: ${CULVERT_IMAGE:-ghcr.io/hyperi-io/culvert:latest}
