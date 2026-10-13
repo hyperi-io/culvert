@@ -68,7 +68,7 @@ from scalo.metrics import create_metrics
 mgr = create_metrics(
     "culvert",
     backend="prometheus",  # or "opentelemetry"
-    backend_config=None,  # OTel: {"endpoint", "protocol", "insecure"}
+    backend_config=None,  # OTel: {"opentelemetry": {"endpoint": ..., "protocol": ...}}
     enable_auto_update=False,
 )
 

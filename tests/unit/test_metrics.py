@@ -597,3 +597,31 @@ class TestOtelModeContract:
 
     def test_service_name_comes_from_the_otel_env(self, otel_mode):
         assert otel_mode["vpn"]["resource"]["service.name"] == "culvert-under-test"
+
+
+class TestOtelEndpointSetting:
+    """culvert's own endpoint setting reaches both OTLP pushes without the SDK's variable."""
+
+    def test_the_culvert_endpoint_alone_is_where_both_pushes_go(self, monkeypatch):
+        from lib import metrics as m
+
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        sections = []
+        monkeypatch.setattr(
+            m, "_start_runtime_push", lambda _app, section: sections.append(section)
+        )
+
+        m._init_metrics(
+            "culvert",
+            otel_enabled=True,
+            otel_endpoint="http://127.0.0.1:9",
+            otel_protocol="http",
+            otel_insecure=False,
+        )
+        try:
+            assert m._mgr.backend_name == "opentelemetry"
+            assert m._mgr._backend.resolved.endpoint == "http://127.0.0.1:9"
+            assert m._mgr._backend.resolved.protocol == "http"
+            assert sections == [{"endpoint": "http://127.0.0.1:9", "protocol": "http"}]
+        finally:
+            m._mgr._backend._provider.shutdown(timeout_millis=1000)
