@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.14"
 
 [[package]]
@@ -616,7 +616,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "pyyaml", specifier = ">=6,<7" },
-    { name = "scalo", extras = ["metrics", "secrets-vault", "secrets-aws"], specifier = ">=2.31.3,<3" },
+    { name = "scalo", extras = ["metrics", "secrets-vault", "secrets-aws"], specifier = ">=2.31.9,<3" },
     { name = "scalo", extras = ["opentelemetry"], marker = "extra == 'otel'" },
     { name = "scalo", extras = ["secrets-aws"], marker = "extra == 'secrets-aws'" },
     { name = "scalo", extras = ["secrets-azure"], marker = "extra == 'secrets-azure'" },
@@ -631,7 +631,7 @@ dev = [
     { name = "pytest", specifier = ">=9.1,<10" },
     { name = "pytest-cov", specifier = ">=7.1,<8" },
     { name = "ruff", specifier = ">=0.17,<0.18" },
-    { name = "scalo", extras = ["deployment"], specifier = ">=2.31.3,<3" },
+    { name = "scalo", extras = ["deployment"], specifier = ">=2.31.9,<3" },
 ]
 
 [[package]]
@@ -1756,7 +1756,7 @@ wheels = [
 
 [[package]]
 name = "scalo"
-version = "2.31.3"
+version = "2.31.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1774,9 +1774,9 @@ dependencies = [
     { name = "tomli-w" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/c6/a37b968daa7616a7bb8f1ac4c85921958cb8bbb0e3f741ad98dec85bdd9c/scalo-2.31.3.tar.gz", hash = "sha256:b41b592fa7a1c2dc535d0ec7dcf7c1ce47240ce0db976928cb2ec54379b628cd", size = 359680, upload-time = "2026-10-08T08:43:37.955Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/c8/c13403de3eb366029d2ace93aa8f80e3b34464fd06ec6cc88e39fd540877/scalo-2.31.9.tar.gz", hash = "sha256:bb6e59e4dfcf6c15826ef1c38215c1afccf85680f1334ee80ab147d869698dc4", size = 355653, upload-time = "2026-10-13T02:07:19.952Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/2c/d5d420954decd9b330a9976406e0462e7e66dafe6cf973ba8a64760dd42e/scalo-2.31.3-py3-none-any.whl", hash = "sha256:b567c302a544874465fffcac09d29ca2cfc4d89e675e7798f76607ec6f1ad188", size = 431628, upload-time = "2026-10-08T08:43:36.065Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/18/e69c2f0df85b29424e20c6cbd139511f918ba0cbf6c227ff29581e35a4ca/scalo-2.31.9-py3-none-any.whl", hash = "sha256:5114ea630d6ce44427a0772eaadfc3b15245a93724b72de2c83e5cf8f6c57669", size = 427954, upload-time = "2026-10-13T02:07:18.04Z" },
 ]
 
 [package.optional-dependencies]

@@ -6,6 +6,11 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from lib.metrics import (
     _byte_delta,
@@ -15,6 +20,65 @@ from lib.metrics import (
     parse_wg_handshakes,
     parse_wg_transfer,
 )
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
+
+# The families the collector stopped receiving when it stopped scraping culvert.
+RUNTIME_FAMILIES = {
+    "process_cpu_seconds_total",
+    "process_max_fds",
+    "process_open_fds",
+    "process_resident_memory_bytes",
+    "process_start_time_seconds",
+    "process_virtual_memory_bytes",
+    "python_gc_collections_total",
+    "python_gc_objects_collected_total",
+    "python_gc_objects_uncollectable_total",
+    "python_info",
+}
+
+RUNTIME_COUNTERS = {name for name in RUNTIME_FAMILIES if name.endswith("_total")}
+
+# The names and label keys consumers query; changing either breaks them.
+VPN_FAMILIES = {
+    "vpn_bytes_received_total": set(),
+    "vpn_bytes_sent_total": set(),
+    "vpn_connected_clients": {"listener", "protocol"},
+    "vpn_connected_clients_total": set(),
+    "vpn_connection_utilisation": set(),
+    "vpn_crl_seconds_until_expiry": set(),
+    "vpn_max_clients": set(),
+    "vpn_openvpn_up": set(),
+    "vpn_wireguard_up": set(),
+}
+
+# Every family the OTel-mode /metrics endpoint serves, by its TYPE-line name.
+OTEL_SCRAPE_FAMILIES = RUNTIME_FAMILIES | set(VPN_FAMILIES) | {"target_info"}
+
+
+def _metrics_by_name(metrics_data) -> dict:
+    """Index an OTel MetricsData by metric name."""
+    found = {}
+    for resource_metrics in metrics_data.resource_metrics:
+        for scope_metrics in resource_metrics.scope_metrics:
+            for metric in scope_metrics.metrics:
+                found[metric.name] = metric
+    return found
+
+
+def _scrape_runtime_samples() -> dict[str, list]:
+    """Parse the runtime families out of the default registry's exposition text."""
+    from prometheus_client import REGISTRY, generate_latest
+    from prometheus_client.parser import text_string_to_metric_families
+
+    samples: dict[str, list] = {}
+    text = generate_latest(REGISTRY).decode()
+    for family in text_string_to_metric_families(text):
+        if not family.name.startswith(("process_", "python_")):
+            continue
+        for sample in family.samples:
+            samples.setdefault(sample.name, []).append(sample)
+    return samples
 
 
 class TestParseOpenVPNStatusV3:
@@ -353,3 +417,183 @@ class TestScrapeAdapter:
         m.init_metrics(max_clients=10, protocol="openvpn", pki_dir="")
         m._gauge_set(m._g_connected, 1)
         m._gauge_set(None, 1)
+
+
+class TestRuntimeMetricsOverOtlp:
+    """The scrape's process and runtime families reach an OTLP reader.
+
+    The collector no longer scrapes culvert pods, so the push is the only path
+    these families have off the pod.
+    """
+
+    @pytest.fixture
+    def pushed(self):
+        """Collect the runtime instruments once through an in-memory reader."""
+        from lib import metrics as m
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+        reader = InMemoryMetricReader()
+        provider = MeterProvider(metric_readers=[reader], shutdown_on_exit=False)
+        m.register_runtime_metrics(provider.get_meter("culvert"))
+        data = reader.get_metrics_data()
+        provider.shutdown()
+        return _metrics_by_name(data)
+
+    def test_every_lost_family_is_pushed(self, pushed):
+        assert RUNTIME_FAMILIES <= set(pushed)
+
+    def test_pushed_names_are_the_names_the_scrape_serves(self, pushed):
+        assert set(pushed) == set(_scrape_runtime_samples())
+
+    def test_counters_push_as_monotonic_sums_and_the_rest_as_gauges(self, pushed):
+        """The collector files a monotonic sum and a gauge in different tables."""
+        from opentelemetry.sdk.metrics.export import Gauge, Sum
+
+        for name, metric in pushed.items():
+            if name in RUNTIME_COUNTERS:
+                assert isinstance(metric.data, Sum), name
+                assert metric.data.is_monotonic, name
+            else:
+                assert isinstance(metric.data, Gauge), name
+
+    def test_labels_match_the_scrape(self, pushed):
+        scraped = _scrape_runtime_samples()
+        for name in ("python_info", "python_gc_collections_total"):
+            pushed_labels = [
+                dict(point.attributes or {}) for point in pushed[name].data.data_points
+            ]
+            scraped_labels = [sample.labels for sample in scraped[name]]
+            assert sorted(pushed_labels, key=str) == sorted(scraped_labels, key=str)
+
+    def test_values_are_read_from_the_same_collectors_as_the_scrape(self, pushed):
+        scraped = _scrape_runtime_samples()
+        for name in ("python_info", "process_max_fds"):
+            pushed_value = pushed[name].data.data_points[0].value
+            assert pushed_value == scraped[name][0].value, name
+
+    def test_the_scrape_is_unchanged_by_the_push(self):
+        """Registering the push adds nothing to the /metrics registry."""
+        from lib import metrics as m
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+        from prometheus_client import REGISTRY, generate_latest
+
+        def headers() -> list[str]:
+            text = generate_latest(REGISTRY).decode()
+            return [line for line in text.splitlines() if line.startswith("#")]
+
+        before = headers()
+        reader = InMemoryMetricReader()
+        provider = MeterProvider(metric_readers=[reader], shutdown_on_exit=False)
+        m.register_runtime_metrics(provider.get_meter("culvert"))
+        reader.get_metrics_data()
+        provider.shutdown()
+        assert headers() == before
+
+
+# A child process, because the OTel API allows one global MeterProvider per
+# process; the hour-long interval and os._exit mean no exporter is ever dialled.
+OTEL_MODE_PROBE = """
+import json
+import os
+
+from opentelemetry import metrics as otel_metrics
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+from lib import metrics as m
+
+
+def collect(reader):
+    out = {"metrics": {}, "resource": {}, "scopes": []}
+    for rm in reader.get_metrics_data().resource_metrics:
+        out["resource"] = dict(rm.resource.attributes)
+        for sm in rm.scope_metrics:
+            out["scopes"].append(sm.scope.name)
+            for metric in sm.metrics:
+                keys = set()
+                for point in metric.data.data_points:
+                    keys.update((point.attributes or {}).keys())
+                out["metrics"][metric.name] = sorted(keys)
+    return out
+
+
+adapter = m.init_metrics(
+    max_clients=10,
+    protocol="both",
+    otel_enabled=True,
+    otel_endpoint="http://127.0.0.1:9",
+)
+vpn_reader = InMemoryMetricReader()
+otel_metrics.get_meter_provider().add_metric_reader(vpn_reader)
+m.update_metrics()
+m._c_bytes_rx.inc(1)
+m._c_bytes_tx.inc(1)
+m._gauge_set(m._g_crl_expiry, 1)
+
+result = {"vpn": collect(vpn_reader), "runtime": None}
+runtime_provider = getattr(m, "_runtime_provider", None)
+if runtime_provider is not None:
+    runtime_reader = InMemoryMetricReader()
+    runtime_provider.add_metric_reader(runtime_reader)
+    result["runtime"] = collect(runtime_reader)
+
+scrape = adapter.get_metrics().decode()
+result["scrape"] = sorted(
+    line.split()[2] for line in scrape.splitlines() if line.startswith("# TYPE ")
+)
+print(json.dumps(result), flush=True)
+os._exit(0)
+"""
+
+
+@pytest.fixture(scope="module")
+def otel_mode(tmp_path_factory):
+    """Run OTel-mode init once and return what each reader and the scrape saw."""
+    workdir = tmp_path_factory.mktemp("otel-mode")
+    # A built environment, so nothing from the caller's reaches the child or a report.
+    env = {
+        "HOME": str(workdir),
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:9",
+        "OTEL_METRIC_EXPORT_INTERVAL": "3600000",
+        "OTEL_SERVICE_NAME": "culvert-under-test",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONPATH": str(SCRIPTS_DIR),
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", OTEL_MODE_PROBE],
+        capture_output=True,
+        check=False,
+        cwd=workdir,
+        encoding="utf-8",
+        env=env,
+        errors="replace",
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr[-3000:]
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+class TestOtelModeContract:
+    """What a running culvert pushes and serves in OTel mode."""
+
+    def test_vpn_names_and_label_keys_are_unchanged_over_otlp(self, otel_mode):
+        pushed = {name: set(keys) for name, keys in otel_mode["vpn"]["metrics"].items()}
+        assert pushed == VPN_FAMILIES
+
+    def test_scrape_families_are_unchanged(self, otel_mode):
+        assert set(otel_mode["scrape"]) == OTEL_SCRAPE_FAMILIES
+
+    def test_runtime_families_are_pushed(self, otel_mode):
+        assert otel_mode["runtime"] is not None, "no runtime push was started"
+        assert RUNTIME_FAMILIES <= set(otel_mode["runtime"]["metrics"])
+
+    def test_runtime_push_is_the_same_source_as_the_vpn_push(self, otel_mode):
+        """Same resource and scope, so the collector files both under one pod."""
+        assert otel_mode["runtime"] is not None, "no runtime push was started"
+        assert otel_mode["runtime"]["resource"] == otel_mode["vpn"]["resource"]
+        assert otel_mode["runtime"]["scopes"] == ["culvert"]
+        assert set(otel_mode["vpn"]["scopes"]) == {"culvert"}
+
+    def test_service_name_comes_from_the_otel_env(self, otel_mode):
+        assert otel_mode["vpn"]["resource"]["service.name"] == "culvert-under-test"

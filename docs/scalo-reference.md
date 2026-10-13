@@ -11,7 +11,7 @@ In `pyproject.toml` (granular extras - one per backend culvert actually
 uses, not the blanket `[secrets]`):
 
 ```toml
-dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.31.3,<3"]
+dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.31.9,<3"]
 ```
 
 The container installs the full runtime tree (scalo + those extras +
@@ -90,6 +90,15 @@ See `scripts/lib/metrics.py`. When OTel is enabled the same metrics push via
 OTLP and also serve on the Prometheus `/metrics` endpoint; otherwise only the
 Prometheus scrape is available.
 
+In OTel mode the `process_*`, `python_gc_*` and `python_info` families that
+`/metrics` serves also push over OTLP, under the same names and labels, so a
+collector that does not scrape the pod still receives them. They go through a
+second MeterProvider that holds only an OTLP reader, built from scalo's
+resolved OTLP settings (`resolve_otel_config`), exporter factory and backoff
+gate, with the same resource and scope as the `vpn_*` push. On scalo's own
+provider they would render on `/metrics` a second time, beside
+prometheus_client's copy.
+
 **Naming:** the app name is `culvert`; registered metric names use the
 `vpn_*` namespace (e.g. `vpn_connected_clients`, `vpn_bytes_received_total`).
 
@@ -124,4 +133,5 @@ await manager.close()  # async - pki.py runs it via asyncio.run
 | Logging setup | `scalo.logger.setup` | `scripts/entrypoint.py`, `scripts/generate-client.py`, `scripts/revoke-client.py`, `scripts/update-crl.py` |
 | Config | `scalo.config.get_config` | `scripts/lib/config.py` |
 | Metrics | `scalo.metrics.create_metrics` | `scripts/lib/metrics.py` |
+| Runtime metrics over OTLP | `scalo.metrics.opentelemetry_backend.resolve_otel_config`, `_create_otlp_exporter`, `SHUTDOWN_FLUSH_MILLIS`; `scalo.otel_backoff.GatedMetricExporter` | `scripts/lib/metrics.py` |
 | Secrets | `scalo.secrets.providers.*` | `scripts/lib/pki.py` |
