@@ -3,6 +3,17 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.19](https://github.com/hyperi-io/culvert/compare/v2.1.18...v2.1.19) (2026-10-13)
+
+### Bug Fixes
+
+* **deps:** update dependency ruff to >=0.17,<0.18 ([#71](https://github.com/hyperi-io/culvert/issues/71)) ([27a50f5](https://github.com/hyperi-io/culvert/commit/27a50f517ef672d25e5526d1cefe157349083cb8))
+* **deps:** update nickfedor/watchtower Docker tag to v1.23.0 ([#72](https://github.com/hyperi-io/culvert/issues/72)) ([2c69551](https://github.com/hyperi-io/culvert/commit/2c69551db7cbebba6b95c0dd6ecc36e62821495e))
+* install culvert from the published chart ([#69](https://github.com/hyperi-io/culvert/issues/69)) ([14ffe57](https://github.com/hyperi-io/culvert/commit/14ffe5713016d404b25e5eac1fc38019da5dd763))
+* let ty see the test imports and drop stale replica comments ([#70](https://github.com/hyperi-io/culvert/issues/70)) ([fd5a9ab](https://github.com/hyperi-io/culvert/commit/fd5a9abf0d8b887d935f769efba38db8458667f4))
+* push process and runtime metrics over OTLP ([#77](https://github.com/hyperi-io/culvert/issues/77)) ([d80e69c](https://github.com/hyperi-io/culvert/commit/d80e69c44543b3ba32578418a55e2337505ed0ad)), closes [#76](https://github.com/hyperi-io/culvert/issues/76)
+* read a missing pgrep or ip as VPN down ([#73](https://github.com/hyperi-io/culvert/issues/73)) ([f8973ff](https://github.com/hyperi-io/culvert/commit/f8973ff25a64fa9373288616dc811d5acd64528c))
+
 ## [2.1.18](https://github.com/hyperi-io/culvert/compare/v2.1.17...v2.1.18) (2026-10-09)
 
 ### Bug Fixes
