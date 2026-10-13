@@ -455,11 +455,19 @@ def _init_metrics(
 
     if otel_enabled and otel_endpoint:
         backend = "opentelemetry"
+        # scalo reads its OTLP settings from this section and nowhere else.
         backend_config = {
-            "endpoint": otel_endpoint,
-            "protocol": otel_protocol or "grpc",
-            "insecure": otel_insecure,
+            "opentelemetry": {
+                "endpoint": otel_endpoint,
+                "protocol": otel_protocol or "grpc",
+            },
         }
+        if otel_insecure and otel_endpoint.startswith("https://"):
+            logger.warning(
+                "otel_insecure does not turn TLS off: the exporter takes TLS from "
+                "the endpoint, so name an http:// endpoint for plaintext",
+                endpoint=otel_endpoint,
+            )
         logger.info(
             "Metrics: OpenTelemetry + Prometheus",
             endpoint=otel_endpoint,

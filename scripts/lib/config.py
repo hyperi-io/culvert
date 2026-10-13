@@ -355,6 +355,7 @@ class Config:
     otel_enabled: bool = False
     otel_endpoint: str = ""
     otel_protocol: str = "grpc"
+    # Kept for existing configs; TLS follows the endpoint scheme, http:// is plaintext.
     otel_insecure: bool = False
 
     crl_refresh_hours: int = 24
