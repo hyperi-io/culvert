@@ -3,6 +3,12 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.20](https://github.com/hyperi-io/culvert/compare/v2.1.19...v2.1.20) (2026-10-13)
+
+### Bug Fixes
+
+* send OTLP metrics to the endpoint culvert is configured with ([#79](https://github.com/hyperi-io/culvert/issues/79)) ([95bd0aa](https://github.com/hyperi-io/culvert/commit/95bd0aa7548ef4a593b4715441dca1342f59f7b3))
+
 ## [2.1.19](https://github.com/hyperi-io/culvert/compare/v2.1.18...v2.1.19) (2026-10-13)
 
 ### Bug Fixes
