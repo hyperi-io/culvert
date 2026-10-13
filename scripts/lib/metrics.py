@@ -15,15 +15,23 @@ Prometheus scrape is available. The scrape itself is served by the
 observability port (lib.health.start_observability) - init_metrics()
 returns the adapter that port renders from.
 
+In OTel mode the process_* and python_* families the scrape serves are
+pushed over OTLP as well, under the same names, so a collector that does
+not scrape the pod still receives them.
+
 Parses OpenVPN status files and WireGuard show output to collect
 connection metrics.
 """
 
+import atexit
+import os
+import socket
 import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from scalo.logger import logger
 from scalo.metrics import create_metrics
@@ -229,6 +237,9 @@ _g_utilisation = None
 _g_max_clients = None
 _g_crl_expiry = None
 
+# The MeterProvider pushing the runtime families; None unless OTel push is on.
+_runtime_provider = None
+
 # Last-seen cumulative byte totals. The OpenVPN status files and
 # `wg show transfer` report per-session cumulative bytes that reset when a
 # client disconnects or the interface restarts, so the snapshot total is not
@@ -280,6 +291,151 @@ def _advance_byte_counter(counter, key: str, current: int) -> None:
         logger.debug(f"Counter update failed: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Process and runtime families over OTLP
+# ---------------------------------------------------------------------------
+
+
+def _runtime_collectors() -> tuple:
+    """Return the prometheus_client collectors behind process_* and python_*."""
+    import prometheus_client
+
+    return (
+        prometheus_client.PROCESS_COLLECTOR,
+        prometheus_client.PLATFORM_COLLECTOR,
+        prometheus_client.GC_COLLECTOR,
+    )
+
+
+def _family_callback(collector, family_name: str, sample_name: str):
+    """Return an OTel callback reporting one family's samples as scraped."""
+    from opentelemetry.metrics import Observation
+
+    def observe(_options):
+        for family in collector.collect():
+            if family.name == family_name:
+                return [
+                    Observation(sample.value, dict(sample.labels) or None)
+                    for sample in family.samples
+                    if sample.name == sample_name
+                ]
+        return []
+
+    return observe
+
+
+def register_runtime_metrics(meter) -> list[str]:
+    """Register the scrape's process and runtime families on an OTel meter.
+
+    Each instrument reads the prometheus_client collector that renders the same
+    family on /metrics, under the sample name the scrape uses, so either source
+    answers a query the same way. Counters become observable counters (monotonic
+    sums) and gauges observable gauges, matching how a scraping collector files them.
+
+    Args:
+        meter: The OTel meter to register on.
+
+    Returns:
+        The instrument names registered.
+
+    """
+    registered = []
+    for collector in _runtime_collectors():
+        for family in collector.collect():
+            if family.type == "counter":
+                sample_name = f"{family.name}_total"
+                create = meter.create_observable_counter
+            elif family.type == "gauge":
+                sample_name = family.name
+                create = meter.create_observable_gauge
+            else:
+                continue
+            create(
+                name=sample_name,
+                callbacks=[_family_callback(collector, family.name, sample_name)],
+                description=family.documentation,
+            )
+            registered.append(sample_name)
+    return registered
+
+
+def _runtime_resource(app_name: str, otel_config: dict | None, resolved):
+    """Build the resource scalo stamps on the vpn_* push, from the same inputs."""
+    from opentelemetry.sdk.resources import Resource
+
+    otel_config = otel_config or {}
+    attributes = {
+        "service.name": os.environ.get("OTEL_SERVICE_NAME") or app_name,
+        "service.version": otel_config.get("service_version", "1.0.0"),
+        "service.instance.id": socket.gethostname(),
+    }
+    if resolved.deployment_environment:
+        attributes["deployment.environment.name"] = resolved.deployment_environment
+    attributes.update(resolved.resource_attributes)
+    return Resource.create(attributes)
+
+
+def _otlp_exporter(resolved):
+    """Build the exporter scalo builds for the vpn_* push, behind its backoff gate."""
+    from scalo.metrics.opentelemetry_backend import _create_otlp_exporter
+    from scalo.otel_backoff import GatedMetricExporter
+
+    exporter = _create_otlp_exporter(
+        resolved.protocol,
+        resolved.endpoint,
+        resolved.export_timeout_millis,
+        resolved.headers,
+    )
+    return GatedMetricExporter(exporter, resolved.export_interval_millis / 1000)
+
+
+def _shutdown_runtime_push(provider, timeout_millis: int) -> None:
+    """Flush at exit within a bound, so a dead collector cannot hold the pod open."""
+    try:
+        provider.shutdown(timeout_millis=timeout_millis)
+    except Exception as e:
+        logger.debug(f"Runtime metrics shutdown failed: {e}")
+
+
+def _start_runtime_push(app_name: str, otel_config: dict | None):
+    """Push the runtime families over OTLP to wherever scalo pushes the vpn_* ones.
+
+    The provider holds the OTLP reader alone: on scalo's provider the families
+    would also render on /metrics, a second time beside prometheus_client's copy.
+
+    Args:
+        app_name: Names the meter and, absent OTEL_SERVICE_NAME, the service.
+        otel_config: The ``opentelemetry`` section handed to scalo, or None.
+
+    Returns:
+        The MeterProvider, or None when OTLP push is off.
+
+    """
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from scalo.metrics.opentelemetry_backend import (
+        SHUTDOWN_FLUSH_MILLIS,
+        resolve_otel_config,
+    )
+
+    resolved = resolve_otel_config(otel_config)
+    if not resolved.push_active:
+        return None
+    reader = PeriodicExportingMetricReader(
+        exporter=_otlp_exporter(resolved),
+        export_interval_millis=resolved.export_interval_millis,
+        export_timeout_millis=resolved.export_timeout_millis,
+    )
+    provider = MeterProvider(
+        metric_readers=[reader],
+        resource=_runtime_resource(app_name, otel_config, resolved),
+        shutdown_on_exit=False,
+    )
+    register_runtime_metrics(provider.get_meter(app_name))
+    atexit.register(_shutdown_runtime_push, provider, SHUTDOWN_FLUSH_MILLIS)
+    return provider
+
+
 def _init_metrics(
     app_name: str,
     otel_enabled: bool,
@@ -288,14 +444,14 @@ def _init_metrics(
     otel_insecure: bool,
 ) -> None:
     """Initialise MetricsManager with Prometheus or OTel backend."""
-    global _mgr
+    global _mgr, _runtime_provider
     global _g_openvpn_up, _g_wireguard_up
     global _g_connected, _g_connected_total
     global _c_bytes_rx, _c_bytes_tx
     global _g_utilisation, _g_max_clients, _g_crl_expiry
 
     backend = "prometheus"
-    backend_config = None
+    backend_config: dict[str, Any] | None = None
 
     if otel_enabled and otel_endpoint:
         backend = "opentelemetry"
@@ -318,6 +474,15 @@ def _init_metrics(
         backend_config=backend_config,
         enable_auto_update=False,
     )
+
+    _runtime_provider = None
+    if _mgr.backend_name == "opentelemetry":
+        # The same section scalo resolved, so both pushes go to one collector.
+        otel_section = (backend_config or {}).get("opentelemetry")
+        try:
+            _runtime_provider = _start_runtime_push(app_name, otel_section)
+        except Exception as e:
+            logger.warning(f"Runtime metrics push unavailable: {e}")
 
     # Register VPN-specific metrics
     _g_openvpn_up = _mgr.gauge("vpn_openvpn_up", "Whether OpenVPN is running")

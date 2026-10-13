@@ -774,9 +774,9 @@ s3transfer==0.19.2 \
     --hash=sha256:ba0309fd86be3c27dbf78cdd813c13c5e1df16e5874b99d2535ebbdfb9892993 \
     --hash=sha256:d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25
     # via boto3
-scalo==2.31.3 \
-    --hash=sha256:b41b592fa7a1c2dc535d0ec7dcf7c1ce47240ce0db976928cb2ec54379b628cd \
-    --hash=sha256:b567c302a544874465fffcac09d29ca2cfc4d89e675e7798f76607ec6f1ad188
+scalo==2.31.9 \
+    --hash=sha256:5114ea630d6ce44427a0772eaadfc3b15245a93724b72de2c83e5cf8f6c57669 \
+    --hash=sha256:bb6e59e4dfcf6c15826ef1c38215c1afccf85680f1334ee80ab147d869698dc4
     # via culvert
 shellingham==1.5.4 \
     --hash=sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686 \
