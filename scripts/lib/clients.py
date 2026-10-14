@@ -15,9 +15,11 @@ generate-client writes after "<name>-", so one client's files are never bundled
 with, or deleted alongside, another client's.
 
 One filename is ambiguous by construction: "<name>-proxy-stunnel.conf" is also
-the direct stunnel config of a client named "<name>-proxy". Stunnel configs carry
-no key material, and owned_files keeps that file while the other client still
-has configs of its own.
+the direct stunnel config of a client named "<name>-proxy". generate-client
+refuses to issue such a name (collides_with_proxy_stunnel). A client issued
+before that check can still hold the shared file, and owned_files keeps it while
+the other client still has configs of its own. Stunnel configs carry no key
+material.
 """
 
 import glob
@@ -27,6 +29,9 @@ import zipfile
 from pathlib import Path
 
 from scalo.logger import logger
+
+# generate-client --proxy appends this to the client name, before "-stunnel.conf".
+PROXY_SUFFIX = "-proxy"
 
 # The six listener x mode configs, the --proxy pair, and their stunnel configs.
 _OPENVPN_SUFFIX = re.compile(
@@ -100,12 +105,34 @@ def client_files(output_dir: Path, client_name: str) -> list[Path]:
     )
 
 
+def collides_with_proxy_stunnel(client_name: str) -> bool:
+    """Return whether client_name would share another client's stunnel config file.
+
+    A client named "<x>-proxy" writes "<x>-proxy-stunnel.conf", the file that
+    generate-client --proxy writes for client "<x>". The match ignores case
+    because the clients directory is normally a host bind mount, and on a
+    case-insensitive host "x-PROXY-stunnel.conf" and "x-proxy-stunnel.conf" are
+    one file.
+
+    Args:
+        client_name: The client about to be issued, already checked by
+            validate_client_name.
+
+    Returns:
+        True when the name ends in "-proxy".
+
+    """
+    return client_name.lower().endswith(PROXY_SUFFIX)
+
+
 def _other_writer(path: Path, client_name: str) -> str | None:
     """Return the other client that writes the same filename, or None."""
-    if path.name == f"{client_name}-proxy-stunnel.conf":
-        return f"{client_name}-proxy"
-    if path.name == f"{client_name}-stunnel.conf" and client_name.endswith("-proxy"):
-        return client_name.removesuffix("-proxy")
+    if path.name == f"{client_name}{PROXY_SUFFIX}-stunnel.conf":
+        return f"{client_name}{PROXY_SUFFIX}"
+    if path.name == f"{client_name}-stunnel.conf" and client_name.endswith(
+        PROXY_SUFFIX
+    ):
+        return client_name.removesuffix(PROXY_SUFFIX)
     return None
 
 

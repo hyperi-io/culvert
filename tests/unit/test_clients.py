@@ -21,6 +21,7 @@ import pytest
 from lib.clients import (
     bundle_zip,
     client_files,
+    collides_with_proxy_stunnel,
     openvpn_files,
     owned_files,
     wireguard_files,
@@ -194,3 +195,28 @@ class TestBundleZip:
     def test_no_members_and_no_zip_is_a_no_op(self, tmp_path):
         assert bundle_zip(tmp_path, "carol", []) is None
         assert list(tmp_path.iterdir()) == []
+
+
+class TestProxyStunnelCollision:
+    """Only a name ending in "-proxy" shares a stunnel filename with another client."""
+
+    @pytest.mark.parametrize(
+        "name", ["alice-proxy", "ALICE-PROXY", "Alice-Proxy", "a-proxy", "-proxy"]
+    )
+    def test_names_ending_in_proxy_collide(self, name):
+        assert collides_with_proxy_stunnel(name) is True
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "alice",
+            "proxy",
+            "proxy-alice",
+            "alicproxy",
+            "alice_proxy",
+            "alice-proxy-laptop",
+            "alice-proxies",
+        ],
+    )
+    def test_other_names_do_not(self, name):
+        assert collides_with_proxy_stunnel(name) is False

@@ -46,7 +46,12 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
         sys.path.insert(0, _scripts_path)
 
 import scalo.logger  # noqa: E402
-from lib.clients import bundle_zip, client_files  # noqa: E402
+from lib.clients import (  # noqa: E402
+    PROXY_SUFFIX,
+    bundle_zip,
+    client_files,
+    collides_with_proxy_stunnel,
+)
 from lib.pki import validate_client_name  # noqa: E402
 from lib.process import write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
@@ -686,7 +691,13 @@ Examples:
   generate-client --name custom-vpn            # Override name (rare)
 """,
     )
-    parser.add_argument("--name", help=f"Client/file name (default: {default_name})")
+    parser.add_argument(
+        "--name",
+        help=(
+            f"Client/file name (default: {default_name})."
+            f" Must not end in {PROXY_SUFFIX}."
+        ),
+    )
     parser.add_argument(
         "--output", help=f"Output directory (default: {cfg.output_dir})"
     )
@@ -759,6 +770,16 @@ Examples:
         logger.error(
             f"Invalid client name '{client_name}'. "
             "Use only alphanumeric, dash, underscore."
+        )
+        sys.exit(1)
+
+    # Config-only reissues write the same files, so the refusal covers them too.
+    if collides_with_proxy_stunnel(client_name):
+        logger.error(
+            f"Client name '{client_name}' must not end in '{PROXY_SUFFIX}': "
+            f"generate-client --proxy writes '<client>{PROXY_SUFFIX}-stunnel.conf', "
+            "so this client would overwrite the stunnel config of the client "
+            "named without that suffix. Choose another --name."
         )
         sys.exit(1)
 
