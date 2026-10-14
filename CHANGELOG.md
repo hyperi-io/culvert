@@ -3,6 +3,12 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.22](https://github.com/hyperi-io/culvert/compare/v2.1.21...v2.1.22) (2026-10-14)
+
+### Bug Fixes
+
+* **client:** reject client names ending in -proxy ([#88](https://github.com/hyperi-io/culvert/issues/88)) ([913708a](https://github.com/hyperi-io/culvert/commit/913708af1f2502785d849fb0c89afd924c387e20)), closes [#85](https://github.com/hyperi-io/culvert/issues/85) [#87](https://github.com/hyperi-io/culvert/issues/87)
+
 ## [2.1.21](https://github.com/hyperi-io/culvert/compare/v2.1.20...v2.1.21) (2026-10-14)
 
 ### Bug Fixes
