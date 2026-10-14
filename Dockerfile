@@ -66,10 +66,10 @@ LABEL openvpn.features="DCO,TLS1.3,AEAD,4G-optimized,OIDC-SSO"
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENVPN_MIN_VERSION="2.7.0"
-ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.2"
+ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.3"
 # Public release checksums. BuildKit's SecretsUsedInArgOrEnv check flags these two only for the AUTH in their name.
-ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="56bb8edcd61dfd559af188e1bd51653cfd184fff17c599529b78a1cf0e041164"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="f9eecf48b3c06b11607d402d71904db101f287734518fc08d1101e27030c157a"
+ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="525ad6af74c333cd5977556c24befde9303257fee74108fc09ad2b589e7017dd"
+ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="0c49eff6258d2638e0cb3f66160b56bdfc288bb2450b22e7a2474397fc91cea6"
 
 # openvpn from the project's signed apt repo. The downloaded keyring must carry
 # EXACTLY ONE primary key and its fingerprint must be the pinned one, so neither
