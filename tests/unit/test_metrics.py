@@ -6,9 +6,12 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
+import contextlib
+import http.server
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -22,6 +25,10 @@ from lib.metrics import (
 )
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
+
+# The identity an image build bakes in, as the info gauge should carry it.
+BUILD_VERSION = "2.1.20"
+BUILD_COMMIT = "abc1234"
 
 # The families the collector stopped receiving when it stopped scraping culvert.
 RUNTIME_FAMILIES = {
@@ -52,8 +59,48 @@ VPN_FAMILIES = {
     "vpn_wireguard_up": set(),
 }
 
+# scalo's AppMetrics group registers beside the vpn_* families. `info` is the
+# identity gauge a liveness check keys on. An OTLP push carries only the
+# instruments that hold a value, so of the group these two reach a collector.
+APP_FAMILIES = {
+    "info": {"app", "commit", "version"},
+    "start_time_seconds": set(),
+}
+
 # Every family the OTel-mode /metrics endpoint serves, by its TYPE-line name.
-OTEL_SCRAPE_FAMILIES = RUNTIME_FAMILIES | set(VPN_FAMILIES) | {"target_info"}
+OTEL_SCRAPE_FAMILIES = (
+    RUNTIME_FAMILIES | set(VPN_FAMILIES) | set(APP_FAMILIES) | {"target_info"}
+)
+
+
+@contextlib.contextmanager
+def _otlp_sink():
+    """Accept every OTLP/HTTP push on an ephemeral 127.0.0.1 port.
+
+    A provider's shutdown flushes what it holds, and a push to a closed port
+    retries until the shutdown deadline, so a test that shuts a provider down
+    needs somewhere for the flush to land.
+    """
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, format: str, *args) -> None:
+            pass  # silence request logging during tests
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def _metrics_by_name(metrics_data) -> dict:
@@ -419,6 +466,65 @@ class TestScrapeAdapter:
         m._gauge_set(None, 1)
 
 
+class TestBuildIdentity:
+    """The version and commit the image build baked in label the info gauge."""
+
+    def test_reads_the_files_the_image_build_wrote(self, tmp_path):
+        from lib import metrics as m
+
+        (tmp_path / "VERSION").write_text(f"{BUILD_VERSION}\n", encoding="utf-8")
+        (tmp_path / "COMMIT").write_text(f"{BUILD_COMMIT}\n", encoding="utf-8")
+
+        assert m._build_identity(tmp_path) == (BUILD_VERSION, BUILD_COMMIT)
+
+    def test_a_build_outside_the_image_reads_as_dev_and_unknown(self, tmp_path):
+        from lib import metrics as m
+
+        assert m._build_identity(tmp_path) == ("dev", "unknown")
+
+    def test_an_empty_commit_reads_as_unknown(self, tmp_path):
+        """The Dockerfile's COMMIT build arg defaults to empty, and CI passes none."""
+        from lib import metrics as m
+
+        (tmp_path / "VERSION").write_text(f"{BUILD_VERSION}\n", encoding="utf-8")
+        (tmp_path / "COMMIT").write_text("\n", encoding="utf-8")
+
+        assert m._build_identity(tmp_path) == (BUILD_VERSION, "unknown")
+
+    def test_an_unreadable_file_reads_as_its_fallback(self, tmp_path):
+        """A directory standing where the file belongs cannot be read as text."""
+        from lib import metrics as m
+
+        (tmp_path / "VERSION").mkdir()
+
+        assert m._build_identity(tmp_path)[0] == "dev"
+
+
+class TestInfoGauge:
+    """scalo's identity gauge, which a liveness check keys on by name."""
+
+    def test_the_scrape_carries_the_build_identity(self, tmp_path, monkeypatch):
+        from lib import metrics as m
+        from prometheus_client.parser import text_string_to_metric_families
+
+        (tmp_path / "VERSION").write_text(f"{BUILD_VERSION}\n", encoding="utf-8")
+        (tmp_path / "COMMIT").write_text(f"{BUILD_COMMIT}\n", encoding="utf-8")
+        monkeypatch.setattr(m, "BUILD_INFO_DIR", tmp_path)
+
+        adapter = m.init_metrics(max_clients=10, protocol="openvpn", pki_dir="")
+        scrape = adapter.get_metrics().decode()
+
+        samples = []
+        for family in text_string_to_metric_families(scrape):
+            samples.extend(s for s in family.samples if s.name == "info")
+        assert [(s.labels, s.value) for s in samples] == [
+            (
+                {"app": "culvert", "commit": BUILD_COMMIT, "version": BUILD_VERSION},
+                1.0,
+            )
+        ]
+
+
 class TestRuntimeMetricsOverOtlp:
     """The scrape's process and runtime families reach an OTLP reader.
 
@@ -497,6 +603,7 @@ class TestRuntimeMetricsOverOtlp:
 OTEL_MODE_PROBE = """
 import json
 import os
+from pathlib import Path
 
 from opentelemetry import metrics as otel_metrics
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
@@ -505,19 +612,25 @@ from lib import metrics as m
 
 
 def collect(reader):
-    out = {"metrics": {}, "resource": {}, "scopes": []}
+    out = {"metrics": {}, "types": {}, "points": {}, "resource": {}, "scopes": []}
     for rm in reader.get_metrics_data().resource_metrics:
         out["resource"] = dict(rm.resource.attributes)
         for sm in rm.scope_metrics:
             out["scopes"].append(sm.scope.name)
             for metric in sm.metrics:
                 keys = set()
+                points = []
                 for point in metric.data.data_points:
-                    keys.update((point.attributes or {}).keys())
+                    attributes = dict(point.attributes or {})
+                    keys.update(attributes)
+                    points.append({"attributes": attributes, "value": point.value})
                 out["metrics"][metric.name] = sorted(keys)
+                out["types"][metric.name] = type(metric.data).__name__
+                out["points"][metric.name] = points
     return out
 
 
+m.BUILD_INFO_DIR = Path(os.environ["PROBE_BUILD_INFO_DIR"])
 adapter = m.init_metrics(
     max_clients=10,
     protocol="both",
@@ -551,6 +664,11 @@ os._exit(0)
 def otel_mode(tmp_path_factory):
     """Run OTel-mode init once and return what each reader and the scrape saw."""
     workdir = tmp_path_factory.mktemp("otel-mode")
+    # What the image build bakes under /etc/vpn, in a directory the child can read.
+    build_info = workdir / "build-info"
+    build_info.mkdir()
+    (build_info / "VERSION").write_text(f"{BUILD_VERSION}\n", encoding="utf-8")
+    (build_info / "COMMIT").write_text(f"{BUILD_COMMIT}\n", encoding="utf-8")
     # A built environment, so nothing from the caller's reaches the child or a report.
     env = {
         "HOME": str(workdir),
@@ -558,6 +676,7 @@ def otel_mode(tmp_path_factory):
         "OTEL_METRIC_EXPORT_INTERVAL": "3600000",
         "OTEL_SERVICE_NAME": "culvert-under-test",
         "PATH": "/usr/bin:/bin",
+        "PROBE_BUILD_INFO_DIR": str(build_info),
         "PYTHONPATH": str(SCRIPTS_DIR),
     }
     result = subprocess.run(
@@ -578,10 +697,41 @@ class TestOtelModeContract:
     """What a running culvert pushes and serves in OTel mode."""
 
     def test_vpn_names_and_label_keys_are_unchanged_over_otlp(self, otel_mode):
-        pushed = {name: set(keys) for name, keys in otel_mode["vpn"]["metrics"].items()}
+        pushed = {
+            name: set(keys)
+            for name, keys in otel_mode["vpn"]["metrics"].items()
+            if name.startswith("vpn_")
+        }
         assert pushed == VPN_FAMILIES
 
-    def test_scrape_families_are_unchanged(self, otel_mode):
+    def test_the_app_identity_families_are_pushed_beside_the_vpn_ones(self, otel_mode):
+        pushed = {
+            name: set(keys)
+            for name, keys in otel_mode["vpn"]["metrics"].items()
+            if not name.startswith("vpn_")
+        }
+        assert pushed == APP_FAMILIES
+
+    def test_info_is_a_gauge_carrying_the_build_identity(self, otel_mode):
+        """A collector files a gauge apart from a sum, and a liveness check reads gauges.
+
+        The reader's resource names the service the collector files `info` under.
+        """
+        vpn = otel_mode["vpn"]
+        assert vpn["types"]["info"] == "Gauge"
+        assert vpn["points"]["info"] == [
+            {
+                "attributes": {
+                    "app": "culvert",
+                    "commit": BUILD_COMMIT,
+                    "version": BUILD_VERSION,
+                },
+                "value": 1.0,
+            }
+        ]
+        assert vpn["resource"]["service.name"] == "culvert-under-test"
+
+    def test_scrape_serves_exactly_the_expected_families(self, otel_mode):
         assert set(otel_mode["scrape"]) == OTEL_SCRAPE_FAMILIES
 
     def test_runtime_families_are_pushed(self, otel_mode):
@@ -611,17 +761,18 @@ class TestOtelEndpointSetting:
             m, "_start_runtime_push", lambda _app, section: sections.append(section)
         )
 
-        m._init_metrics(
-            "culvert",
-            otel_enabled=True,
-            otel_endpoint="http://127.0.0.1:9",
-            otel_protocol="http",
-            otel_insecure=False,
-        )
-        try:
-            assert m._mgr.backend_name == "opentelemetry"
-            assert m._mgr._backend.resolved.endpoint == "http://127.0.0.1:9"
-            assert m._mgr._backend.resolved.protocol == "http"
-            assert sections == [{"endpoint": "http://127.0.0.1:9", "protocol": "http"}]
-        finally:
-            m._mgr._backend._provider.shutdown(timeout_millis=1000)
+        with _otlp_sink() as endpoint:
+            m._init_metrics(
+                "culvert",
+                otel_enabled=True,
+                otel_endpoint=endpoint,
+                otel_protocol="http",
+                otel_insecure=False,
+            )
+            try:
+                assert m._mgr.backend_name == "opentelemetry"
+                assert m._mgr._backend.resolved.endpoint == endpoint
+                assert m._mgr._backend.resolved.protocol == "http"
+                assert sections == [{"endpoint": endpoint, "protocol": "http"}]
+            finally:
+                m._mgr._backend._provider.shutdown(timeout_millis=1000)
