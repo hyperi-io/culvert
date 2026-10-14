@@ -65,6 +65,10 @@ per device, or they will keep knocking each other offline.
 3. If UDP blocked, try **OpenVPN TCP** (TCP 1194)
 4. If still blocked, run the VPN **over HTTPS** - WireGuard via wstunnel (WSS 4443) or OpenVPN via stunnel (TCP 443)
 
+### When to get a new file
+
+These files are a snapshot of the server's settings when they were issued. Ask your administrator for a new set after the server's address, ports, DNS, MTU, routes or keys change. Restarting the server does not update a file already imported on a device.
+
 ---
 
 ## WireGuard Client Setup

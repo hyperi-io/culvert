@@ -357,6 +357,21 @@ def build_dns_line(dns_servers: list[str], dns_domain: str = "") -> str:
     return ", ".join(seen)
 
 
+def split_allowed_ips(push_routes: str, wg_network: str) -> str:
+    """Return a split-tunnel client's AllowedIPs: the pushed routes, then the tunnel.
+
+    Args:
+        push_routes: Comma-separated CIDRs, as CULVERT_PUSH_ROUTES carries them.
+        wg_network: The WireGuard tunnel network.
+
+    Returns:
+        The `AllowedIPs =` value, empty route entries dropped.
+
+    """
+    routes = [route.strip() for route in push_routes.split(",") if route.strip()]
+    return ", ".join([*routes, wg_network])
+
+
 def generate_client_config(
     client_private_key: str | None,
     client_ip: str,

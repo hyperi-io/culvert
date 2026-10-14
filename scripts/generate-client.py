@@ -491,16 +491,7 @@ def generate_wireguard_configs(
             revoke=f"revoke-client --protocol wireguard {client_name}",
         )
 
-    # Build AllowedIPs for split tunnel
-    split_allowed_ips_parts = []
-    if cfg.push_routes:
-        for route in cfg.push_routes.split(","):
-            route = route.strip()
-            if route:
-                split_allowed_ips_parts.append(route)
-    # Include the WireGuard network itself
-    split_allowed_ips_parts.append(cfg.wg_network)
-    split_allowed_ips = ", ".join(split_allowed_ips_parts)
+    split_allowed_ips = wireguard.split_allowed_ips(cfg.push_routes, cfg.wg_network)
     full_allowed_ips = "0.0.0.0/0, ::/0"
 
     # Generate client configs
@@ -597,6 +588,43 @@ def generate_wireguard_configs(
     write_secret(cfg.wg_conf, server_conf)
     logger.info("Regenerated WireGuard server config", path=str(cfg.wg_conf))
     wireguard.sync_running_interface(cfg.wg_conf)
+
+
+def _report_client_states(cfg: Config) -> bool:
+    """Print issued-client freshness and return whether every row is current."""
+    from lib.client_state import current_protocol_state, inspect_client_states
+
+    try:
+        rows = inspect_client_states(cfg.pki_dir, current_protocol_state(cfg))
+    except (OSError, ValueError) as exc:
+        logger.error(f"Cannot read the issued-client registry: {exc}")
+        return False
+    if not rows:
+        print("No issued clients found.")
+        return True
+
+    for row in rows:
+        detail = f": {', '.join(row.reasons)}" if row.reasons else ""
+        print(f"{row.status} {row.client}{detail}")
+    return all(row.status == "CURRENT" for row in rows)
+
+
+def _record_generated_protocol(cfg: Config, client_name: str, protocol: str) -> None:
+    """Record one protocol only after its complete generation path succeeds.
+
+    A registry that cannot be written costs the freshness report, never the
+    configs just issued, so the failure is a warning.
+    """
+    from lib.client_state import current_protocol_state, record_client_state
+
+    state = {protocol: current_protocol_state(cfg)[protocol]}
+    try:
+        record_client_state(cfg.pki_dir, client_name, state)
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            f"Could not record {client_name}'s issued settings, so"
+            f" generate-client --status cannot vouch for them: {exc}"
+        )
 
 
 # ===============================================================================
@@ -702,12 +730,20 @@ Examples:
             " Invalidates the client's existing WireGuard configs."
         ),
     )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Report CURRENT, STALE, or UNKNOWN for every issued client and exit",
+    )
     parser.add_argument("--proxy", help="HTTP CONNECT proxy (HOST:PORT)")
     parser.add_argument(
         "--proxy-auth", action="store_true", help="Add proxy auth placeholder"
     )
 
     args = parser.parse_args()
+
+    if args.status:
+        raise SystemExit(0 if _report_client_states(cfg) else 1)
 
     # Apply arguments
     client_name = args.name or default_name
@@ -847,6 +883,8 @@ Examples:
                     proxy_auth=args.proxy_auth,
                 )
 
+        _record_generated_protocol(cfg, client_name, "openvpn")
+
     # ---- WireGuard ----
     if generate_wg:
         generate_wireguard_configs(
@@ -855,6 +893,7 @@ Examples:
             pubkeys=args.pubkey,
             rotate=args.rotate,
         )
+        _record_generated_protocol(cfg, client_name, "wireguard")
 
     # Copy vpn-client-setup.md to output directory
     setup_doc_src = Path("/etc/vpn/docs/vpn-client-setup.md")
