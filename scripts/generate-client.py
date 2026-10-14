@@ -491,16 +491,7 @@ def generate_wireguard_configs(
             revoke=f"revoke-client --protocol wireguard {client_name}",
         )
 
-    # Build AllowedIPs for split tunnel
-    split_allowed_ips_parts = []
-    if cfg.push_routes:
-        for route in cfg.push_routes.split(","):
-            route = route.strip()
-            if route:
-                split_allowed_ips_parts.append(route)
-    # Include the WireGuard network itself
-    split_allowed_ips_parts.append(cfg.wg_network)
-    split_allowed_ips = ", ".join(split_allowed_ips_parts)
+    split_allowed_ips = wireguard.split_allowed_ips(cfg.push_routes, cfg.wg_network)
     full_allowed_ips = "0.0.0.0/0, ::/0"
 
     # Generate client configs
@@ -599,23 +590,15 @@ def generate_wireguard_configs(
     wireguard.sync_running_interface(cfg.wg_conf)
 
 
-def _material_client_state(cfg: Config) -> dict[str, dict[str, object]]:
-    """Settings from today's config that are embedded in static client files."""
-    from lib.client_state import current_protocol_state
-
-    return current_protocol_state(
-        client_endpoint=cfg.client_endpoint,
-        dns_servers=cfg.dns_servers,
-        dns_domain=cfg.dns_domain,
-        wg_mtu=cfg.wg_mtu,
-    )
-
-
 def _report_client_states(cfg: Config) -> bool:
     """Print issued-client freshness and return whether every row is current."""
-    from lib.client_state import inspect_client_states
+    from lib.client_state import current_protocol_state, inspect_client_states
 
-    rows = inspect_client_states(cfg.pki_dir, _material_client_state(cfg))
+    try:
+        rows = inspect_client_states(cfg.pki_dir, current_protocol_state(cfg))
+    except (OSError, ValueError) as exc:
+        logger.error(f"Cannot read the issued-client registry: {exc}")
+        return False
     if not rows:
         print("No issued clients found.")
         return True
@@ -627,11 +610,21 @@ def _report_client_states(cfg: Config) -> bool:
 
 
 def _record_generated_protocol(cfg: Config, client_name: str, protocol: str) -> None:
-    """Record one protocol only after its complete generation path succeeds."""
-    from lib.client_state import record_client_state
+    """Record one protocol only after its complete generation path succeeds.
 
-    material_state = _material_client_state(cfg)
-    record_client_state(cfg.pki_dir, client_name, {protocol: material_state[protocol]})
+    A registry that cannot be written costs the freshness report, never the
+    configs just issued, so the failure is a warning.
+    """
+    from lib.client_state import current_protocol_state, record_client_state
+
+    state = {protocol: current_protocol_state(cfg)[protocol]}
+    try:
+        record_client_state(cfg.pki_dir, client_name, state)
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            f"Could not record {client_name}'s issued settings, so"
+            f" generate-client --status cannot vouch for them: {exc}"
+        )
 
 
 # ===============================================================================

@@ -28,26 +28,6 @@ These clients support the web-based OAuth2 authentication flow required for SSO.
 
 ---
 
-## Configuration lifetime
-
-Client configuration files are static. Ask the administrator for a newly
-issued file after the VPN endpoint, DNS settings, or WireGuard MTU changes;
-restarting the server does not update a file already imported on a device.
-
-Administrators can compare every issued client with the current server
-settings:
-
-```bash
-generate-client --status
-```
-
-The report prints `CURRENT`, `STALE` with the changed fields, or `UNKNOWN` for
-a client issued before tracking existed. `STALE` and `UNKNOWN` return a nonzero
-exit status so the report can be used by monitoring. Reissue the named client;
-do not infer that an untracked legacy config is current.
-
----
-
 ## Configuration Files Included
 
 ### OpenVPN
@@ -84,6 +64,10 @@ per device, or they will keep knocking each other offline.
 2. If WireGuard is blocked, try **OpenVPN UDP** (UDP 1194)
 3. If UDP blocked, try **OpenVPN TCP** (TCP 1194)
 4. If still blocked, run the VPN **over HTTPS** - WireGuard via wstunnel (WSS 4443) or OpenVPN via stunnel (TCP 443)
+
+### When to get a new file
+
+These files are a snapshot of the server's settings when they were issued. Ask your administrator for a new set after the server's address, ports, DNS, MTU, routes or keys change. Restarting the server does not update a file already imported on a device.
 
 ---
 

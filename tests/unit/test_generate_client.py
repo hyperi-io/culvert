@@ -313,6 +313,40 @@ class TestClientNamePrefix:
         assert all(name.startswith(f"{SIBLING}-") for name in names)
 
 
+class TestStatusReport:
+    """--status compares each issued client with what generate-client writes today."""
+
+    def test_a_fresh_issue_is_current_and_exits_0(self, run, pki, capsys):
+        (pki.dir / "issued" / "server.crt").write_text("server", encoding="utf-8")
+        run("--protocol", "openvpn", "--config-only", "--name", CLIENT)
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            run("--status")
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"CURRENT {CLIENT}\n"
+
+    def test_a_moved_port_is_stale_and_exits_1(self, run, monkeypatch, capsys):
+        run("--protocol", "openvpn", "--config-only", "--name", CLIENT)
+        monkeypatch.setenv("CULVERT_UDP_PORT", "1195")
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            run("--status")
+
+        assert exc_info.value.code == 1
+        assert capsys.readouterr().out == f"STALE {CLIENT}: openvpn.udp_port\n"
+
+    def test_a_broken_registry_does_not_stop_the_issue(self, run, pki):
+        (pki.dir / "client-config-state.json").write_text("{", encoding="utf-8")
+
+        out = run("--protocol", "openvpn", "--config-only", "--name", CLIENT)
+
+        assert (out / f"{CLIENT}-udp-split.ovpn").exists()
+        assert (out / f"{CLIENT}.zip").exists()
+
+
 class TestRefusals:
     """Each refusal exits non-zero before anything is written."""
 
