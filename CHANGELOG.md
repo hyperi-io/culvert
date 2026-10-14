@@ -3,6 +3,17 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.21](https://github.com/hyperi-io/culvert/compare/v2.1.20...v2.1.21) (2026-10-14)
+
+### Bug Fixes
+
+* **client:** keep prefixed client names out of each other's files ([#84](https://github.com/hyperi-io/culvert/issues/84)) ([21386d4](https://github.com/hyperi-io/culvert/commit/21386d47c9295fc6b4edd3eb435e6ec40e63cd27))
+* **client:** report stale issued configurations ([#86](https://github.com/hyperi-io/culvert/issues/86)) ([c97fc2e](https://github.com/hyperi-io/culvert/commit/c97fc2e387a025652231fa00a234c882bb79a1af))
+* **client:** revoke everything a client was issued, hooks intact ([#85](https://github.com/hyperi-io/culvert/issues/85)) ([267cd27](https://github.com/hyperi-io/culvert/commit/267cd276f5716db49d9eab4ba22147c78a178d10))
+* **deps:** update actions/create-github-app-token action to v3.3.0 ([#80](https://github.com/hyperi-io/culvert/issues/80)) ([70d9e2a](https://github.com/hyperi-io/culvert/commit/70d9e2ac5aacf5cbd7250994fd36c3ed55a1df7d))
+* emit scalo's standard info gauge ([#82](https://github.com/hyperi-io/culvert/issues/82)) ([af846eb](https://github.com/hyperi-io/culvert/commit/af846ebba1802244019b1dc3cc0b38243c38e146))
+* update openvpn-auth-oauth2 to 2.2.3 ([#75](https://github.com/hyperi-io/culvert/issues/75)) ([4a97579](https://github.com/hyperi-io/culvert/commit/4a975794513f22462e8f4f887f1a2c299d5ba363))
+
 ## [2.1.20](https://github.com/hyperi-io/culvert/compare/v2.1.19...v2.1.20) (2026-10-13)
 
 ### Bug Fixes
