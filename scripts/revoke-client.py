@@ -36,6 +36,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
         sys.path.insert(0, _scripts_path)
 
 import scalo.logger  # noqa: E402
+from lib.clients import openvpn_files, wireguard_files  # noqa: E402
 from lib.pki import (  # noqa: E402
     EASYRSA_DIR,
     regenerate_local_crl,
@@ -155,9 +156,12 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
         PKI_DIR / "reqs" / f"{client_name}.req",
     ]
 
-    # Remove .ovpn files
-    for ovpn_file in OUTPUT_DIR.glob(f"{client_name}-*.ovpn"):
-        files_to_remove.append(ovpn_file)
+    # Exact filenames only: a "<name>-*" glob for foo also takes foo-bar's configs.
+    files_to_remove.extend(
+        path
+        for path in openvpn_files(OUTPUT_DIR, client_name)
+        if path.suffix == ".ovpn"
+    )
 
     removed = 0
     for f in files_to_remove:
@@ -265,9 +269,9 @@ def revoke_wireguard_client(client_name: str) -> bool:
     for peer in peers:
         _revoke_wireguard_peer(peer, peers_dir)
 
-    # Remove WireGuard config files from output directory
+    # Exact filenames only: "<name>-wg*" also matches a client named "<name>-wg-x".
     removed = 0
-    for wg_conf in OUTPUT_DIR.glob(f"{client_name}-wg*.conf"):
+    for wg_conf in wireguard_files(OUTPUT_DIR, client_name):
         wg_conf.unlink()
         removed += 1
         logger.info(f"  Removed: {wg_conf}")

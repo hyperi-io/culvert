@@ -46,6 +46,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
         sys.path.insert(0, _scripts_path)
 
 import scalo.logger  # noqa: E402
+from lib.clients import client_files  # noqa: E402
 from lib.pki import validate_client_name  # noqa: E402
 from lib.process import write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
@@ -446,17 +447,14 @@ def _bundle_client_zip(client_name: str, output_dir: Path) -> Path | None:
     """Zip a single client's generated files into <name>.zip (0600).
 
     Per client, never one archive of every client: a shared archive would
-    package one client's private keys with another's. Returns the zip path, or
-    None when the client has no files. The .zip itself is excluded so repeated
-    runs do not nest.
+    package one client's private keys with another's. Members are matched on
+    the exact filenames generate-client writes, because a client name can
+    prefix another's. Returns the zip path, or None when the client has no
+    files.
     """
     import zipfile
 
-    members = sorted(
-        p
-        for p in output_dir.glob(f"{client_name}-*")
-        if p.is_file() and p.suffix != ".zip"
-    )
+    members = client_files(output_dir, client_name)
     if not members:
         return None
 

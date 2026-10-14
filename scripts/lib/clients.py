@@ -1,0 +1,95 @@
+#  Project:      culvert
+#  File:         clients.py
+#  Purpose:      The files generate-client writes for one client
+#  Language:     Python
+#
+#  License:      Apache-2.0
+#  Copyright:    (c) 2026 HYPERI PTY LIMITED
+
+"""The files generate-client writes for one client in the clients directory.
+
+A client name may contain "-", so one name can prefix another: "alice" and
+"alice-laptop". A "<name>-*" glob for alice also returns alice-laptop's configs,
+private keys included. Each file is matched instead on the exact suffix
+generate-client writes after "<name>-", so one client's files are never bundled
+with, or deleted alongside, another client's.
+
+One filename is ambiguous by construction: "<name>-proxy-stunnel.conf" is also
+the direct stunnel config of a client named "<name>-proxy". Stunnel configs carry
+no key material.
+"""
+
+import glob
+import re
+from pathlib import Path
+
+# The six listener x mode configs, the --proxy pair, and their stunnel configs.
+_OPENVPN_SUFFIX = re.compile(
+    r"(?:udp|tcp|https|proxy)-(?:split|full)\.ovpn|(?:proxy-)?stunnel\.conf"
+)
+
+# Slot 1 carries no number and later slots start at 2, as wireguard.slot_infix.
+_WIREGUARD_SUFFIX = re.compile(
+    r"wg(?:[2-9]|[1-9][0-9]+)?(?:-https)?-(?:split|full)\.conf"
+)
+
+
+def _matching(
+    output_dir: Path, client_name: str, suffix: re.Pattern[str]
+) -> list[Path]:
+    """Return the files in output_dir named "<client_name>-<suffix>"."""
+    prefix = f"{client_name}-"
+    return sorted(
+        path
+        for path in output_dir.glob(f"{glob.escape(prefix)}*")
+        if suffix.fullmatch(path.name[len(prefix) :]) and path.is_file()
+    )
+
+
+def openvpn_files(output_dir: Path, client_name: str) -> list[Path]:
+    """Return the client's .ovpn and stunnel configs in output_dir.
+
+    Args:
+        output_dir: The directory generate-client writes client configs to.
+        client_name: The client, already checked by validate_client_name.
+
+    Returns:
+        The matching files, sorted. Empty when there are none or the
+        directory does not exist.
+
+    """
+    return _matching(output_dir, client_name, _OPENVPN_SUFFIX)
+
+
+def wireguard_files(output_dir: Path, client_name: str) -> list[Path]:
+    """Return the client's WireGuard configs in output_dir, for every slot.
+
+    Args:
+        output_dir: The directory generate-client writes client configs to.
+        client_name: The client, already checked by validate_client_name.
+
+    Returns:
+        The matching files, sorted. Empty when there are none or the
+        directory does not exist.
+
+    """
+    return _matching(output_dir, client_name, _WIREGUARD_SUFFIX)
+
+
+def client_files(output_dir: Path, client_name: str) -> list[Path]:
+    """Return every config generate-client wrote for the client in output_dir.
+
+    Args:
+        output_dir: The directory generate-client writes client configs to.
+        client_name: The client, already checked by validate_client_name.
+
+    Returns:
+        The OpenVPN, stunnel and WireGuard configs, sorted.
+
+    """
+    return sorted(
+        [
+            *openvpn_files(output_dir, client_name),
+            *wireguard_files(output_dir, client_name),
+        ]
+    )
