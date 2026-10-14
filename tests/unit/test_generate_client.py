@@ -26,6 +26,7 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "generate-client.py"
 
 SERVER_CN = "vpn.example.test"
 CLIENT = "alice"
+SIBLING = f"{CLIENT}-laptop"
 TC_KEY = (
     "-----BEGIN OpenVPN tls-crypt-v2 client key-----\n"
     "dGxzLWNyeXB0LXYyIHRlc3Qga2V5\n"
@@ -78,6 +79,7 @@ def pki(tmp_path, issue_cert):
     (wg_dir / "server_public.key").write_text(SERVER_PUBLIC + "\n", encoding="utf-8")
     return SimpleNamespace(
         dir=pki_dir,
+        ca=ca,
         ca_cert_pem=ca.cert_pem.decode(),
         client_cert_pem=client.cert_pem.decode(),
     )
@@ -262,6 +264,55 @@ class TestProxyMode:
         direct = (out / f"{CLIENT}-stunnel.conf").read_text(encoding="utf-8")
         assert f"connect = {SERVER_CN}:443" in direct
         assert "protocol = connect" not in direct
+
+
+class TestClientNamePrefix:
+    """A client whose name prefixes another's must not take that client's files.
+
+    Client names may contain "-", so "alice" is a prefix of "alice-laptop".
+    """
+
+    @pytest.fixture
+    def sibling(self, pki, issue_cert):
+        """Issue a second client whose name extends CLIENT's."""
+        client = issue_cert(SIBLING, issuer=pki.ca)
+        (pki.dir / "issued" / f"{SIBLING}.crt").write_bytes(client.cert_pem)
+        (pki.dir / "private" / f"{SIBLING}.key").write_bytes(client.key_pem)
+        (pki.dir / "private" / f"{SIBLING}-tc.key").write_text(
+            TC_KEY, encoding="utf-8"
+        )
+        return client
+
+    def test_zip_holds_only_this_clients_files(self, run, sibling):
+        run("--protocol", "openvpn", "--config-only", "--name", SIBLING)
+        run("--protocol", "wireguard", "--name", SIBLING, "--pubkey", PUBKEY_2)
+        out = run("--protocol", "openvpn", "--config-only", "--name", CLIENT)
+
+        with zipfile.ZipFile(out / f"{CLIENT}.zip") as zf:
+            names = sorted(zf.namelist())
+            bundled = b"".join(zf.read(name) for name in names)
+
+        assert sibling.key_pem not in bundled
+        assert names == sorted(
+            [
+                *(
+                    f"{CLIENT}-{proto}-{mode}.ovpn"
+                    for proto in ("https", "tcp", "udp")
+                    for mode in ("full", "split")
+                ),
+                f"{CLIENT}-stunnel.conf",
+            ]
+        )
+
+    def test_longer_clients_zip_holds_only_its_own_files(self, run, sibling):
+        run("--protocol", "openvpn", "--config-only", "--name", CLIENT)
+        out = run("--protocol", "openvpn", "--config-only", "--name", SIBLING)
+
+        with zipfile.ZipFile(out / f"{SIBLING}.zip") as zf:
+            names = zf.namelist()
+
+        assert names
+        assert all(name.startswith(f"{SIBLING}-") for name in names)
 
 
 class TestRefusals:

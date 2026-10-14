@@ -331,6 +331,18 @@ class TestWireGuardRevocationScope:
         assert "PublicKey = BobKey=" in server
         assert "AliceKey" not in server
 
+    def test_a_client_whose_name_starts_with_wg_keeps_its_configs(self, cli, revoke):
+        """A "<name>-wg*" glob also matches the client "alice-wg-phone"."""
+        _add_peer(revoke)
+        for name in ("alice-wg-split.conf", "alice-wg-phone-wg-split.conf"):
+            (cli.clients / name).write_text("config", encoding="utf-8")
+
+        cli("--protocol", "wireguard", "alice")
+
+        assert [p.name for p in cli.clients.iterdir()] == [
+            "alice-wg-phone-wg-split.conf"
+        ]
+
     def test_revocation_without_a_server_key_still_removes_the_peer(self, cli, revoke):
         """No server key means no config to rebuild; the peer still goes."""
         peer = _add_peer(revoke)
@@ -362,6 +374,17 @@ class TestOpenVpnRevocation:
     def test_a_new_crl_is_readable_by_openvpn(self, alice):
         alice("--protocol", "openvpn", "alice")
         assert stat.S_IMODE((alice.pki / "crl.pem").stat().st_mode) == 0o644
+
+    def test_a_longer_clients_configs_stay(self, alice):
+        """The name "alice" prefixes "alice-laptop", whose configs embed its key."""
+        for name in ("alice-udp-split.ovpn", "alice-laptop-udp-split.ovpn"):
+            (alice.clients / name).write_text("config", encoding="utf-8")
+
+        alice("--protocol", "openvpn", "alice")
+
+        assert [p.name for p in alice.clients.iterdir()] == [
+            "alice-laptop-udp-split.ovpn"
+        ]
 
     def test_a_failed_regeneration_exits_1(self, alice, monkeypatch):
         """A revocation the CRL does not yet carry is not enforced."""
