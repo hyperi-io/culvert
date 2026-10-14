@@ -36,6 +36,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
         sys.path.insert(0, _scripts_path)
 
 import scalo.logger  # noqa: E402
+from lib.clients import openvpn_files, wireguard_files  # noqa: E402
 from lib.pki import (  # noqa: E402
     EASYRSA_DIR,
     regenerate_local_crl,
@@ -51,17 +52,6 @@ from scalo.logger import logger  # noqa: E402
 # Lazy-loaded from CULVERT_* config cascade (populated in main)
 PKI_DIR = Path("/etc/vpn/pki")
 OUTPUT_DIR = Path("/etc/vpn/clients")
-
-OPENVPN_CONFIG_SUFFIXES = (
-    "udp-split.ovpn",
-    "udp-full.ovpn",
-    "tcp-split.ovpn",
-    "tcp-full.ovpn",
-    "https-split.ovpn",
-    "https-full.ovpn",
-    "proxy-split.ovpn",
-    "proxy-full.ovpn",
-)
 
 
 class RevocationError(RuntimeError):
@@ -166,11 +156,11 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
         PKI_DIR / "reqs" / f"{client_name}.req",
     ]
 
-    # Remove only filenames generate-client can create for this exact client.
-    # A prefix glob also matches another client such as foo-bar when revoking
-    # foo, silently deleting that client's private configuration.
+    # Exact filenames only: a "<name>-*" glob for foo also takes foo-bar's configs.
     files_to_remove.extend(
-        OUTPUT_DIR / f"{client_name}-{suffix}" for suffix in OPENVPN_CONFIG_SUFFIXES
+        path
+        for path in openvpn_files(OUTPUT_DIR, client_name)
+        if path.suffix == ".ovpn"
     )
 
     removed = 0
@@ -279,9 +269,9 @@ def revoke_wireguard_client(client_name: str) -> bool:
     for peer in peers:
         _revoke_wireguard_peer(peer, peers_dir)
 
-    # Remove WireGuard config files from output directory
+    # Exact filenames only: "<name>-wg*" also matches a client named "<name>-wg-x".
     removed = 0
-    for wg_conf in OUTPUT_DIR.glob(f"{client_name}-wg*.conf"):
+    for wg_conf in wireguard_files(OUTPUT_DIR, client_name):
         wg_conf.unlink()
         removed += 1
         logger.info(f"  Removed: {wg_conf}")

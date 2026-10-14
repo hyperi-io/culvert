@@ -278,9 +278,7 @@ class TestClientNamePrefix:
         client = issue_cert(SIBLING, issuer=pki.ca)
         (pki.dir / "issued" / f"{SIBLING}.crt").write_bytes(client.cert_pem)
         (pki.dir / "private" / f"{SIBLING}.key").write_bytes(client.key_pem)
-        (pki.dir / "private" / f"{SIBLING}-tc.key").write_text(
-            TC_KEY, encoding="utf-8"
-        )
+        (pki.dir / "private" / f"{SIBLING}-tc.key").write_text(TC_KEY, encoding="utf-8")
         return client
 
     def test_zip_holds_only_this_clients_files(self, run, sibling):
