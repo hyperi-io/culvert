@@ -13,10 +13,18 @@ and "alice-wg2". Each of those clients must keep its own files, because the
 OpenVPN and WireGuard configs embed that client's private keys.
 """
 
+import stat
+import zipfile
 from pathlib import Path
 
 import pytest
-from lib.clients import client_files, openvpn_files, wireguard_files
+from lib.clients import (
+    bundle_zip,
+    client_files,
+    openvpn_files,
+    owned_files,
+    wireguard_files,
+)
 
 OPENVPN_SUFFIXES = [
     f"{proto}-{mode}.ovpn"
@@ -116,3 +124,73 @@ class TestPrefixedNames:
         assert set(_names(client_files(tmp_path, "alice"))) == alice
         assert set(_names(client_files(tmp_path, "alice-proxy"))) == theirs
         assert alice & theirs == {"alice-proxy-stunnel.conf"}
+
+
+class TestOwnedFiles:
+    """The shared stunnel name stays while the other client still has configs."""
+
+    def test_unshared_files_all_belong_to_the_client(self, tmp_path):
+        _issue(tmp_path, "alice")
+        _issue(tmp_path, "alice-laptop")
+        files = client_files(tmp_path, "alice")
+        assert owned_files(tmp_path, "alice", files) == files
+
+    def test_proxy_stunnel_stays_while_alice_proxy_has_configs(self, tmp_path):
+        _issue(tmp_path, "alice")
+        _issue(tmp_path, "alice-proxy")
+        owned = _names(owned_files(tmp_path, "alice", client_files(tmp_path, "alice")))
+        assert "alice-proxy-stunnel.conf" not in owned
+        assert "alice-proxy-udp-split.ovpn" not in owned
+
+    def test_direct_stunnel_stays_while_alice_has_configs(self, tmp_path):
+        _issue(tmp_path, "alice")
+        _issue(tmp_path, "alice-proxy")
+        files = client_files(tmp_path, "alice-proxy")
+        owned = _names(owned_files(tmp_path, "alice-proxy", files))
+        assert "alice-proxy-stunnel.conf" not in owned
+        assert "alice-proxy-udp-split.ovpn" in owned
+
+    def test_shared_name_is_owned_once_the_other_client_is_gone(self, tmp_path):
+        _issue(tmp_path, "alice")
+        files = client_files(tmp_path, "alice")
+        assert "alice-proxy-stunnel.conf" in _names(
+            owned_files(tmp_path, "alice", files)
+        )
+
+
+class TestBundleZip:
+    """Each client's files go into <name>.zip, created private to the owner."""
+
+    def test_bundles_only_this_clients_files(self, tmp_path):
+        (tmp_path / "alice-udp-split.ovpn").write_text("a1", encoding="utf-8")
+        (tmp_path / "alice-wg-split.conf").write_text("a2", encoding="utf-8")
+        (tmp_path / "alice-laptop-udp-split.ovpn").write_text("b1", encoding="utf-8")
+
+        zip_path = bundle_zip(tmp_path, "alice", client_files(tmp_path, "alice"))
+
+        assert zip_path is not None
+        assert zip_path == tmp_path / "alice.zip"
+        with zipfile.ZipFile(zip_path) as zf:
+            assert set(zf.namelist()) == {"alice-udp-split.ovpn", "alice-wg-split.conf"}
+        assert stat.S_IMODE(zip_path.stat().st_mode) == 0o600
+
+    def test_an_existing_world_readable_zip_is_made_private(self, tmp_path):
+        (tmp_path / "alice-udp-split.ovpn").write_text("a1", encoding="utf-8")
+        stale = tmp_path / "alice.zip"
+        stale.write_bytes(b"stale")
+        stale.chmod(0o644)
+
+        bundle_zip(tmp_path, "alice", client_files(tmp_path, "alice"))
+
+        assert stat.S_IMODE(stale.stat().st_mode) == 0o600
+
+    def test_no_members_removes_the_zip(self, tmp_path):
+        """A revoked client's keys must not outlive it in an old bundle."""
+        stale = tmp_path / "carol.zip"
+        stale.write_bytes(b"stale")
+        assert bundle_zip(tmp_path, "carol", []) is None
+        assert not stale.exists()
+
+    def test_no_members_and_no_zip_is_a_no_op(self, tmp_path):
+        assert bundle_zip(tmp_path, "carol", []) is None
+        assert list(tmp_path.iterdir()) == []

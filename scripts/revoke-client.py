@@ -15,12 +15,14 @@ This will:
   OpenVPN:
     1. Revoke the client certificate
     2. Update the CRL
-    3. Remove client files (keys, configs)
+    3. Remove client files (keys, .ovpn and stunnel configs)
   WireGuard (for every device slot the client holds):
     1. Remove live peer from wg0 interface (if running)
-    2. Delete peer public key file
+    2. Delete peer key files and config files
     3. Deallocate IP from allocations.json
     4. Regenerate wg0.conf without the removed peers
+  Either way, <client-name>.zip is rebuilt from the configs the client still
+  holds, or removed when it holds none.
 """
 
 import argparse
@@ -36,7 +38,13 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
         sys.path.insert(0, _scripts_path)
 
 import scalo.logger  # noqa: E402
-from lib.clients import openvpn_files, wireguard_files  # noqa: E402
+from lib.clients import (  # noqa: E402
+    bundle_zip,
+    client_files,
+    openvpn_files,
+    owned_files,
+    wireguard_files,
+)
 from lib.pki import (  # noqa: E402
     EASYRSA_DIR,
     regenerate_local_crl,
@@ -74,6 +82,14 @@ def _wg_interface_up() -> bool:
 # ===============================================================================
 # Client Functions
 # ===============================================================================
+
+
+def _rebundle_zip(client_name: str) -> None:
+    """Rebuild the client's zip from what it still holds, so no revoked key stays."""
+    remaining = owned_files(
+        OUTPUT_DIR, client_name, client_files(OUTPUT_DIR, client_name)
+    )
+    bundle_zip(OUTPUT_DIR, client_name, remaining)
 
 
 def list_clients() -> list[str]:
@@ -158,9 +174,7 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
 
     # Exact filenames only: a "<name>-*" glob for foo also takes foo-bar's configs.
     files_to_remove.extend(
-        path
-        for path in openvpn_files(OUTPUT_DIR, client_name)
-        if path.suffix == ".ovpn"
+        owned_files(OUTPUT_DIR, client_name, openvpn_files(OUTPUT_DIR, client_name))
     )
 
     removed = 0
@@ -169,6 +183,7 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
             f.unlink()
             removed += 1
             logger.info(f"  Removed: {f}")
+    _rebundle_zip(client_name)
 
     logger.info(f"OpenVPN client {client_name} has been revoked", files_removed=removed)
     logger.info("")
@@ -275,11 +290,13 @@ def revoke_wireguard_client(client_name: str) -> bool:
         wg_conf.unlink()
         removed += 1
         logger.info(f"  Removed: {wg_conf}")
+    _rebundle_zip(client_name)
 
     # Regenerate the server config without the removed peer, at the path the
     # server actually reads. Writing it under the PKI directory instead left the
     # revoked peer in the file the server loads, so a container restart brought
-    # the peer back - a revocation that silently expired.
+    # the peer back - a revocation that silently expired. The PostUp/PostDown
+    # hooks go back in too, or the next wg-quick up drops the operator's rules.
     priv_path = wg_dir / "server_private.key"
     if priv_path.exists():
         from lib.config import Config as VpnConfig
@@ -295,6 +312,8 @@ def revoke_wireguard_client(client_name: str) -> bool:
             mtu=vcfg.wg_mtu,
             peers_dir=peers_dir,
             alloc_file=alloc_file,
+            post_up=vcfg.wg_post_up,
+            post_down=vcfg.wg_post_down,
         )
         write_secret(vcfg.wg_conf, server_conf)
         logger.info(
@@ -335,11 +354,13 @@ This will:
   OpenVPN:
     1. Revoke the client certificate
     2. Update the CRL
-    3. Remove client files (keys, configs)
+    3. Remove client files (keys, .ovpn and stunnel configs)
   WireGuard (every device slot the client holds):
     1. Remove live peers from wg0 interface
     2. Delete peer public keys and config files
     3. Deallocate IPs and regenerate server config
+  Either way, <client>.zip is rebuilt from what the client still holds, or
+  removed when it holds nothing.
 
 Examples:
   revoke-client alice

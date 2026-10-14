@@ -16,12 +16,17 @@ with, or deleted alongside, another client's.
 
 One filename is ambiguous by construction: "<name>-proxy-stunnel.conf" is also
 the direct stunnel config of a client named "<name>-proxy". Stunnel configs carry
-no key material.
+no key material, and owned_files keeps that file while the other client still
+has configs of its own.
 """
 
 import glob
+import os
 import re
+import zipfile
 from pathlib import Path
+
+from scalo.logger import logger
 
 # The six listener x mode configs, the --proxy pair, and their stunnel configs.
 _OPENVPN_SUFFIX = re.compile(
@@ -93,3 +98,69 @@ def client_files(output_dir: Path, client_name: str) -> list[Path]:
             *wireguard_files(output_dir, client_name),
         ]
     )
+
+
+def _other_writer(path: Path, client_name: str) -> str | None:
+    """Return the other client that writes the same filename, or None."""
+    if path.name == f"{client_name}-proxy-stunnel.conf":
+        return f"{client_name}-proxy"
+    if path.name == f"{client_name}-stunnel.conf" and client_name.endswith("-proxy"):
+        return client_name.removesuffix("-proxy")
+    return None
+
+
+def owned_files(output_dir: Path, client_name: str, files: list[Path]) -> list[Path]:
+    """Drop the files another client also writes while it has configs of its own.
+
+    Revocation removes what this returns, so a file shared by construction
+    stays for the client still using it.
+
+    Args:
+        output_dir: The directory generate-client writes client configs to.
+        client_name: The client the files were matched for.
+        files: Files already matched for client_name.
+
+    Returns:
+        The files that belong to client_name alone, in their given order.
+
+    """
+    owned = []
+    for path in files:
+        other = _other_writer(path, client_name)
+        if other and any(p != path for p in client_files(output_dir, other)):
+            logger.info("Kept a config another client also uses", path=str(path))
+            continue
+        owned.append(path)
+    return owned
+
+
+def bundle_zip(output_dir: Path, client_name: str, members: list[Path]) -> Path | None:
+    """Write members to <client_name>.zip with mode 0600, or remove the zip.
+
+    The zip carries private keys, so it is created 0600 rather than chmodded
+    after the write, and removed when there is nothing left to put in it.
+
+    Args:
+        output_dir: The directory generate-client writes client configs to.
+        client_name: The client the zip is named for.
+        members: The client's files to bundle.
+
+    Returns:
+        The zip path, or None when members is empty and the zip was removed.
+
+    """
+    zip_path = output_dir / f"{client_name}.zip"
+    if not members:
+        if zip_path.exists():
+            zip_path.unlink()
+            logger.info("Removed client zip", zip=str(zip_path))
+        return None
+
+    fd = os.open(zip_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        with zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED) as archive:
+            for member in members:
+                archive.write(member, member.name)
+    logger.info("Bundled client configs", zip=str(zip_path), files=len(members))
+    return zip_path

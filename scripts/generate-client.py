@@ -46,7 +46,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
         sys.path.insert(0, _scripts_path)
 
 import scalo.logger  # noqa: E402
-from lib.clients import client_files  # noqa: E402
+from lib.clients import bundle_zip, client_files  # noqa: E402
 from lib.pki import validate_client_name  # noqa: E402
 from lib.process import write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
@@ -441,30 +441,6 @@ verb 3
 # ===============================================================================
 # WireGuard Configuration Generation
 # ===============================================================================
-
-
-def _bundle_client_zip(client_name: str, output_dir: Path) -> Path | None:
-    """Zip a single client's generated files into <name>.zip (0600).
-
-    Per client, never one archive of every client: a shared archive would
-    package one client's private keys with another's. Members are matched on
-    the exact filenames generate-client writes, because a client name can
-    prefix another's. Returns the zip path, or None when the client has no
-    files.
-    """
-    import zipfile
-
-    members = client_files(output_dir, client_name)
-    if not members:
-        return None
-
-    zip_path = output_dir / f"{client_name}.zip"
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for member in members:
-            zf.write(member, member.name)
-    zip_path.chmod(0o600)
-    logger.info("Bundled client configs", zip=str(zip_path), files=len(members))
-    return zip_path
 
 
 def generate_wireguard_configs(
@@ -893,7 +869,7 @@ Examples:
     # not one archive of every client, so one client's private keys are never
     # packaged alongside another's. Regenerated each run so it tracks the
     # current configs.
-    _bundle_client_zip(client_name, cfg.output_dir)
+    bundle_zip(cfg.output_dir, client_name, client_files(cfg.output_dir, client_name))
 
     # Summary
     logger.info("")
