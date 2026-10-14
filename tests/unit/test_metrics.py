@@ -483,7 +483,7 @@ class TestBuildIdentity:
         assert m._build_identity(tmp_path) == ("dev", "unknown")
 
     def test_an_empty_commit_reads_as_unknown(self, tmp_path):
-        """The Dockerfile's COMMIT build arg defaults to empty, and CI passes none."""
+        """The Dockerfile's COMMIT build arg defaults to empty, as in a local build."""
         from lib import metrics as m
 
         (tmp_path / "VERSION").write_text(f"{BUILD_VERSION}\n", encoding="utf-8")
@@ -748,13 +748,24 @@ class TestOtelModeContract:
     def test_service_name_comes_from_the_otel_env(self, otel_mode):
         assert otel_mode["vpn"]["resource"]["service.name"] == "culvert-under-test"
 
+    def test_both_resources_carry_the_build_version(self, otel_mode):
+        """scalo's own default is 1.0.0, which every release would otherwise report."""
+        assert otel_mode["runtime"] is not None, "no runtime push was started"
+        assert otel_mode["vpn"]["resource"]["service.version"] == BUILD_VERSION
+        assert otel_mode["runtime"]["resource"]["service.version"] == BUILD_VERSION
+
 
 class TestOtelEndpointSetting:
     """culvert's own endpoint setting reaches both OTLP pushes without the SDK's variable."""
 
-    def test_the_culvert_endpoint_alone_is_where_both_pushes_go(self, monkeypatch):
+    def test_the_culvert_endpoint_alone_is_where_both_pushes_go(
+        self, monkeypatch, tmp_path
+    ):
         from lib import metrics as m
+        from scalo.metrics.opentelemetry_backend import OpenTelemetryBackend
 
+        (tmp_path / "VERSION").write_text(f"{BUILD_VERSION}\n", encoding="utf-8")
+        monkeypatch.setattr(m, "BUILD_INFO_DIR", tmp_path)
         monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
         sections = []
         monkeypatch.setattr(
@@ -769,10 +780,22 @@ class TestOtelEndpointSetting:
                 otel_protocol="http",
                 otel_insecure=False,
             )
+            # _mgr is optional and its _backend is typed as the base class, so
+            # narrow both. Either assert failing leaves no provider to shut down.
+            mgr = m._mgr
+            assert mgr is not None
+            backend = mgr._backend
+            assert isinstance(backend, OpenTelemetryBackend)
             try:
-                assert m._mgr.backend_name == "opentelemetry"
-                assert m._mgr._backend.resolved.endpoint == endpoint
-                assert m._mgr._backend.resolved.protocol == "http"
-                assert sections == [{"endpoint": endpoint, "protocol": "http"}]
+                assert mgr.backend_name == "opentelemetry"
+                assert backend.resolved.endpoint == endpoint
+                assert backend.resolved.protocol == "http"
+                assert sections == [
+                    {
+                        "endpoint": endpoint,
+                        "protocol": "http",
+                        "service_version": BUILD_VERSION,
+                    }
+                ]
             finally:
-                m._mgr._backend._provider.shutdown(timeout_millis=1000)
+                backend._provider.shutdown(timeout_millis=1000)

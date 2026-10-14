@@ -489,16 +489,19 @@ def _init_metrics(
     global _c_bytes_rx, _c_bytes_tx
     global _g_utilisation, _g_max_clients, _g_crl_expiry
 
+    version, commit = _build_identity(BUILD_INFO_DIR)
     backend = "prometheus"
     backend_config: dict[str, Any] | None = None
 
     if otel_enabled and otel_endpoint:
         backend = "opentelemetry"
         # scalo reads its OTLP settings from this section and nowhere else.
+        # service_version is the resource's service.version on both pushes.
         backend_config = {
             "opentelemetry": {
                 "endpoint": otel_endpoint,
                 "protocol": otel_protocol or "grpc",
+                "service_version": version,
             },
         }
         if otel_insecure and otel_endpoint.startswith("https://"):
@@ -533,7 +536,6 @@ def _init_metrics(
 
     # The group registers its own instruments on the manager and sets info to 1,
     # so there is no handle to keep.
-    version, commit = _build_identity(BUILD_INFO_DIR)
     AppMetrics(_mgr, version, commit)
 
     # Register VPN-specific metrics

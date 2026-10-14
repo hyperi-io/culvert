@@ -107,6 +107,7 @@ them the `info` gauge (labels `version`, `commit`, `app`; value 1) that a
 collector-side liveness check keys on, and `start_time_seconds`. `version` and
 `commit` come from the `VERSION` and `COMMIT` files the image build bakes under
 `/etc/vpn`, and read `dev` and `unknown` where a file is absent or empty. The
+same version is the OTLP resource's `service.version` on both pushes. The
 group's throughput and memory instruments are registered but never recorded, so
 the OTLP push does not carry them.
 

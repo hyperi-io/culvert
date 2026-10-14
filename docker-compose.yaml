@@ -20,7 +20,7 @@
 #   - openvpn-dco-dkms package installed on host
 #   - 'modprobe ovpn-dco-v2' run on host
 #
-# Usage:
+# Usage (CULVERT_IMAGE is required - see the image: line below):
 #   docker compose up -d                                # Start server
 #   docker compose logs -f                              # View logs
 #   docker compose down                                 # Stop server
@@ -29,12 +29,13 @@
 
 services:
   openvpn:
-    # Pulls the published multi-arch image from GHCR - the five-minute path.
-    # Risk accepted: the :latest default serves that path only. A deployment
-    # sets CULVERT_IMAGE to a digest pin (...culvert:vX.Y.Z@sha256:...) or a
-    # private mirror. To build locally instead, uncomment the build: block
-    # below and run `docker compose up --build`.
-    image: ${CULVERT_IMAGE:-ghcr.io/hyperi-io/culvert:latest}
+    # There is no default image: set CULVERT_IMAGE (in .env or the shell) to a
+    # digest pin of the published multi-arch image
+    # (ghcr.io/hyperi-io/culvert:vX.Y.Z@sha256:...) or to a private mirror, so a
+    # pull can never change what a deploy runs. To build locally instead,
+    # uncomment the build: block below, set CULVERT_IMAGE to the tag the build
+    # should carry, and run `docker compose up --build`.
+    image: ${CULVERT_IMAGE:?set CULVERT_IMAGE to a digest-pinned image}
     # build:
     #   context: .
     #   dockerfile: Dockerfile

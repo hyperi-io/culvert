@@ -28,10 +28,12 @@ The shipped profiles live at `/etc/vpn/profiles/` inside the image, so
 the bare name `home` resolves. Explicit `CULVERT_*` env vars always
 override profile values.
 
-Or use the repo's compose file, which publishes the same default set:
+Or use the repo's compose file, which publishes the same default set. It has
+no default image, so name the one to run. Pin it by digest, which
+`docker buildx imagetools inspect ghcr.io/hyperi-io/culvert:<version>` prints:
 
 ```bash
-docker compose up -d
+CULVERT_IMAGE=ghcr.io/hyperi-io/culvert:<version>@sha256:<digest> docker compose up -d
 ```
 
 ## 2. Open UDP 1194 to the host
