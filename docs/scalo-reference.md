@@ -11,7 +11,7 @@ In `pyproject.toml` (granular extras - one per backend culvert actually
 uses, not the blanket `[secrets]`):
 
 ```toml
-dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.31.9,<3"]
+dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.31.10,<3"]
 ```
 
 The container installs the full runtime tree (scalo + those extras +
@@ -59,8 +59,8 @@ native log formats.
 
 ## Metrics (Prometheus + OpenTelemetry)
 
-culvert calls `create_metrics` directly and registers metric handles; it
-does not use the higher-level application helpers.
+culvert calls `create_metrics` directly, registers its own metric handles,
+and registers scalo's `AppMetrics` group beside them.
 
 ```python
 from scalo.metrics import create_metrics
@@ -102,6 +102,15 @@ prometheus_client's copy.
 **Naming:** the app name is `culvert`; registered metric names use the
 `vpn_*` namespace (e.g. `vpn_connected_clients`, `vpn_bytes_received_total`).
 
+**Identity:** `AppMetrics` registers scalo's standard service metrics, among
+them the `info` gauge (labels `version`, `commit`, `app`; value 1) that a
+collector-side liveness check keys on, and `start_time_seconds`. `version` and
+`commit` come from the `VERSION` and `COMMIT` files the image build bakes under
+`/etc/vpn`, and read `dev` and `unknown` where a file is absent or empty. The
+same version is the OTLP resource's `service.version` on both pushes. The
+group's throughput and memory instruments are registered but never recorded, so
+the OTLP push does not carry them.
+
 ## Secrets / External PKI
 
 culvert fetches external PKI material through scalo's SecretsManager
@@ -133,5 +142,6 @@ await manager.close()  # async - pki.py runs it via asyncio.run
 | Logging setup | `scalo.logger.setup` | `scripts/entrypoint.py`, `scripts/generate-client.py`, `scripts/revoke-client.py`, `scripts/update-crl.py` |
 | Config | `scalo.config.get_config` | `scripts/lib/config.py` |
 | Metrics | `scalo.metrics.create_metrics` | `scripts/lib/metrics.py` |
+| Service identity (`info`) | `scalo.metrics.groups.AppMetrics` | `scripts/lib/metrics.py` |
 | Runtime metrics over OTLP | `scalo.metrics.opentelemetry_backend.resolve_otel_config`, `_create_otlp_exporter`, `SHUTDOWN_FLUSH_MILLIS`; `scalo.otel_backoff.GatedMetricExporter` | `scripts/lib/metrics.py` |
 | Secrets | `scalo.secrets.providers.*` | `scripts/lib/pki.py` |

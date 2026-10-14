@@ -7,6 +7,7 @@
 # Or set COMPOSE_FILE in .env:
 #   COMPOSE_FILE=docker-compose.yaml:docker-compose.shared.yaml
 #
+# Required: Set CULVERT_IMAGE in .env too (docker-compose.yaml has no default image)
 # Required: Set SHARED_STORAGE_PATH in .env to your shared mount point
 #   - NFS:       SHARED_STORAGE_PATH=/mnt/nfs/openvpn
 #   - S3 (s3fs): SHARED_STORAGE_PATH=/mnt/s3/openvpn

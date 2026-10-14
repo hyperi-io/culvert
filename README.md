@@ -264,7 +264,7 @@ Culvert has two deliberate deployment targets - the same image serves
 both:
 
 - **Docker deploy** - a single host, `docker run` or the
-  `docker-compose.yaml` in the repo. Local Easy-RSA PKI, env-var
+  `docker-compose.yaml` in the repo (set `CULVERT_IMAGE`). Local Easy-RSA PKI, env-var
   config, client configs on a volume. The five-minute path.
 - **Enterprise Kubernetes** - Helm/ArgoCD-shaped: startup/liveness/
   readiness probes, SIGTERM connection drain, cgroup-aware capacity,

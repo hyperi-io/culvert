@@ -19,6 +19,10 @@ In OTel mode the process_* and python_* families the scrape serves are
 pushed over OTLP as well, under the same names, so a collector that does
 not scrape the pod still receives them.
 
+scalo's AppMetrics group registers beside the vpn_* families. Its info gauge
+(labels version, commit, app) is the identity metric every scalo service
+exports, and the one a collector-side liveness check keys on.
+
 Parses OpenVPN status files and WireGuard show output to collect
 connection metrics.
 """
@@ -35,6 +39,7 @@ from typing import Any
 
 from scalo.logger import logger
 from scalo.metrics import create_metrics
+from scalo.metrics.groups import AppMetrics
 
 # ---------------------------------------------------------------------------
 # Data types (used by parsers and tests)
@@ -292,6 +297,40 @@ def _advance_byte_counter(counter, key: str, current: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Build identity (the info gauge's version and commit labels)
+# ---------------------------------------------------------------------------
+
+# Where the image build bakes the Dockerfile's VERSION and COMMIT build args.
+BUILD_INFO_DIR = Path("/etc/vpn")
+
+
+def _baked(directory: Path, name: str, fallback: str) -> str:
+    """Read a build-arg file, or ``fallback`` if it is absent, unreadable or empty."""
+    try:
+        text = (directory / name).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return fallback
+    return text.strip() or fallback
+
+
+def _build_identity(directory: Path) -> tuple[str, str]:
+    """Read the version and commit the image build baked in.
+
+    A missing or empty VERSION reads as ``dev``, the Dockerfile's own default.
+    A missing or empty COMMIT reads as ``unknown``, as scalo's ServiceApp
+    reports an absent commit. The Dockerfile's COMMIT build arg defaults to empty.
+
+    Args:
+        directory: Holds the VERSION and COMMIT files the Dockerfile writes.
+
+    Returns:
+        The version and the commit.
+
+    """
+    return _baked(directory, "VERSION", "dev"), _baked(directory, "COMMIT", "unknown")
+
+
+# ---------------------------------------------------------------------------
 # Process and runtime families over OTLP
 # ---------------------------------------------------------------------------
 
@@ -450,16 +489,19 @@ def _init_metrics(
     global _c_bytes_rx, _c_bytes_tx
     global _g_utilisation, _g_max_clients, _g_crl_expiry
 
+    version, commit = _build_identity(BUILD_INFO_DIR)
     backend = "prometheus"
     backend_config: dict[str, Any] | None = None
 
     if otel_enabled and otel_endpoint:
         backend = "opentelemetry"
         # scalo reads its OTLP settings from this section and nowhere else.
+        # service_version is the resource's service.version on both pushes.
         backend_config = {
             "opentelemetry": {
                 "endpoint": otel_endpoint,
                 "protocol": otel_protocol or "grpc",
+                "service_version": version,
             },
         }
         if otel_insecure and otel_endpoint.startswith("https://"):
@@ -491,6 +533,10 @@ def _init_metrics(
             _runtime_provider = _start_runtime_push(app_name, otel_section)
         except Exception as e:
             logger.warning(f"Runtime metrics push unavailable: {e}")
+
+    # The group registers its own instruments on the manager and sets info to 1,
+    # so there is no handle to keep.
+    AppMetrics(_mgr, version, commit)
 
     # Register VPN-specific metrics
     _g_openvpn_up = _mgr.gauge("vpn_openvpn_up", "Whether OpenVPN is running")
