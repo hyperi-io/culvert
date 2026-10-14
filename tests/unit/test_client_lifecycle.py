@@ -87,11 +87,16 @@ def stack(tmp_path, issue_cert, easyrsa, clean_env, monkeypatch):
         monkeypatch.setattr(sys, "argv", [prog, *args])
         module.main()
 
+    def predate_proxy_refusal() -> None:
+        """Let generate-client issue a "-proxy" name, as it did before refusing it."""
+        monkeypatch.setattr(generate, "collides_with_proxy_stunnel", lambda name: False)
+
     return SimpleNamespace(
         pki=pki,
         clients=clients,
         wg_conf=wg_conf,
         issue=issue,
+        predate_proxy_refusal=predate_proxy_refusal,
         generate=lambda *args: run(generate, "generate-client", *args),
         revoke=lambda *args: run(revoke, "revoke-client", *args),
     )
@@ -147,9 +152,14 @@ class TestRevokeRemovesEverything:
 
 
 class TestSharedStunnelName:
-    """alice-proxy-stunnel.conf is alice's proxy config and alice-proxy's direct one."""
+    """alice-proxy-stunnel.conf is alice's proxy config and alice-proxy's direct one.
+
+    generate-client now refuses "alice-proxy", so these are clients issued before it
+    did. Revoking either must not delete the config the other still uses.
+    """
 
     def test_revoking_alice_keeps_it_while_alice_proxy_is_issued(self, stack):
+        stack.predate_proxy_refusal()
         _issue_both_protocols(stack, "alice-proxy", PROXY_KEY)
         _issue_both_protocols(
             stack, "alice", ALICE_KEY, "--proxy", "proxy.corp.example:8080"
@@ -160,6 +170,7 @@ class TestSharedStunnelName:
         assert "alice-proxy-stunnel.conf" in _volume(stack)
 
     def test_revoking_alice_proxy_keeps_it_while_alice_uses_a_proxy(self, stack):
+        stack.predate_proxy_refusal()
         _issue_both_protocols(
             stack, "alice", ALICE_KEY, "--proxy", "proxy.corp.example:8080"
         )

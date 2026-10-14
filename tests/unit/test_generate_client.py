@@ -266,6 +266,20 @@ class TestProxyMode:
         assert "protocol = connect" not in direct
 
 
+@pytest.fixture
+def issue_client(pki, issue_cert):
+    """Return a function that issues another named client's PKI material."""
+
+    def issue(name: str):
+        client = issue_cert(name, issuer=pki.ca)
+        (pki.dir / "issued" / f"{name}.crt").write_bytes(client.cert_pem)
+        (pki.dir / "private" / f"{name}.key").write_bytes(client.key_pem)
+        (pki.dir / "private" / f"{name}-tc.key").write_text(TC_KEY, encoding="utf-8")
+        return client
+
+    return issue
+
+
 class TestClientNamePrefix:
     """A client whose name prefixes another's must not take that client's files.
 
@@ -273,13 +287,9 @@ class TestClientNamePrefix:
     """
 
     @pytest.fixture
-    def sibling(self, pki, issue_cert):
+    def sibling(self, issue_client):
         """Issue a second client whose name extends CLIENT's."""
-        client = issue_cert(SIBLING, issuer=pki.ca)
-        (pki.dir / "issued" / f"{SIBLING}.crt").write_bytes(client.cert_pem)
-        (pki.dir / "private" / f"{SIBLING}.key").write_bytes(client.key_pem)
-        (pki.dir / "private" / f"{SIBLING}-tc.key").write_text(TC_KEY, encoding="utf-8")
-        return client
+        return issue_client(SIBLING)
 
     def test_zip_holds_only_this_clients_files(self, run, sibling):
         run("--protocol", "openvpn", "--config-only", "--name", SIBLING)
@@ -311,6 +321,54 @@ class TestClientNamePrefix:
 
         assert names
         assert all(name.startswith(f"{SIBLING}-") for name in names)
+
+
+class TestProxySuffixName:
+    """A client named "<x>-proxy" would overwrite client "<x>"'s --proxy stunnel config.
+
+    Both write "<x>-proxy-stunnel.conf", so the name is refused at issue time.
+    """
+
+    @pytest.mark.parametrize("name", ["alice-proxy", "alice-PROXY", "Alice-Proxy"])
+    def test_name_is_refused_before_anything_is_written(
+        self, run, issue_client, tmp_path, name
+    ):
+        issue_client(name)
+
+        with pytest.raises(SystemExit) as exc_info:
+            run("--protocol", "openvpn", "--config-only", "--name", name)
+
+        assert exc_info.value.code == 1
+        assert not (tmp_path / "clients").exists()
+
+    def test_refused_client_leaves_the_proxy_stunnel_config_intact(
+        self, run, issue_client
+    ):
+        out = run(
+            "--protocol",
+            "openvpn",
+            "--config-only",
+            "--name",
+            CLIENT,
+            "--proxy",
+            "proxy.corp.example:8080",
+        )
+        stunnel = out / f"{CLIENT}-proxy-stunnel.conf"
+        before = stunnel.read_bytes()
+        issue_client(f"{CLIENT}-proxy")
+
+        with pytest.raises(SystemExit):
+            run("--protocol", "openvpn", "--config-only", "--name", f"{CLIENT}-proxy")
+
+        assert stunnel.read_bytes() == before
+
+    @pytest.mark.parametrize("name", ["proxy-alice", "alicproxy", "alice_proxy"])
+    def test_other_names_containing_proxy_are_issued(self, run, issue_client, name):
+        issue_client(name)
+
+        out = run("--protocol", "openvpn", "--config-only", "--name", name)
+
+        assert (out / f"{name}-stunnel.conf").exists()
 
 
 class TestStatusReport:
