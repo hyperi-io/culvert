@@ -331,6 +331,21 @@ class TestWireGuardRevocationScope:
         assert "PublicKey = BobKey=" in server
         assert "AliceKey" not in server
 
+    def test_post_up_and_post_down_survive_revocation(self, cli, revoke, monkeypatch):
+        """Dropping them loses the operator's firewall rules at the next wg-quick up."""
+        monkeypatch.setenv("CULVERT_WG_POST_UP", "iptables -A FORWARD -i wg0 -j ACCEPT")
+        monkeypatch.setenv(
+            "CULVERT_WG_POST_DOWN", "iptables -D FORWARD -i wg0 -j ACCEPT"
+        )
+        _add_peer(revoke)
+        (cli.pki / "wireguard" / "server_private.key").write_text("ServerPriv=\n")
+
+        cli("--protocol", "wireguard", "alice")
+
+        server = cli.server_conf.read_text(encoding="utf-8")
+        assert "PostUp = iptables -A FORWARD -i wg0 -j ACCEPT\n" in server
+        assert "PostDown = iptables -D FORWARD -i wg0 -j ACCEPT\n" in server
+
     def test_a_client_whose_name_starts_with_wg_keeps_its_configs(self, cli, revoke):
         """A "<name>-wg*" glob also matches the client "alice-wg-phone"."""
         _add_peer(revoke)
