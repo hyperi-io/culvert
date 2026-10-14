@@ -97,6 +97,7 @@ That mints a real credential, so treat the output accordingly:
   the client over a channel you trust.
 - Access ends when you revoke it, not when you delete the file:
   `docker exec -it <container> revoke-client zaphod`.
+- A client name cannot end in `-proxy`. `generate-client --proxy` writes `<name>-proxy-stunnel.conf`, the file a client of that name would overwrite.
 - A config is a snapshot of the server's settings. `docker exec -it <container> generate-client --status` lists every issued client as CURRENT, STALE with the settings that moved, or UNKNOWN when it predates the record. STALE and UNKNOWN exit non-zero, so monitoring can run it.
 - The `culvert-pki` volume holds the CA that signs every client. Back it up
   and keep it private; losing it invalidates every issued config, and
