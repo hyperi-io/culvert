@@ -3,6 +3,13 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.23](https://github.com/hyperi-io/culvert/compare/v2.1.22...v2.1.23) (2026-10-15)
+
+### Bug Fixes
+
+* **deps:** move to scalo-py 2.31.15 and drop the us-east-1 fallback ([#91](https://github.com/hyperi-io/culvert/issues/91)) ([8ffddad](https://github.com/hyperi-io/culvert/commit/8ffddade9bd72146ef582a7298d9b1d9697572f8))
+* **deps:** update nickfedor/watchtower Docker tag to v1.23.1 ([#90](https://github.com/hyperi-io/culvert/issues/90)) ([9fbd983](https://github.com/hyperi-io/culvert/commit/9fbd983a3dd9c1018b9b46a46cbcb79b5b465d38))
+
 ## [2.1.22](https://github.com/hyperi-io/culvert/compare/v2.1.21...v2.1.22) (2026-10-14)
 
 ### Bug Fixes
