@@ -104,7 +104,8 @@ def create_manager(cfg):
             },
         }
     elif provider_name == "aws":
-        config["aws"] = {"region": cfg.secrets_aws_region or "us-east-1"}
+        # An unset region is never pinned: scalo reads AWS_REGION, then the SDK profile.
+        config["aws"] = {"region": cfg.secrets_aws_region}
 
     from scalo.secrets import SecretsManager
 

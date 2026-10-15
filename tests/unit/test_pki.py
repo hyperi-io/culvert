@@ -96,6 +96,66 @@ class TestCreateManager:
         with pytest.raises(SystemExit):
             create_manager(cfg)
 
+    @pytest.fixture
+    def aws_env(self, tmp_path, monkeypatch):
+        """Strip the ambient AWS settings so only culvert's config can name a region.
+
+        Fake static credentials, a disabled metadata endpoint and a dead local
+        Secrets Manager endpoint keep a regression off the network: a region
+        defaulted by mistake would then fail on a refused connection rather
+        than reach AWS.
+        """
+        for name in (
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+            "AWS_PROFILE",
+            "AWS_DEFAULT_PROFILE",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "no-aws-config"))
+        monkeypatch.setenv(
+            "AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "no-aws-creds")
+        )
+        monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+        monkeypatch.setenv("AWS_ENDPOINT_URL_SECRETS_MANAGER", "http://127.0.0.1:9")
+        monkeypatch.setenv("AWS_MAX_ATTEMPTS", "1")
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "culvert-test")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "culvert-test")
+
+    def test_aws_region_unset_is_not_defaulted(self, clean_env, aws_env, monkeypatch):
+        """With no region anywhere the client cannot be built, so a read fails."""
+        import asyncio
+
+        from botocore.exceptions import NoRegionError
+        from lib.config import Config
+        from lib.pki import create_manager
+
+        monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "aws")
+        cfg = Config.from_settings()
+        assert cfg.secrets_aws_region == ""
+        manager = create_manager(cfg)
+        try:
+            with pytest.raises(NoRegionError):
+                manager.get_sync("culvert/ca", provider="aws")
+        finally:
+            asyncio.run(manager.close())
+
+    def test_aws_region_reaches_the_client(self, clean_env, aws_env, monkeypatch):
+        import asyncio
+
+        from lib.config import Config
+        from lib.pki import create_manager
+
+        monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "aws")
+        monkeypatch.setenv("CULVERT_SECRETS_AWS_REGION", "ap-southeast-2")
+        cfg = Config.from_settings()
+        manager = create_manager(cfg)
+        try:
+            client = manager._providers["aws"]._get_sync_client()
+            assert client.meta.region_name == "ap-southeast-2"
+        finally:
+            asyncio.run(manager.close())
+
 
 # ---------------------------------------------------------------------------
 # External PKI fetch (using real FileProvider + temp files)
