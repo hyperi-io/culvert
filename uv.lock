@@ -616,7 +616,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "pyyaml", specifier = ">=6,<7" },
-    { name = "scalo", extras = ["metrics", "secrets-vault", "secrets-aws"], specifier = ">=2.31.15,<3" },
+    { name = "scalo", extras = ["metrics", "secrets-vault", "secrets-aws"], specifier = ">=2.31.17,<3" },
     { name = "scalo", extras = ["opentelemetry"], marker = "extra == 'otel'" },
     { name = "scalo", extras = ["secrets-aws"], marker = "extra == 'secrets-aws'" },
     { name = "scalo", extras = ["secrets-azure"], marker = "extra == 'secrets-azure'" },
@@ -631,7 +631,7 @@ dev = [
     { name = "pytest", specifier = ">=9.1,<10" },
     { name = "pytest-cov", specifier = ">=7.1,<8" },
     { name = "ruff", specifier = ">=0.17,<0.18" },
-    { name = "scalo", extras = ["deployment"], specifier = ">=2.31.15,<3" },
+    { name = "scalo", extras = ["deployment"], specifier = ">=2.31.17,<3" },
 ]
 
 [[package]]
@@ -1788,7 +1788,7 @@ wheels = [
 
 [[package]]
 name = "scalo"
-version = "2.31.15"
+version = "2.31.17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1806,9 +1806,9 @@ dependencies = [
     { name = "tomli-w" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/02/40/425a0fb5f092df7ed8f0863df76857706cea7d54be99d58c7620df3cd387/scalo-2.31.15.tar.gz", hash = "sha256:21e452f7c4a4ca8064b295d39a8d2daca36047e45470cf69733d4c46bddb7522", size = 363894, upload-time = "2026-10-15T15:34:15.841Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/65/d64047d97a21004a425ba064287ce27920bab1b83c35527884baf626d2ef/scalo-2.31.17.tar.gz", hash = "sha256:dee4c4cccb1de02b92375bdaa8e11155560fa2e9fb4cc254b9261542dc56d752", size = 365892, upload-time = "2026-10-17T05:06:26.962Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/30/23ae307bde2fe7748f4847aca2c6abdce957d075856d1c313c3f09cf1a45/scalo-2.31.15-py3-none-any.whl", hash = "sha256:735382823af38aff1a20091fdcf6492c8707c7e937b0c66a1fc65aea570050d2", size = 436258, upload-time = "2026-10-15T15:34:13.97Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/7c/838262ee34262ea118f6ccec7c1ab602224b49655d400ff104d472d68899/scalo-2.31.17-py3-none-any.whl", hash = "sha256:22bd902db124d5b86e981c07a4cd8ac3c09437bb9f3591678fe6227947109fb3", size = 438230, upload-time = "2026-10-17T05:06:24.221Z" },
 ]
 
 [package.optional-dependencies]
