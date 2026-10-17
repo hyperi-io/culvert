@@ -76,7 +76,7 @@ release:
   helm:
     enabled: true
     contract: deploy/deployment-contract.json
-    library: "2.14.4"
+    library: "2.14.15"
   container:
     enabled: true
     dockerfile: Dockerfile
