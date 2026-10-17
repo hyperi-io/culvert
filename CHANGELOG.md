@@ -3,6 +3,13 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.24](https://github.com/hyperi-io/culvert/compare/v2.1.23...v2.1.24) (2026-10-17)
+
+### Bug Fixes
+
+* declare the licence as an SPDX expression ([#92](https://github.com/hyperi-io/culvert/issues/92)) ([c894c3c](https://github.com/hyperi-io/culvert/commit/c894c3c37bd28b819499af63c91b0c1278780d86))
+* rebuild on scalo 2.31.17 ([dbeac7d](https://github.com/hyperi-io/culvert/commit/dbeac7d91394917a361f265c20ab066e2caaabde))
+
 ## [2.1.23](https://github.com/hyperi-io/culvert/compare/v2.1.22...v2.1.23) (2026-10-15)
 
 ### Bug Fixes
