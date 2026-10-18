@@ -45,7 +45,7 @@ def _removal_flags(words: Words) -> Words | None:
         rest = words[1:]
     if rest[:1] == ["container"]:
         rest = rest[1:]
-    if rest[:1] == ["rm"]:
+    if rest[:1] in (["rm"], ["remove"]):
         return rest[1:]
     if rest[:1] == ["compose"] and "down" in rest:
         return rest[rest.index("down") + 1 :]
@@ -151,6 +151,7 @@ class TestRemovalDetection:
             ("docker rm -fv x", False),
             ("docker rm -f --volumes x", False),
             ("docker container rm -f x", True),
+            ("docker container remove -fv x", False),
             ("docker compose -f a.yml -p p down --remove-orphans", True),
             ("docker compose -f a.yml -p p down -v", False),
             ("docker-compose down", True),
