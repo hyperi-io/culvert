@@ -57,8 +57,9 @@ cleanup() {
 
     ids=$(docker ps -aq --filter "name=culvert-test-integration" 2>/dev/null || true)
     if [[ -n "${ids}" ]]; then
+        # -v: anonymous volumes are hash-named, so the name filter below misses them.
         # shellcheck disable=SC2086 # deliberate word splitting: one id per arg
-        docker rm -f ${ids} >/dev/null 2>&1 || true
+        docker rm -fv ${ids} >/dev/null 2>&1 || true
     fi
 
     ids=$(docker volume ls -q --filter "name=culvert-test-integration" 2>/dev/null || true)

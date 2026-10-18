@@ -69,7 +69,7 @@ start_test_container() {
     docker network create "${TEST_NETWORK}" >/dev/null 2>&1 || true
 
     # Remove any existing container with same name
-    docker rm -f "${TEST_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker rm -fv "${TEST_CONTAINER_NAME}" >/dev/null 2>&1 || true
 
     docker run -d \
         --name "${TEST_CONTAINER_NAME}" \
@@ -82,9 +82,10 @@ start_test_container() {
         "${TEST_IMAGE_NAME}"
 }
 
-# Stop and remove test container
+# Stop and remove the test container and the anonymous volumes the image's
+# VOLUME paths gave it.
 stop_test_container() {
-    docker rm -f "${TEST_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker rm -fv "${TEST_CONTAINER_NAME}" >/dev/null 2>&1 || true
 }
 
 # Clean up all test resources
