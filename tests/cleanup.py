@@ -65,7 +65,8 @@ def clean_docker() -> None:
 def clean_integration() -> None:
     """Remove the containers, volumes and network the BATS tier creates."""
     sweeps = (
-        (["docker", "ps", "-aq"], ["docker", "rm", "-f"]),
+        # -v: anonymous volumes are hash-named, so the name sweep below misses them.
+        (["docker", "ps", "-aq"], ["docker", "rm", "-fv"]),
         (["docker", "volume", "ls", "-q"], ["docker", "volume", "rm", "-f"]),
         (["docker", "network", "ls", "-q"], ["docker", "network", "rm"]),
     )

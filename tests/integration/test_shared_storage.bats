@@ -20,7 +20,7 @@ setup_file() {
     echo "Setting up shared storage test environment..." >&3
 
     # Clean up any existing containers
-    docker rm -f "${CONTAINER_PRIMARY}" "${CONTAINER_SECONDARY}" 2>/dev/null || true
+    docker rm -fv "${CONTAINER_PRIMARY}" "${CONTAINER_SECONDARY}" 2>/dev/null || true
     docker volume rm "${SHARED_VOLUME}" "${SHARED_CLIENTS_VOLUME}" 2>/dev/null || true
     docker network rm "${TEST_NETWORK}" 2>/dev/null || true
 
@@ -93,7 +93,8 @@ setup_file() {
 
 teardown_file() {
     echo "Cleaning up shared storage test environment..." >&3
-    docker rm -f "${CONTAINER_PRIMARY}" "${CONTAINER_SECONDARY}" 2>/dev/null || true
+    # -v takes the anonymous ccd and /var/log/vpn volumes. The named ones go below.
+    docker rm -fv "${CONTAINER_PRIMARY}" "${CONTAINER_SECONDARY}" 2>/dev/null || true
     docker volume rm "${SHARED_VOLUME}" "${SHARED_CLIENTS_VOLUME}" 2>/dev/null || true
     docker network rm "${TEST_NETWORK}" 2>/dev/null || true
 }

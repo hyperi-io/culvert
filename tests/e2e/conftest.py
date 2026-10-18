@@ -89,7 +89,9 @@ def sweep_project(project: str) -> None:
     """
     label = f"label=com.docker.compose.project={project}"
     sweeps = (
-        (["docker", "ps", "-aq", "--filter", label], ["docker", "rm", "-f"]),
+        # -v: the engine creates the image's anonymous volumes unlabelled, so the
+        # label sweep below misses them.
+        (["docker", "ps", "-aq", "--filter", label], ["docker", "rm", "-fv"]),
         (
             ["docker", "volume", "ls", "-q", "--filter", label],
             ["docker", "volume", "rm", "-f"],
