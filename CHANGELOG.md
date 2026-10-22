@@ -3,6 +3,16 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.26](https://github.com/hyperi-io/culvert/compare/v2.1.25...v2.1.26) (2026-10-22)
+
+### Bug Fixes
+
+* **deps:** update ubuntu:26.04 Docker digest to c098726 ([#98](https://github.com/hyperi-io/culvert/issues/98)) ([918249d](https://github.com/hyperi-io/culvert/commit/918249ddbf88ab511ee1c523ed19253a5ecee27b))
+* pin the e2e nginx image by digest ([#97](https://github.com/hyperi-io/culvert/issues/97)) ([769d4a4](https://github.com/hyperi-io/culvert/commit/769d4a450c714d5924a83b491700f07dab86411b))
+* remove test containers with their volumes ([#96](https://github.com/hyperi-io/culvert/issues/96)) ([40614d8](https://github.com/hyperi-io/culvert/commit/40614d87aa3d41806f32bd9d2c978610511bbbcc))
+* **security:** update certifi to 2026.10.19 for PYSEC-2026-4320 ([#100](https://github.com/hyperi-io/culvert/issues/100)) ([4115a29](https://github.com/hyperi-io/culvert/commit/4115a29692ff7fa2d0188bf09b366a5293383bc0)), closes [#99](https://github.com/hyperi-io/culvert/issues/99)
+* update openvpn-auth-oauth2 to 2.3.0 ([#99](https://github.com/hyperi-io/culvert/issues/99)) ([6944c0a](https://github.com/hyperi-io/culvert/commit/6944c0a0290d52d1ed0f2e42c8bd544e3869a669))
+
 ## [2.1.24](https://github.com/hyperi-io/culvert/compare/v2.1.23...v2.1.24) (2026-10-17)
 
 ### Bug Fixes
