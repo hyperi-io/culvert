@@ -3,6 +3,12 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.27](https://github.com/hyperi-io/culvert/compare/v2.1.26...v2.1.27) (2026-10-22)
+
+### Bug Fixes
+
+* **security:** ship certifi 2026.10.19 in the image ([#101](https://github.com/hyperi-io/culvert/issues/101)) ([f9cd322](https://github.com/hyperi-io/culvert/commit/f9cd3228ebf4d778be87a06c87edacaa2565d61e))
+
 ## [2.1.26](https://github.com/hyperi-io/culvert/compare/v2.1.25...v2.1.26) (2026-10-22)
 
 ### Bug Fixes
