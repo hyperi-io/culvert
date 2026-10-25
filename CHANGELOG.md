@@ -3,6 +3,12 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.28](https://github.com/hyperi-io/culvert/compare/v2.1.27...v2.1.28) (2026-10-25)
+
+### Bug Fixes
+
+* **deps:** update nickfedor/watchtower Docker tag to v1.23.2 ([1f20226](https://github.com/hyperi-io/culvert/commit/1f20226a2b0cd4c23330add71101b83f310e8307))
+
 ## [2.1.27](https://github.com/hyperi-io/culvert/compare/v2.1.26...v2.1.27) (2026-10-22)
 
 ### Bug Fixes
