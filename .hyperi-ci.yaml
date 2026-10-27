@@ -9,7 +9,7 @@ language: python
 # and nothing more, and every tool that cares about licence, visibility or
 # publishing reads this. It matches what is already true: public since
 # 2026-08-03, Apache-2.0 in LICENSE, and ghcr.io/hyperi-io/culvert public.
-classification: 4
+classification: oss
 
 quality:
   enabled: true
