@@ -40,6 +40,7 @@ dev = [
     "pytest>=9.1,<10",
     # hyperi-ci measures coverage of scripts/ by passing pytest-cov's --cov flags.
     "pytest-cov>=7.1,<8",
+    "pytest-xdist>=3.8,<4",
     # tests/conftest.py builds a real X.509 CRL for the CRL-expiry tests, which
     # shell out to `openssl crl` and so cannot use a stubbed string.
     "cryptography>=50,<51",
