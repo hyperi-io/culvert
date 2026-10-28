@@ -18,6 +18,7 @@ import ipaddress
 import json
 import subprocess
 import sys
+from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -599,6 +600,54 @@ def _build_pubkey_to_name(pki_dir: Path) -> dict[str, str]:
     return mapping
 
 
+class EndpointFlapDetector:
+    """Spot two devices sharing one WireGuard key from the peer's endpoint.
+
+    WireGuard keeps one endpoint per peer and updates it to whichever device
+    sent the last authenticated packet. A roaming client moves from one
+    address to another and stays there. Devices sharing a key take turns, so
+    the endpoint comes back to an address it left. That return, inside
+    ``window`` seconds, is the flap.
+    """
+
+    def __init__(self, window: float = 600.0, announce_every: float = 600.0):
+        self.window = window
+        self.announce_every = announce_every
+        self._last: dict[str, str] = {}
+        self._seen: dict[str, deque[tuple[float, str]]] = {}
+        self._announced: dict[str, float] = {}
+
+    def observe(self, peer: str, endpoint: str, now: float) -> dict | None:
+        """Record ``peer`` at ``endpoint``.
+
+        Returns None unless the endpoint has just returned to an address seen
+        within the window, then ``{"endpoints": [...], "announce": bool}``.
+        ``announce`` is False while a log line for this peer is still fresh,
+        so a steady flap logs once per ``announce_every`` but counts every time.
+        """
+        if self._last.get(peer) == endpoint:
+            return None
+        history = self._seen.setdefault(peer, deque())
+        while history and now - history[0][0] > self.window:
+            history.popleft()
+        earlier = {addr for _, addr in history}
+        self._last[peer] = endpoint
+        history.append((now, endpoint))
+        if endpoint not in earlier:
+            return None
+        last_announced = self._announced.get(peer)
+        announce = last_announced is None or now - last_announced >= self.announce_every
+        if announce:
+            self._announced[peer] = now
+        return {"endpoints": sorted(earlier | {endpoint}), "announce": announce}
+
+    def forget_missing(self, peers: set[str]) -> None:
+        """Drop state for peers no longer reported by the interface."""
+        for state in (self._last, self._seen, self._announced):
+            for peer in set(state) - peers:
+                del state[peer]
+
+
 def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
     """Start background thread that polls WireGuard for connection events.
 
@@ -608,13 +657,19 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
     import threading
     import time
 
-    from lib.metrics import parse_wg_handshakes, parse_wg_transfer
+    from lib.metrics import (
+        parse_wg_endpoints,
+        parse_wg_handshakes,
+        parse_wg_transfer,
+        record_endpoint_flap,
+    )
 
     stale_threshold = 180  # 3 minutes without handshake = disconnected
 
     def _poll_loop():
         pubkey_names = _build_pubkey_to_name(cfg.pki_dir)
         connected_peers: set[str] = set()
+        flaps = EndpointFlapDetector()
 
         while True:
             time.sleep(interval)
@@ -648,10 +703,37 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
                 if tx_result.returncode == 0:
                     transfers = parse_wg_transfer(tx_result.stdout)
 
+                ep_result = subprocess.run(
+                    ["wg", "show", "wg0", "endpoints"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                )
+                endpoints = {}
+                if ep_result.returncode == 0:
+                    endpoints = parse_wg_endpoints(ep_result.stdout)
+
                 # Refresh name mapping periodically (new peers may be added)
                 pubkey_names = _build_pubkey_to_name(cfg.pki_dir)
 
                 current_connected: set[str] = set()
+
+                flaps.forget_missing(set(endpoints))
+                for pubkey, endpoint in endpoints.items():
+                    flap = flaps.observe(pubkey, endpoint, time.monotonic())
+                    if flap is None:
+                        continue
+                    name = pubkey_names.get(pubkey, pubkey[:8])
+                    record_endpoint_flap(name)
+                    if flap["announce"]:
+                        logger.warning(
+                            "WireGuard peer endpoint is flapping between "
+                            "addresses, two devices may share this key",
+                            peer=name,
+                            endpoints=flap["endpoints"],
+                        )
 
                 for pubkey, hs in handshakes.items():
                     if hs.timestamp == 0:
