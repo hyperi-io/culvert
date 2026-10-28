@@ -611,6 +611,7 @@ class EndpointFlapDetector:
     """
 
     def __init__(self, window: float = 600.0, announce_every: float = 600.0):
+        """Flag a return within ``window`` seconds, at most once per ``announce_every``."""
         self.window = window
         self.announce_every = announce_every
         self._last: dict[str, str] = {}
