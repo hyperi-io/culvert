@@ -9,7 +9,8 @@
 """Client config download server for culvert.
 
 Provides a simple web interface for employees to download their
-VPN .ovpn configuration files.
+VPN client configs: OpenVPN .ovpn, WireGuard and stunnel .conf, and the
+per-client .zip that bundles them.
 """
 
 import hmac
@@ -23,9 +24,13 @@ from scalo.logger import logger
 
 from lib.health import BaseHandler
 
+# What generate-client writes for a client: OpenVPN (.ovpn), WireGuard and
+# stunnel (.conf) and the per-client bundle (.zip).
+SERVED_SUFFIXES = (".ovpn", ".conf", ".zip")
+
 
 class ClientDownloadHandler(BaseHandler):
-    """HTTP handler for downloading client .ovpn files.
+    """HTTP handler for downloading client config files.
 
     These configs embed client private keys, so every route except /health
     requires a bearer token. This server speaks plain HTTP unless started with
@@ -69,7 +74,7 @@ class ClientDownloadHandler(BaseHandler):
 
         if self.path in ("/", "/clients", "/clients/"):
             self._list_clients()
-        elif self.path.startswith("/clients/") and self.path.endswith(".ovpn"):
+        elif self.path.startswith("/clients/") and self.path.endswith(SERVED_SUFFIXES):
             self._download_client()
         else:
             self.send_error(404, "Not Found")
@@ -83,13 +88,17 @@ class ClientDownloadHandler(BaseHandler):
             )
             return
 
-        ovpn_files = sorted(self.clients_dir.glob("*.ovpn"))
+        config_files = sorted(
+            f
+            for f in self.clients_dir.iterdir()
+            if f.is_file() and f.suffix in SERVED_SUFFIXES
+        )
 
-        if not ovpn_files:
+        if not config_files:
             self.send_html(self._render_error("No client configs available"))
             return
 
-        self.send_html(self._render_file_list(ovpn_files))
+        self.send_html(self._render_file_list(config_files))
 
     def _download_client(self) -> None:
         """Download a specific client config."""
@@ -188,7 +197,7 @@ class ClientDownloadHandler(BaseHandler):
 <body>
     <div class="container">
         <h1>VPN Client Configurations</h1>
-        <p class="subtitle">Download your OpenVPN configuration file</p>
+        <p class="subtitle">Download your OpenVPN or WireGuard configuration file, or the .zip with all of them</p>
         <table>
             <thead>
                 <tr>
@@ -202,7 +211,8 @@ class ClientDownloadHandler(BaseHandler):
             </tbody>
         </table>
         <div class="footer">
-            <p>Import the .ovpn file into your OpenVPN client application.</p>
+            <p>Import a .ovpn file into your OpenVPN client application, or a
+            WireGuard .conf into the WireGuard app.</p>
         </div>
     </div>
 </body>
@@ -255,7 +265,7 @@ def start_client_download_server(
     """Start client download server in a background thread.
 
     Fails closed: refuses to start without a bearer token, since the served
-    .ovpn files embed client private keys. Binds to loopback by default; wraps
+    client configs embed client private keys. Binds to loopback by default; wraps
     the socket in TLS when a cert/key pair is supplied.
 
     Returns the running server, so a caller can shutdown() and server_close() it.
@@ -280,7 +290,7 @@ def start_client_download_server(
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         # PROTOCOL_TLS_SERVER inherits its floor from the platform OpenSSL -
         # TLS 1.2 on the build this ships against, and not a promise. This
-        # endpoint serves .ovpn files with the client private key in them and
+        # endpoint serves client configs with the private key in them and
         # the rest of culvert is TLS 1.3 only, so state the floor here rather
         # than inherit whatever the base image happens to default to.
         ctx.minimum_version = ssl.TLSVersion.TLSv1_3  # noqa: V101 - the ssl module reads it
