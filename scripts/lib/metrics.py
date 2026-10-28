@@ -151,6 +151,22 @@ def parse_wg_handshakes(
     return peers
 
 
+def parse_wg_endpoints(output: str) -> dict[str, str]:
+    """Parse output of 'wg show wg0 endpoints' into pubkey -> 'ip:port'.
+
+    A peer that has never been heard from prints '(none)' and is left out.
+    """
+    peers: dict[str, str] = {}
+
+    for line in output.strip().split("\n"):
+        parts = line.split("\t")
+        if len(parts) < 2 or not parts[1] or parts[1] == "(none)":
+            continue
+        peers[parts[0]] = parts[1]
+
+    return peers
+
+
 def collect_openvpn_status(status_path: str, listener: str) -> OpenVPNStatus | None:
     """Read and parse an OpenVPN status file."""
     path = Path(status_path)
@@ -241,6 +257,7 @@ _c_bytes_tx = None
 _g_utilisation = None
 _g_max_clients = None
 _g_crl_expiry = None
+_c_wg_endpoint_flaps = None
 
 # The MeterProvider pushing the runtime families; None unless OTel push is on.
 _runtime_provider = None
@@ -487,7 +504,7 @@ def _init_metrics(
     global _g_openvpn_up, _g_wireguard_up
     global _g_connected, _g_connected_total
     global _c_bytes_rx, _c_bytes_tx
-    global _g_utilisation, _g_max_clients, _g_crl_expiry
+    global _g_utilisation, _g_max_clients, _g_crl_expiry, _c_wg_endpoint_flaps
 
     version, commit = _build_identity(BUILD_INFO_DIR)
     backend = "prometheus"
@@ -572,7 +589,23 @@ def _init_metrics(
         "vpn_crl_seconds_until_expiry",
         "Seconds until the CRL nextUpdate, negative once it has passed",
     )
+    # Two devices sharing one WireGuard key take turns as the peer's endpoint.
+    _c_wg_endpoint_flaps = _mgr.counter(
+        "vpn_wireguard_endpoint_flaps_total",
+        "Times a WireGuard peer's endpoint returned to an address it had left",
+        labels=["peer"],
+    )
     _reset_byte_tracking()
+
+
+def record_endpoint_flap(peer: str) -> None:
+    """Count one endpoint flap for ``peer``, tolerating backend errors."""
+    if _c_wg_endpoint_flaps is None:
+        return
+    try:
+        _c_wg_endpoint_flaps.labels(peer=peer).inc()
+    except Exception as e:
+        logger.debug(f"Counter update failed: {e}")
 
 
 def update_metrics() -> None:

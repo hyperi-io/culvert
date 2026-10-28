@@ -300,6 +300,11 @@ expires, and OpenVPN then refuses every client - including valid ones, with
 `certificate expired`. The CRL auto-refresh keeps it topped up, so this only
 moves if the refresh has been failing, which it also logs at error.
 
+Also worth one: `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's
+endpoint returning to an address it left within 10 minutes. A roaming phone
+moves once and stays. A WireGuard key loaded on two devices makes them take
+turns, and culvert logs a warning naming the peer and both addresses.
+
 ## Versioning
 
 Releases follow [SemVer](https://semver.org/) and are published to
