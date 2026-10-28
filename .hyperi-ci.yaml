@@ -44,6 +44,8 @@ quality:
 
 test:
   enabled: true
+  python:
+    parallel: auto
   use_tiers: true
   tiers:
     unit:
