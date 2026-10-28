@@ -129,6 +129,11 @@ class TestClientDownloadHandler:
         (clients / "user2-udp.ovpn").write_text(
             "client\nremote vpn.example.com 1194 udp\n"
         )
+        (clients / "user1-wg-split.conf").write_text(
+            "[Interface]\nAddress = 10.9.0.2\n"
+        )
+        (clients / "user1.zip").write_bytes(b"PK\x03\x04zip")
+        (clients / "vpn-client-setup.md").write_text("# not a client config\n")
 
         return clients
 
@@ -188,6 +193,39 @@ class TestClientDownloadHandler:
         assert "client" in body
         assert "remote vpn.example.com 1194 udp" in body
         conn.close()
+
+    def test_listing_includes_wireguard_configs_and_the_zip_but_not_other_files(
+        self, test_server
+    ):
+        conn = http.client.HTTPConnection("127.0.0.1", test_server)
+        conn.request("GET", "/")
+        body = conn.getresponse().read().decode()
+        conn.close()
+
+        assert "user1-wg-split.conf" in body
+        assert "user1.zip" in body
+        assert "vpn-client-setup.md" not in body
+
+    @pytest.mark.parametrize(
+        ("name", "status", "content"),
+        [
+            ("user1-wg-split.conf", 200, b"[Interface]\nAddress = 10.9.0.2\n"),
+            ("user1.zip", 200, b"PK\x03\x04zip"),
+            ("vpn-client-setup.md", 404, None),
+            ("missing-wg-full.conf", 404, None),
+        ],
+    )
+    def test_download_wireguard_conf_and_zip(self, test_server, name, status, content):
+        conn = http.client.HTTPConnection("127.0.0.1", test_server)
+        conn.request("GET", f"/clients/{name}")
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+
+        assert response.status == status
+        if content is not None:
+            assert body == content
+            assert name in (response.getheader("Content-Disposition") or "")
 
     def test_download_nonexistent_file(self, test_server):
         """GET /clients/nonexistent.ovpn returns 404."""

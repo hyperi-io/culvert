@@ -93,6 +93,24 @@ Copy `laptop-udp-split.ovpn` to the client and import it. Platform steps
 (OpenVPN Connect, Tunnelblick, the Linux CLI, always-on setups) are in
 [vpn-client-setup.md](vpn-client-setup.md).
 
+### Fetching the configs over HTTP
+
+If copying files off the volume is a nuisance, turn on the download server:
+
+```bash
+-e CULVERT_CLIENT_DOWNLOAD_ENABLED=true
+-e CULVERT_CLIENT_DOWNLOAD_TOKEN=<a long random string>
+```
+
+It lists and serves every `.ovpn`, WireGuard `.conf` and per-client `.zip` in
+the clients volume on port 8443, and each request needs the header
+`Authorization: Bearer <token>`. It binds to loopback unless
+`CULVERT_CLIENT_DOWNLOAD_BIND` says otherwise, and it speaks plain HTTP
+unless `CULVERT_CLIENT_DOWNLOAD_TLS_CERT` and `_TLS_KEY` are set, so
+put a TLS-terminating proxy in front before exposing it. With
+`CULVERT_PROTOCOL=both` the WireGuard configs and `laptop.zip` come from here
+too, with no `docker cp`.
+
 ## See also
 
 - [vpn-client-setup.md](vpn-client-setup.md) - installing and connecting
