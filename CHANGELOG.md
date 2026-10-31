@@ -3,6 +3,17 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.29](https://github.com/hyperi-io/culvert/compare/v2.1.28...v2.1.29) (2026-10-31)
+
+### Bug Fixes
+
+* declare the repo classification as oss ([#104](https://github.com/hyperi-io/culvert/issues/104)) ([7443104](https://github.com/hyperi-io/culvert/commit/7443104cad92ed1703076d99852e67ce907407f3))
+* detect two devices sharing one WireGuard key from peer endpoints ([#106](https://github.com/hyperi-io/culvert/issues/106)) ([f912779](https://github.com/hyperi-io/culvert/commit/f912779d3bce0a104ffcd2fab8310b7c4b6da91a))
+* document EndpointFlapDetector's constructor ([#108](https://github.com/hyperi-io/culvert/issues/108)) ([efba41f](https://github.com/hyperi-io/culvert/commit/efba41fa4611f74cda76315f0c3179b1f4ebac34))
+* fail liveness when a child dies and end a revoked client's live sessions ([#109](https://github.com/hyperi-io/culvert/issues/109)) ([7eeaab3](https://github.com/hyperi-io/culvert/commit/7eeaab345219927b1e87021c95837298439e26fb))
+* run the test suite in parallel ([#105](https://github.com/hyperi-io/culvert/issues/105)) ([0b2c757](https://github.com/hyperi-io/culvert/commit/0b2c757046ad6224d3bfa05c813e9fe3d595b98f))
+* serve WireGuard configs and the client zip from the download server ([#107](https://github.com/hyperi-io/culvert/issues/107)) ([44079a6](https://github.com/hyperi-io/culvert/commit/44079a6e32e84e262ebde9bedb82dc11c2015f78))
+
 ## [2.1.28](https://github.com/hyperi-io/culvert/compare/v2.1.27...v2.1.28) (2026-10-25)
 
 ### Bug Fixes
