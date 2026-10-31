@@ -64,6 +64,8 @@ class TestConfigureStunnel:
         cfg.stunnel_conf = tmp_path / "stunnel.conf"
         cfg.stunnel_cert = str(tmp_path / "nonexistent.pem")
         cfg.stunnel_key = str(tmp_path / "nonexistent.key")
+        # Left by a run that still had its cert: it must not survive this one.
+        cfg.stunnel_conf.write_text("stale")
 
         configure_stunnel(cfg)
         assert not cfg.stunnel_conf.exists()

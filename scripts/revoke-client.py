@@ -45,6 +45,11 @@ from lib.clients import (  # noqa: E402
     owned_files,
     wireguard_files,
 )
+from lib.management import (  # noqa: E402
+    PASSWORD_FILE,
+    RUN_DIR,
+    kill_client_sessions,
+)
 from lib.pki import (  # noqa: E402
     EASYRSA_DIR,
     regenerate_local_crl,
@@ -164,6 +169,10 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
     if not regenerate_local_crl(SimpleNamespace(pki_dir=PKI_DIR, crl_days=crl_days)):
         sys.exit(1)
 
+    # The CRL stops the next handshake. A session already up carries on until it
+    # renegotiates, so end it now.
+    kill_client_sessions(client_name, RUN_DIR, PASSWORD_FILE)
+
     # Remove client files
     logger.info("Removing client files...")
     files_to_remove = [
@@ -186,9 +195,6 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
     _rebundle_zip(client_name)
 
     logger.info(f"OpenVPN client {client_name} has been revoked", files_removed=removed)
-    logger.info("")
-    logger.info("Note: Connected clients will be disconnected when they next")
-    logger.info("attempt to reconnect and the server verifies against the CRL.")
     return True
 
 

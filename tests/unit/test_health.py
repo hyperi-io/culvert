@@ -118,6 +118,55 @@ class TestObservabilityEndpoints:
         assert status3 == 503
 
 
+class TestChildSupervision:
+    """One dead child fails liveness, however many others are still running."""
+
+    CHILDREN = [
+        "openvpn-udp",
+        "openvpn-tcp",
+        "openvpn-https",
+        "stunnel",
+        "wstunnel",
+        "oauth2-udp",
+    ]
+
+    @pytest.fixture
+    def supervised(self, manager, monkeypatch):
+        """A manager holding one live child per name, wired into liveness."""
+        monkeypatch.setattr(lib_health, "_children", manager)
+        monkeypatch.setattr(lib_health, "_check_vpn_alive", lambda: True)
+        for name in self.CHILDREN:
+            manager.start(name, ["sleep", "30"], daemon=True)
+        health.set_started()
+        yield manager
+        health.set_started(False)
+        health.set_ready(False)
+
+    def test_all_children_up_is_alive(self, supervised):
+        assert lib_health._vpn_live() is True
+
+    @pytest.mark.parametrize("dead", CHILDREN)
+    def test_any_one_child_dying_fails_liveness(self, supervised, dead):
+        supervised.processes[dead].kill()
+        supervised.processes[dead].wait(timeout=10)
+        assert lib_health._vpn_live() is False
+
+    def test_a_child_that_never_started_fails_liveness(self, supervised):
+        supervised.start("wstunnel", ["/nonexistent/binary/xyz123"], daemon=True)
+        assert lib_health._vpn_live() is False
+
+    def test_mark_serving_is_ready_only_with_every_child_up(self, supervised):
+        assert lib_health.mark_serving(supervised) is True
+        assert health.is_ready() is True
+
+    def test_mark_serving_stays_not_ready_after_a_failed_start(self, supervised):
+        health.set_ready(False)
+        supervised.start("stunnel", ["/nonexistent/binary/xyz123"], daemon=True)
+        assert lib_health.mark_serving(supervised) is False
+        assert health.is_started() is True
+        assert health.is_ready() is False
+
+
 class TestVpnChecksWithoutTheirTools:
     """A host missing pgrep or iproute2 reads as VPN down, never an exception."""
 

@@ -8,44 +8,7 @@
 
 """Unit tests for entrypoint.py utility functions."""
 
-from lib.network import cidr_to_netmask
 from lib.openvpn import _strip_timestamps
-
-
-class TestCidrToNetmask:
-    """Tests for CIDR prefix to netmask conversion."""
-
-    def test_cidr_32(self):
-        """/32 returns 255.255.255.255."""
-        assert cidr_to_netmask(32) == "255.255.255.255"
-
-    def test_cidr_24(self):
-        """/24 returns 255.255.255.0."""
-        assert cidr_to_netmask(24) == "255.255.255.0"
-
-    def test_cidr_16(self):
-        """/16 returns 255.255.0.0."""
-        assert cidr_to_netmask(16) == "255.255.0.0"
-
-    def test_cidr_8(self):
-        """/8 returns 255.0.0.0."""
-        assert cidr_to_netmask(8) == "255.0.0.0"
-
-    def test_cidr_0(self):
-        """/0 returns 0.0.0.0."""
-        assert cidr_to_netmask(0) == "0.0.0.0"
-
-    def test_cidr_25(self):
-        """/25 returns 255.255.255.128."""
-        assert cidr_to_netmask(25) == "255.255.255.128"
-
-    def test_cidr_20(self):
-        """/20 returns 255.255.240.0."""
-        assert cidr_to_netmask(20) == "255.255.240.0"
-
-    def test_cidr_12(self):
-        """/12 returns 255.240.0.0."""
-        assert cidr_to_netmask(12) == "255.240.0.0"
 
 
 class TestStripTimestamps:

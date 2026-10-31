@@ -17,10 +17,15 @@ import socket
 import ssl
 import subprocess
 import threading
+import time
 from http.server import HTTPServer
 
 import pytest
-from lib.download import ClientDownloadHandler, start_client_download_server
+from lib.download import (
+    ClientDownloadHandler,
+    ClientDownloadServer,
+    start_client_download_server,
+)
 from lib.health import BaseHandler
 
 
@@ -134,6 +139,7 @@ class TestClientDownloadHandler:
         )
         (clients / "user1.zip").write_bytes(b"PK\x03\x04zip")
         (clients / "vpn-client-setup.md").write_text("# not a client config\n")
+        (clients / 'x"><b>.conf').write_text("[Interface]\n")
 
         return clients
 
@@ -205,6 +211,15 @@ class TestClientDownloadHandler:
         assert "user1-wg-split.conf" in body
         assert "user1.zip" in body
         assert "vpn-client-setup.md" not in body
+
+    def test_listing_escapes_file_names(self, test_server):
+        conn = http.client.HTTPConnection("127.0.0.1", test_server)
+        conn.request("GET", "/")
+        body = conn.getresponse().read().decode()
+        conn.close()
+
+        assert "<b>" not in body
+        assert "x&quot;&gt;&lt;b&gt;.conf" in body
 
     @pytest.mark.parametrize(
         ("name", "status", "content"),
@@ -353,6 +368,18 @@ class TestStartServerFailClosed:
         with pytest.raises(ValueError, match="(?i)token"):
             start_client_download_server(0, temp_dir, auth_token="")
 
+    @pytest.mark.parametrize(
+        ("tls_cert", "tls_key"), [("cert.pem", ""), ("", "key.pem")]
+    )
+    def test_start_refuses_half_a_tls_pair(
+        self, temp_dir, restore_handler_config, tls_cert, tls_key
+    ):
+        """A lone cert or key must not fall back to serving the token over HTTP."""
+        with pytest.raises(ValueError, match="(?i)together"):
+            start_client_download_server(
+                0, temp_dir, auth_token="token", tls_cert=tls_cert, tls_key=tls_key
+            )
+
     def test_port_in_use_stops_startup(self, temp_dir, restore_handler_config):
         """A taken port must fail loudly rather than leave downloads unserved."""
         with socket.socket() as holder:
@@ -361,6 +388,80 @@ class TestStartServerFailClosed:
             port = holder.getsockname()[1]
             with pytest.raises(OSError):
                 start_client_download_server(port, temp_dir, auth_token="token")
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+class TestStartedServerEdges:
+    """The server as start_client_download_server builds it, under hostile peers."""
+
+    TOKEN = "pässwort"
+
+    @pytest.fixture
+    def port(self, temp_dir, restore_handler_config):
+        (temp_dir / "alice-udp-split.ovpn").write_text("client\n")
+        port = _free_port()
+        server = start_client_download_server(port, temp_dir, auth_token=self.TOKEN)
+        yield port
+        server.shutdown()
+        server.server_close()
+
+    @staticmethod
+    def _get(port: int, path: str, authorization: str | None = None) -> int:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        headers = {"Authorization": authorization} if authorization else {}
+        try:
+            conn.request("GET", path, headers=headers)
+            return conn.getresponse().status
+        finally:
+            conn.close()
+
+    def test_a_silent_peer_does_not_block_other_downloads(self, port):
+        with socket.create_connection(("127.0.0.1", port), timeout=5):
+            assert self._get(port, "/health") == 200
+
+    def test_connections_past_the_cap_are_closed_not_queued(
+        self, temp_dir, monkeypatch
+    ):
+        monkeypatch.setattr(ClientDownloadServer, "max_connections", 2)
+        monkeypatch.setattr(ClientDownloadHandler, "auth_token", "")
+        port = _free_port()
+        server = start_client_download_server(port, temp_dir, auth_token="tok")
+        try:
+            held = [socket.create_connection(("127.0.0.1", port)) for _ in range(2)]
+            # Until the server has accepted both held connections an extra one is
+            # still served, so it idles and the read times out. Once the cap is
+            # reached it is closed at once, which reads as empty.
+            deadline = time.monotonic() + 10
+            closed = False
+            while not closed and time.monotonic() < deadline:
+                with socket.create_connection(("127.0.0.1", port), timeout=1) as extra:
+                    try:
+                        closed = extra.recv(1) == b""
+                    except TimeoutError:
+                        pass
+            assert closed
+            for conn in held:
+                conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    @pytest.mark.parametrize(
+        ("authorization", "status"),
+        [
+            # A client sends its token as UTF-8 bytes, which http.server reads as latin-1.
+            (f"Bearer {TOKEN}".encode().decode("latin-1"), 200),
+            # Not the token's bytes, and not ASCII: must be refused, not raise.
+            ("Bearer café", 401),
+        ],
+    )
+    def test_non_ascii_bearer_is_compared_as_bytes(self, port, authorization, status):
+        assert self._get(port, "/", authorization) == status
 
 
 class TestClientDownloadHandlerEmptyDir:
@@ -523,17 +624,21 @@ class TestDownloadServerTlsFloor:
     ):
         """A TLS probe that never sends a request must not print a server traceback."""
         assert self._handshake(tls_server, None) == "TLSv1.3"
-
-        # The server takes one connection at a time, so this reply means the
-        # hang-up above has been fully handled.
-        conn = http.client.HTTPSConnection(
-            "127.0.0.1", tls_server, timeout=10, context=self._client_context()
-        )
-        try:
-            conn.request("GET", "/health")
-            assert conn.getresponse().status == 200
-        finally:
-            conn.close()
+        assert self._handshake(tls_server, ssl.TLSVersion.TLSv1_2) is None
+        self._wait_for_handlers()
 
         err = capfd.readouterr().err
         assert "Traceback" not in err, err
+
+    @staticmethod
+    def _wait_for_handlers() -> None:
+        """Block until every connection thread has finished, so its output is in."""
+        deadline = time.monotonic() + 10
+        while any("process_request_thread" in t.name for t in threading.enumerate()):
+            assert time.monotonic() < deadline, "a connection thread is still running"
+            time.sleep(0.05)
+
+    def test_a_silent_tls_peer_does_not_block_other_clients(self, tls_server):
+        """The handshake must not run in the accept loop, where one peer stalls all."""
+        with socket.create_connection(("127.0.0.1", tls_server), timeout=5):
+            assert self._handshake(tls_server, None) == "TLSv1.3"

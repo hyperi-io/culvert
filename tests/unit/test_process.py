@@ -16,8 +16,29 @@ from lib.process import (
     run,
     setup_directories,
     setup_scripts,
+    write_file_atomic,
     write_secret,
 )
+
+
+class TestWriteFileAtomic:
+    def test_replaces_with_the_mode_and_leaves_no_temp_file(self, tmp_path):
+        target = tmp_path / "ca.crt"
+        target.write_bytes(b"old")
+        write_file_atomic(target, b"new", 0o644)
+
+        assert target.read_bytes() == b"new"
+        assert stat.S_IMODE(target.stat().st_mode) == 0o644
+        assert [p.name for p in tmp_path.iterdir()] == ["ca.crt"]
+
+    def test_does_not_use_another_writers_temp_file(self, tmp_path):
+        """Writers sharing a PKI directory each get their own temp file."""
+        target = tmp_path / "ca.crt"
+        other = tmp_path / ".ca.crt.tmp"
+        other.write_bytes(b"half written by another container")
+        write_file_atomic(target, b"new", 0o644)
+
+        assert other.read_bytes() == b"half written by another container"
 
 
 class TestWriteSecret:
@@ -166,6 +187,30 @@ class TestProcessManager:
         assert manager.shutdown_requested is False
 
 
+class TestUnhealthy:
+    """unhealthy() names every child that never started or has since exited."""
+
+    def test_running_children_are_healthy(self, manager):
+        manager.start("openvpn-udp", ["sleep", "30"])
+        manager.start("stunnel", ["sleep", "30"], daemon=True)
+        assert manager.unhealthy() == []
+
+    def test_an_exited_child_is_named(self, manager):
+        manager.start("openvpn-udp", ["sleep", "30"])
+        quick = manager.start("wstunnel", ["true"], daemon=True)
+        quick.wait(timeout=10)
+        assert manager.unhealthy() == ["wstunnel"]
+
+    def test_a_failed_start_is_named(self, manager):
+        manager.start("oauth2-udp", ["/nonexistent/binary/xyz123"], daemon=True)
+        assert manager.unhealthy() == ["oauth2-udp"]
+
+    def test_a_later_good_start_clears_the_failure(self, manager):
+        manager.start("stunnel", ["/nonexistent/binary/xyz123"], daemon=True)
+        manager.start("stunnel", ["sleep", "30"], daemon=True)
+        assert manager.unhealthy() == []
+
+
 class TestDaemonLogs:
     """A daemon's output goes to a file, never an unread pipe that blocks it."""
 
@@ -213,8 +258,23 @@ class TestShutdown:
         assert manager.shutdown_requested is True
         assert proc.poll() is not None
 
-    def test_sighup_is_forwarded_to_running_children(self, manager):
-        """OpenVPN re-reads its CRL and config on SIGHUP."""
-        proc = manager.start("sleeper", ["sleep", "30"])
+    @pytest.mark.parametrize(
+        ("name", "receives"),
+        [
+            ("openvpn-udp", True),
+            ("openvpn-https", True),
+            ("stunnel", True),
+            # No SIGHUP handler: the signal kills it and nothing restarts it.
+            ("wstunnel", False),
+            ("oauth2-udp", False),
+        ],
+    )
+    def test_sighup_reaches_only_children_that_reload(self, manager, name, receives):
+        """OpenVPN re-reads its CRL on SIGHUP, and a child without a handler dies."""
+        proc = manager.start(name, ["sleep", "30"])
         manager._reload_handler(signal.SIGHUP, None)
-        assert proc.wait(timeout=10) == -signal.SIGHUP
+        if receives:
+            assert proc.wait(timeout=10) == -signal.SIGHUP
+        else:
+            with pytest.raises(subprocess.TimeoutExpired):
+                proc.wait(timeout=1)

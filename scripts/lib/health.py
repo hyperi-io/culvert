@@ -39,10 +39,40 @@ def set_protocol(protocol: str) -> None:
     _protocol = protocol
 
 
+# Supervisor whose children liveness and readiness cover (see ProcessManager).
+_children = None
+
+
+def set_children(manager) -> None:
+    """Register the object whose unhealthy() lists the children that are down."""
+    global _children
+    _children = manager
+
+
+def mark_serving(manager) -> bool:
+    """Flip started, and ready only when every child launched and is still up.
+
+    Returns whether the server was marked ready. A child that failed to start
+    leaves readiness off and, once started is set, fails liveness too.
+    """
+    health.set_started()
+    down = manager.unhealthy()
+    if down:
+        logger.error(f"Not ready, child process down: {', '.join(down)}")
+        return False
+    health.set_ready()
+    return True
+
+
 def _vpn_live() -> bool:
-    """Liveness: pass while still initialising, then require VPN processes."""
+    """Liveness: pass while still initialising, then require every child and the VPN."""
     if not health.is_started():
         return True
+    if _children is not None:
+        down = _children.unhealthy()
+        if down:
+            logger.error(f"Child process down: {', '.join(down)}")
+            return False
     return _check_vpn_alive()
 
 

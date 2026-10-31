@@ -33,9 +33,13 @@ def configure_stunnel(cfg) -> None:
         f" -> OpenVPN:{cfg.https_internal_port})..."
     )
 
+    # A config left in a persistent volume must not start stunnel on a cert that
+    # is no longer there, so every skip below removes it and start_server then
+    # reports the missing config.
     template = cfg.server_https_conf.parent / "stunnel-server.conf.template"
     if not template.exists():
         logger.warning("stunnel template not found, skipping")
+        cfg.stunnel_conf.unlink(missing_ok=True)
         return
 
     if not Path(cfg.stunnel_cert).exists():
@@ -43,10 +47,12 @@ def configure_stunnel(cfg) -> None:
         logger.warning(
             "HTTPS tunnel will not work - mount TLS certs to /etc/vpn/oauth2-tls/"
         )
+        cfg.stunnel_conf.unlink(missing_ok=True)
         return
 
     if not Path(cfg.stunnel_key).exists():
         logger.warning(f"stunnel key not found: {cfg.stunnel_key}")
+        cfg.stunnel_conf.unlink(missing_ok=True)
         return
 
     variables = {

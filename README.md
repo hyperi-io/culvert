@@ -324,8 +324,9 @@ image are listed in [NOTICE](NOTICE) with their own licences.
 
 Pull requests welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
 workflow, commit-message convention, and config conventions. Security
-issues: see [SECURITY.md](SECURITY.md). Community expectations:
-[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+issues: see the [security policy](https://github.com/hyperi-io/culvert/security/policy).
+Community expectations: the
+[code of conduct](https://github.com/hyperi-io/.github/blob/main/.github/CODE_OF_CONDUCT.md).
 
 ## Context
 

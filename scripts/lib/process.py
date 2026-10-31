@@ -17,10 +17,15 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import BinaryIO
 
 from scalo.logger import logger
+
+# Children with a SIGHUP reload. Any other child (wstunnel) dies of the signal.
+RELOADS_ON_SIGHUP_PREFIX = "openvpn-"
+RELOADS_ON_SIGHUP = frozenset({"stunnel"})
 
 
 def run(
@@ -50,6 +55,26 @@ def write_secret(path: Path | str, content: str) -> None:
     os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def write_file_atomic(path: Path, data: bytes, mode: int) -> None:
+    """Replace path with data, readable only by this user until it is complete.
+
+    The content goes to a private temp file beside path and is renamed over it, so
+    a reader never sees a partial file, a private key is never wider than 0600
+    while it is written, and two writers sharing the directory never share a temp
+    file. The final mode is applied before the rename.
+    """
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            os.fchmod(f.fileno(), mode)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def setup_directories(cfg) -> None:
@@ -122,6 +147,7 @@ class ProcessManager:
         """Start with no children and install the shutdown signal handlers."""
         self.processes: dict[str, subprocess.Popen] = {}
         self.shutdown_requested = False
+        self.failed_starts: dict[str, str] = {}
         self.config = None
         self._daemon_logs: dict[str, BinaryIO] = {}
         self._setup_signal_handlers()
@@ -146,6 +172,10 @@ class ProcessManager:
         """Handle SIGHUP for config reload."""
         logger.info("Received SIGHUP, signaling OpenVPN processes to reload...")
         for name, proc in self.processes.items():
+            if name not in RELOADS_ON_SIGHUP and not name.startswith(
+                RELOADS_ON_SIGHUP_PREFIX
+            ):
+                continue
             if proc.poll() is None:
                 logger.info(f"Sending SIGHUP to {name}", pid=proc.pid)
                 proc.send_signal(signal.SIGHUP)
@@ -175,11 +205,22 @@ class ProcessManager:
         try:
             proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr)
             self.processes[name] = proc
+            self.failed_starts.pop(name, None)
             logger.info(f"{name} started", pid=proc.pid)
             return proc
         except Exception as e:
             logger.error(f"Failed to start {name}: {e}")
+            self.failed_starts[name] = str(e)
             return None
+
+    def unhealthy(self) -> list[str]:
+        """Names of children that failed to start or have since exited, sorted.
+
+        Liveness and readiness read this, so one dead child fails the pod instead
+        of hiding behind the processes that are still running.
+        """
+        exited = {n for n, p in self.processes.items() if p.poll() is not None}
+        return sorted(exited | self.failed_starts.keys())
 
     def shutdown(self, exit_code: int = 0) -> None:
         """Gracefully shutdown all processes and exit with exit_code.

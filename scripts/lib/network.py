@@ -284,11 +284,6 @@ def setup_forward_guards(cfg) -> None:
     logger.info(f"Link-local guard installed ({LINK_LOCAL} unreachable by clients)")
 
 
-def cidr_to_netmask(prefix: int) -> str:
-    """Convert CIDR prefix to netmask."""
-    return str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)
-
-
 def _prefixlen(network: str, netmask: str) -> int:
     """CIDR prefix length for a network/netmask pair."""
     return ipaddress.IPv4Network(f"{network}/{netmask}", strict=False).prefixlen
