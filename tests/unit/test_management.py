@@ -27,6 +27,7 @@ class TestKillClientSessions:
     def test_sends_kill_on_every_listener(self, management_dir):
         servers = [management_dir.add(name) for name in ("udp", "tcp", "https")]
         assert kill_client_sessions("alice", management_dir, management_dir / "no") == 3
+        assert all(s.handled.wait(5) for s in servers)
         assert [s.commands for s in servers] == [["kill alice", "quit"]] * 3
 
     def test_password_is_sent_when_asked_and_never_logged(self, management_dir, logged):

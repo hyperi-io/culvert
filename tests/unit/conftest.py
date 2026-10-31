@@ -104,6 +104,8 @@ class FakeManagement:
         self.mode = mode
         self.password = password
         self.on_kill = on_kill
+        # The client returns before this thread records its last command.
+        self.handled = threading.Event()
         self._server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._server.bind(str(path))
         self._server.listen()
@@ -122,6 +124,7 @@ class FakeManagement:
                 except OSError:
                     # The client hung up first, as it does on a refused password.
                     pass
+            self.handled.set()
 
     def _handle(self, conn) -> None:
         if self.mode == "silent":
