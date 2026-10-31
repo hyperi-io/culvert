@@ -156,8 +156,10 @@ class FakeManagement:
         self._server.close()
 
 
-class ManagementDir(type(Path())):
+class ManagementDir(Path):
     """A run directory that can start fake management sockets inside itself."""
+
+    servers: list[FakeManagement]
 
     def add(self, listener="udp", **kwargs) -> FakeManagement:
         server = FakeManagement(self / f"management-{listener}.sock", **kwargs)
