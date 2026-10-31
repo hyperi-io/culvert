@@ -391,3 +391,70 @@ class TestShippedListenerRender:
         configure(cfg)
         assert not getattr(cfg, field).exists()
         assert list(empty.iterdir()) == [], "a temp file was left behind"
+
+
+class TestStartServerReadiness:
+    """start_server reports ready only when every listener it needs is running."""
+
+    class StoppedError(Exception):
+        """Raised in place of signal.pause() so the test regains control."""
+
+    @pytest.fixture
+    def serving(self, manager, tmp_path, monkeypatch):
+        """start_server on an HTTPS-only config, with children swapped for sleep."""
+        from types import SimpleNamespace
+
+        from lib.health import health
+
+        def pause():
+            raise self.StoppedError
+
+        real_start = manager.start
+        monkeypatch.setattr(
+            manager,
+            "start",
+            lambda name, cmd, daemon=False: real_start(name, ["sleep", "30"], daemon),
+        )
+        monkeypatch.setattr(openvpn_mod.signal, "pause", pause)
+        monkeypatch.setattr(Path, "mkdir", lambda *_args, **_kwargs: None)
+        health.set_started(False)
+        health.set_ready(False)
+        cfg = SimpleNamespace(
+            pki_mode="local",
+            udp_enabled=False,
+            udp_port=1194,
+            udp_network="10.8.0.0",
+            udp_netmask="255.255.255.0",
+            https_enabled=True,
+            https_port=443,
+            https_network="10.8.2.0",
+            https_netmask="255.255.255.0",
+            tcp_enabled=False,
+            tcp_port=1194,
+            tcp_network="10.8.1.0",
+            tcp_netmask="255.255.255.0",
+            oauth2_udp_enabled=False,
+            oauth2_tcp_enabled=False,
+            oauth2_https_enabled=False,
+            stunnel_conf=tmp_path / "stunnel.conf",
+            server_https_conf=tmp_path / "server-https.conf",
+            https_internal_port=1195,
+        )
+        yield cfg, health
+        health.set_started(False)
+        health.set_ready(False)
+
+    def test_ready_when_stunnel_and_openvpn_started(self, serving, manager):
+        cfg, health = serving
+        cfg.stunnel_conf.write_text("cert = x")
+        with pytest.raises(self.StoppedError):
+            openvpn_mod.start_server(cfg, manager)
+        assert health.is_ready() is True
+
+    def test_missing_stunnel_config_is_not_ready(self, serving, manager):
+        cfg, health = serving
+        with pytest.raises(self.StoppedError):
+            openvpn_mod.start_server(cfg, manager)
+        assert health.is_started() is True
+        assert health.is_ready() is False
+        assert manager.unhealthy() == ["stunnel"]

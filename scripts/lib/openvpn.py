@@ -311,7 +311,8 @@ def start_server(cfg, proc_manager) -> None:
                 f" -> localhost:{cfg.https_internal_port}"
             )
         else:
-            logger.warning("stunnel config not found, HTTPS tunnel may not work")
+            logger.error("stunnel config not found, so the HTTPS listener cannot work")
+            proc_manager.failed_starts["stunnel"] = "config not found"
 
         proc_manager.start(
             "openvpn-https",
@@ -330,7 +331,7 @@ def start_server(cfg, proc_manager) -> None:
     # Listeners are all launched: flip started/ready only now, so the
     # liveness pgrep check and /readyz cannot report a server that has
     # not spawned its OpenVPN processes yet.
-    from lib.health import health
+    from lib.health import mark_serving
 
     # Start UDP listener (main process - we wait on this)
     if cfg.udp_enabled:
@@ -339,8 +340,7 @@ def start_server(cfg, proc_manager) -> None:
             ["openvpn", "--config", str(cfg.server_conf)],
             daemon=False,
         )
-        health.set_started()
-        health.set_ready()
+        mark_serving(proc_manager)
         exit_code = proc_manager.wait_for_main("openvpn-udp")
         if exit_code != 0:
             logger.error(f"OpenVPN UDP exited with code {exit_code}")
@@ -348,8 +348,7 @@ def start_server(cfg, proc_manager) -> None:
     else:
         # If UDP disabled, wait for signals
         logger.info("UDP disabled, running with HTTPS/TCP listeners only")
-        health.set_started()
-        health.set_ready()
+        mark_serving(proc_manager)
         signal.pause()
 
 

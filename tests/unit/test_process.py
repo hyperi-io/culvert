@@ -187,6 +187,30 @@ class TestProcessManager:
         assert manager.shutdown_requested is False
 
 
+class TestUnhealthy:
+    """unhealthy() names every child that never started or has since exited."""
+
+    def test_running_children_are_healthy(self, manager):
+        manager.start("openvpn-udp", ["sleep", "30"])
+        manager.start("stunnel", ["sleep", "30"], daemon=True)
+        assert manager.unhealthy() == []
+
+    def test_an_exited_child_is_named(self, manager):
+        manager.start("openvpn-udp", ["sleep", "30"])
+        quick = manager.start("wstunnel", ["true"], daemon=True)
+        quick.wait(timeout=10)
+        assert manager.unhealthy() == ["wstunnel"]
+
+    def test_a_failed_start_is_named(self, manager):
+        manager.start("oauth2-udp", ["/nonexistent/binary/xyz123"], daemon=True)
+        assert manager.unhealthy() == ["oauth2-udp"]
+
+    def test_a_later_good_start_clears_the_failure(self, manager):
+        manager.start("stunnel", ["/nonexistent/binary/xyz123"], daemon=True)
+        manager.start("stunnel", ["sleep", "30"], daemon=True)
+        assert manager.unhealthy() == []
+
+
 class TestDaemonLogs:
     """A daemon's output goes to a file, never an unread pipe that blocks it."""
 

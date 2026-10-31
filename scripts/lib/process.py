@@ -147,6 +147,7 @@ class ProcessManager:
         """Start with no children and install the shutdown signal handlers."""
         self.processes: dict[str, subprocess.Popen] = {}
         self.shutdown_requested = False
+        self.failed_starts: dict[str, str] = {}
         self.config = None
         self._daemon_logs: dict[str, BinaryIO] = {}
         self._setup_signal_handlers()
@@ -204,11 +205,22 @@ class ProcessManager:
         try:
             proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr)
             self.processes[name] = proc
+            self.failed_starts.pop(name, None)
             logger.info(f"{name} started", pid=proc.pid)
             return proc
         except Exception as e:
             logger.error(f"Failed to start {name}: {e}")
+            self.failed_starts[name] = str(e)
             return None
+
+    def unhealthy(self) -> list[str]:
+        """Names of children that failed to start or have since exited, sorted.
+
+        Liveness and readiness read this, so one dead child fails the pod instead
+        of hiding behind the processes that are still running.
+        """
+        exited = {n for n, p in self.processes.items() if p.poll() is not None}
+        return sorted(exited | self.failed_starts.keys())
 
     def shutdown(self, exit_code: int = 0) -> None:
         """Gracefully shutdown all processes and exit with exit_code.

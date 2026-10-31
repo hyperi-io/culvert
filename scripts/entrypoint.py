@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import scalo.logger
 from lib.config import Config
 from lib.download import start_client_download_server
-from lib.health import health, set_protocol, start_observability
+from lib.health import mark_serving, set_children, set_protocol, start_observability
 from lib.metrics import init_metrics
 from lib.network import setup_forward_guards, setup_network, setup_routing_control
 from lib.oauth2 import setup_oauth2, start_oauth2
@@ -55,6 +55,7 @@ def run_server(cfg: Config) -> None:
     """Run the VPN server (main command)."""
     proc_manager = ProcessManager()
     proc_manager.config = cfg
+    set_children(proc_manager)
 
     # Infrastructure setup
     setup_directories(cfg)
@@ -127,8 +128,7 @@ def run_server(cfg: Config) -> None:
         start_server(cfg, proc_manager)
     else:
         logger.info("WireGuard-only mode -- waiting for signals")
-        health.set_started()
-        health.set_ready()
+        mark_serving(proc_manager)
         signal.pause()
 
 
