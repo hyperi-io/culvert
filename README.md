@@ -1,19 +1,15 @@
 # <img src="assets/brand/product-culvert/tertiary/product-culvert_square.svg" alt="Culvert icon" width="40"> Culvert
 
-The VPN server that installs as a container.
-OpenVPN and WireGuard in a single image, each optionally tunnelled over
-HTTPS, with OIDC SSO and external PKI -- `docker run` it standalone or
-drop it into Kubernetes.
+The VPN server that installs as a container: OpenVPN and WireGuard in one image, each optionally tunnelled over HTTPS. `docker run` it standalone or drop it into Kubernetes. In a DFE deployment it is the edge-fleet VPN, the door an appliance dials before it posts to dfe-receiver.
 
-## Features
+## What it gives you
 
-- **Protocols:** OpenVPN (UDP/TCP) and WireGuard, independently or both simultaneously
-- **VPN over HTTPS:** wrap either protocol in TLS on a web port - stunnel for OpenVPN on TCP/443, wstunnel for WireGuard on TCP/4443. Use it wherever only HTTPS gets out: locked-down corporate egress, hotel and conference wifi, captive portals, cloud egress policy, or networks that actively block VPN protocols
-- **OIDC SSO:** Works with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 and other OIDC providers (OpenVPN only; WireGuard uses key-based auth)
-- **External PKI:** File mounts, OpenBao (Vault-compatible), or AWS Secrets Manager; falls back to self-generated Easy-RSA CA
-- **Observability:** Prometheus `/metrics` + OpenTelemetry OTLP export
-- **Crypto:** TLS 1.3 only, AES-256-GCM, SHA-384, P-384 PKI on the OpenVPN path - the CNSA 2.0 classical suite ([details](#cryptography-and-cnsa-20))
-- **K8s-ready:** `/livez` + `/readyz` probes; SIGTERM drain; cgroup-aware resource detection
+- OpenVPN on UDP or TCP and WireGuard, on their own or both at once.
+- Either protocol wrapped in TLS on a web port, stunnel for OpenVPN on TCP 443 and wstunnel for WireGuard on TCP 4443 by default. A network that lets out HTTPS on 443 alone passes the OpenVPN tunnel, and the WireGuard one once its port is moved or opened.
+- OIDC sign-in on OpenVPN with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 or any other OIDC provider. WireGuard uses keys.
+- PKI from file mounts, OpenBao or Vault, or AWS Secrets Manager, with a self-generated Easy-RSA CA when you bring none.
+- TLS 1.3 only, AES-256-GCM, SHA-384 and P-384 on the OpenVPN path, the CNSA 2.0 classical suite ([details](#cryptography-and-cnsa-20)).
+- Prometheus `/metrics` and OpenTelemetry OTLP export, `/livez` and `/readyz` probes, a drain on SIGTERM and cgroup-aware resource detection.
 
 ## Coming from another VPN server?
 
@@ -313,7 +309,7 @@ deployment via the profile system. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Issues
 
-Open bugs: [this repo](https://github.com/hyperi-io/culvert/issues?q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor) | [whole DFE suite](https://github.com/search?type=issues&q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor+repo%3Ahyperi-io%2Fdfe-infra+repo%3Ahyperi-io%2Fdfe-docker+repo%3Ahyperi-io%2Fdfe-deploy+repo%3Ahyperi-io%2Fdfe-engine+repo%3Ahyperi-io%2Fdfe-loader+repo%3Ahyperi-io%2Fdfe-receiver+repo%3Ahyperi-io%2Fdfe-fetcher+repo%3Ahyperi-io%2Fdfe-archiver+repo%3Ahyperi-io%2Fdfe-transform-vrl+repo%3Ahyperi-io%2Fdfe-transform-vector+repo%3Ahyperi-io%2Fdfe-transform-elastic+repo%3Ahyperi-io%2Fdfe-ui+repo%3Ahyperi-io%2Fdfe-hyperdx+repo%3Ahyperi-io%2Fscalo-rs+repo%3Ahyperi-io%2Fscalo-py+repo%3Ahyperi-io%2Flogreducer+repo%3Ahyperi-io%2Fdfe-schemas+repo%3Ahyperi-io%2Fvector-vrl+repo%3Ahyperi-io%2Fculvert+repo%3Ahyperi-io%2Fclickhouse-dfe+repo%3Ahyperi-io%2Ffactbook-rs)
+Open bugs: [this repo](https://github.com/hyperi-io/culvert/issues?q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor) | [whole DFE suite](https://github.com/search?type=issues&q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor+repo%3Ahyperi-io%2Fdfe-infra+repo%3Ahyperi-io%2Fdfe-docker+repo%3Ahyperi-io%2Fdfe-deploy+repo%3Ahyperi-io%2Fdfe-engine+repo%3Ahyperi-io%2Fdfe-loader+repo%3Ahyperi-io%2Fdfe-receiver+repo%3Ahyperi-io%2Fdfe-fetcher+repo%3Ahyperi-io%2Fdfe-archiver+repo%3Ahyperi-io%2Fdfe-transform-vrl+repo%3Ahyperi-io%2Fdfe-transform-vector+repo%3Ahyperi-io%2Fdfe-transform-elastic+repo%3Ahyperi-io%2Fdfe-ui+repo%3Ahyperi-io%2Fdfe-hyperdx+repo%3Ahyperi-io%2Fscalo-rs+repo%3Ahyperi-io%2Fscalo-py+repo%3Ahyperi-io%2Flogreducer+repo%3Ahyperi-io%2Fdfe-schemas+repo%3Ahyperi-io%2Fvector-vrl+repo%3Ahyperi-io%2Fculvert+repo%3Ahyperi-io%2Fdfe-clickhouse-rs+repo%3Ahyperi-io%2Ffactbook-rs)
 
 ## License
 
