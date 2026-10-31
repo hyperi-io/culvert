@@ -26,7 +26,7 @@ from pathlib import Path
 
 from scalo.logger import logger
 
-from lib.process import run
+from lib.process import run, write_file_atomic
 
 # Easy-RSA is not on PATH, so it is run from its install directory.
 EASYRSA_DIR = Path("/usr/share/easy-rsa")
@@ -137,8 +137,7 @@ def _fetch_one(
             logger.warning(f"Skipping {name} - invalid PEM from '{secret_ref}'")
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
-        dest.chmod(perms)
+        write_file_atomic(dest, data, perms)
         logger.info(f"  {name}: written to {dest}")
         return True
     except Exception as e:

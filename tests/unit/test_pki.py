@@ -230,6 +230,25 @@ class TestFetchExternalPki:
         mode = (pki / "private" / "server.key").stat().st_mode
         assert stat.S_IMODE(mode) == 0o600
 
+    def test_server_key_is_created_0600_not_chmodded_afterwards(
+        self, pki_env, monkeypatch
+    ):
+        """No window where the key exists with the default mode."""
+        from lib.pki import fetch_external_pki
+
+        cfg, pki, _ = pki_env
+        for name in ("chmod", "fchmod"):
+            monkeypatch.setattr(os, name, lambda *_args, **_kw: None)
+        monkeypatch.setattr(Path, "chmod", lambda *_args, **_kw: None)
+        previous = os.umask(0)
+        try:
+            fetch_external_pki(cfg)
+        finally:
+            os.umask(previous)
+
+        assert stat.S_IMODE((pki / "private" / "server.key").stat().st_mode) == 0o600
+        assert not list((pki / "private").glob(".*.tmp"))
+
     def test_ca_cert_has_644_perms(self, pki_env):
         """CA cert written with 0644 permissions."""
         from lib.pki import fetch_external_pki

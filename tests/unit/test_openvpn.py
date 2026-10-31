@@ -186,12 +186,18 @@ class TestApplyCommonOptions:
         assert 'push "route 10.0.0.0 255.0.0.0"' in content
         assert "redirect-gateway def1 bypass-dhcp" in content
 
-    def test_push_routes_without_cidr_skipped(self):
-        """Routes without / separator are skipped."""
+    def test_push_routes_unparseable_skipped(self):
+        """An entry that is not an address is skipped."""
         cfg = self.FakeCfg(push_routes="invalid,10.0.0.0/24")
         content = _apply_common_options("", cfg)
         assert "invalid" not in content
         assert "10.0.0.0" in content
+
+    def test_push_route_bare_address_is_a_host_route(self):
+        """validate_cidr_routes accepts a bare address, so it must be pushed."""
+        cfg = self.FakeCfg(push_routes="10.1.2.3")
+        content = _apply_common_options("", cfg)
+        assert 'push "route 10.1.2.3 255.255.255.255"' in content
 
     def test_multiple_routes_comma_separated(self):
         """Multiple comma-separated routes all added."""

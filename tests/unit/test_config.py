@@ -581,6 +581,57 @@ class TestClientDownloadValidation:
         cfg = Config.from_settings()
         cfg.validate()  # should not raise
 
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            ("CULVERT_CLIENT_DOWNLOAD_TLS_CERT", "/tls/cert.pem"),
+            ("CULVERT_CLIENT_DOWNLOAD_TLS_KEY", "/tls/key.pem"),
+        ],
+    )
+    def test_lone_tls_cert_or_key_fails(self, clean_env, monkeypatch, name, value):
+        """Half a pair would serve the token and private keys over plain HTTP."""
+        monkeypatch.setenv("CULVERT_CLIENT_DOWNLOAD_ENABLED", "true")
+        monkeypatch.setenv("CULVERT_CLIENT_DOWNLOAD_TOKEN", "e2e-token")
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv(name, value)
+        exited, errors = _validate_capturing(Config.from_settings())
+        assert exited
+        assert "must be set together" in errors
+
+
+class TestMistypedSettingsStopStartup:
+    """A typo must not turn into a quiet default, least of all a security one."""
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            # Read as false, these would drop the metadata guard and isolation.
+            ("CULVERT_BLOCK_LINK_LOCAL", "ture"),
+            ("CULVERT_CLIENT_ISOLATION", "enabled"),
+            ("CULVERT_UDP_PORT", "119x"),
+            ("CULVERT_MAX_CLIENTS", "lots"),
+        ],
+    )
+    def test_unrecognised_value_exits(self, clean_env, monkeypatch, name, value):
+        monkeypatch.setenv(name, value)
+        with pytest.raises(SystemExit):
+            Config.from_settings()
+
+    def test_empty_boolean_reads_as_unset(self, clean_env, monkeypatch):
+        """Compose passes ${VAR:-} as an empty string for an unset variable."""
+        monkeypatch.setenv("CULVERT_BLOCK_LINK_LOCAL", "")
+        assert Config.from_settings().block_link_local is True
+
+    @pytest.mark.parametrize(
+        "hostname", ["vpn.example.com\n", "vpn example.com", "-vpn.example.com"]
+    )
+    def test_malformed_hostname_is_rejected(self, hostname):
+        """A trailing newline satisfies `$` and would reach the generated configs."""
+        from lib.config import ValidationError, validate_hostname
+
+        with pytest.raises(ValidationError):
+            validate_hostname(hostname, "CULVERT_SERVER_CN")
+
 
 class TestExampleProfile:
     """Regression lock: the shipped profiles/example.yaml loads cleanly."""
@@ -952,6 +1003,12 @@ class TestOAuth2Validation:
         exited, errors = _validate_capturing(Config.from_settings())
         assert exited
         assert "must be a valid URL" in errors
+
+    def test_plain_http_issuer_warns(self, oauth2_env):
+        oauth2_env.setenv("CULVERT_OAUTH2_ISSUER", "http://idp.example.com/realms/vpn")
+        exited, warnings = _validate_capturing(Config.from_settings(), "WARNING")
+        assert not exited
+        assert "CULVERT_OAUTH2_ISSUER is plain http" in warnings
 
     def test_tls_files_not_yet_present_only_warn(self, oauth2_env, tmp_path):
         """The cert may be mounted after validation, so absence is not fatal."""

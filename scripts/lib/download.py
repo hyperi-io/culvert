@@ -14,10 +14,11 @@ per-client .zip that bundles them.
 """
 
 import hmac
+import html
 import ssl
 import threading
 from datetime import datetime
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from scalo.logger import logger
@@ -44,19 +45,25 @@ class ClientDownloadHandler(BaseHandler):
     # empty token here is reachable only in tests or direct construction.
     auth_token: str = ""
 
+    # Idle seconds before a connection is dropped, TLS handshake included.
+    timeout = 10  # noqa: V107 - StreamRequestHandler reads it
+
     def _authorised(self) -> bool:
         """Return True when no token is configured, or a matching Bearer is presented."""
         if not self.auth_token:
             return True
-        header = self.headers.get("Authorization", "")
-        return hmac.compare_digest(header, f"Bearer {self.auth_token}")
+        # compare_digest raises TypeError on a non-ASCII str, so compare bytes.
+        # The header is decoded as latin-1, which encodes back to the wire bytes.
+        presented = self.headers.get("Authorization", "").encode("latin-1")
+        return hmac.compare_digest(presented, f"Bearer {self.auth_token}".encode())
 
     def handle(self) -> None:  # noqa: V105 - socketserver calls it once per connection
-        """Serve one connection, treating a client that hangs up as routine."""
+        """Serve one connection, treating a client that hangs up or fails TLS as routine."""
         try:
             super().handle()
-        except BrokenPipeError, ConnectionResetError:
-            # A client gone before its TLS 1.3 session tickets are written lands here.
+        except BrokenPipeError, ConnectionResetError, ssl.SSLError:
+            # A client gone before its TLS 1.3 session tickets are written, or
+            # one that cannot negotiate TLS 1.3, lands here.
             logger.debug(
                 "Client disconnected mid-exchange", client_ip=self.client_address[0]
             )
@@ -130,9 +137,10 @@ class ClientDownloadHandler(BaseHandler):
             stat = f.stat()
             size_kb = stat.st_size / 1024
             mtime = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+            name = html.escape(f.name)
             file_rows += f"""
             <tr>
-                <td><a href="/clients/{f.name}" class="download-link">{f.name}</a></td>
+                <td><a href="/clients/{name}" class="download-link">{name}</a></td>
                 <td>{size_kb:.1f} KB</td>
                 <td>{mtime}</td>
             </tr>"""
@@ -254,6 +262,31 @@ class ClientDownloadHandler(BaseHandler):
 </html>"""
 
 
+class ClientDownloadServer(ThreadingHTTPServer):
+    """Threaded server that refuses connections past a fixed number in flight."""
+
+    max_connections = 64
+
+    def __init__(self, *args, **kwargs):
+        """Build the server and the semaphore that caps its worker threads."""
+        super().__init__(*args, **kwargs)
+        self._slots = threading.BoundedSemaphore(self.max_connections)
+
+    def process_request(self, request, client_address):
+        """Hand the connection to a thread, or close it when none is free."""
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        """Serve one connection, then free its slot."""
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
 def start_client_download_server(
     port: int,
     clients_dir: Path,
@@ -261,12 +294,13 @@ def start_client_download_server(
     bind: str = "127.0.0.1",
     tls_cert: str = "",
     tls_key: str = "",
-) -> HTTPServer:
+) -> ClientDownloadServer:
     """Start client download server in a background thread.
 
     Fails closed: refuses to start without a bearer token, since the served
     client configs embed client private keys. Binds to loopback by default; wraps
-    the socket in TLS when a cert/key pair is supplied.
+    the socket in TLS when a cert/key pair is supplied, and refuses a lone cert
+    or key rather than fall back to plain HTTP.
 
     Returns the running server, so a caller can shutdown() and server_close() it.
     """
@@ -275,12 +309,18 @@ def start_client_download_server(
             "client download server requires CULVERT_CLIENT_DOWNLOAD_TOKEN;"
             " refusing to serve private-key configs without authentication"
         )
+    if bool(tls_cert) != bool(tls_key):
+        raise ValueError(
+            "CULVERT_CLIENT_DOWNLOAD_TLS_CERT and CULVERT_CLIENT_DOWNLOAD_TLS_KEY"
+            " must be set together; refusing to send the bearer token and"
+            " private-key configs over plain HTTP"
+        )
 
     ClientDownloadHandler.clients_dir = clients_dir
     ClientDownloadHandler.auth_token = auth_token
 
     try:
-        server = HTTPServer((bind, port), ClientDownloadHandler)
+        server = ClientDownloadServer((bind, port), ClientDownloadHandler)
     except OSError as e:
         logger.error(f"Failed to start client download server on port {port}: {e}")
         raise
@@ -295,7 +335,11 @@ def start_client_download_server(
         # than inherit whatever the base image happens to default to.
         ctx.minimum_version = ssl.TLSVersion.TLSv1_3  # noqa: V101 - the ssl module reads it
         ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
-        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        # Handshake on first read, in the connection's thread under the handler
+        # timeout, so a silent peer cannot stall the accept loop.
+        server.socket = ctx.wrap_socket(
+            server.socket, server_side=True, do_handshake_on_connect=False
+        )
         scheme = "https"
 
     logger.info(

@@ -14,7 +14,6 @@ from lib.network import (
     _csv_cidrs,
     _prefixlen,
     _vpn_interfaces,
-    cidr_to_netmask,
     setup_routing_control,
 )
 
@@ -37,44 +36,6 @@ class FakeCfg:
         self.allowed_destinations = allowed_destinations
         self.downstream_admin_cidrs = downstream_admin_cidrs
         self.block_link_local = block_link_local
-
-
-class TestCidrToNetmask:
-    """Tests for CIDR prefix to netmask conversion."""
-
-    def test_24_prefix(self):
-        assert cidr_to_netmask(24) == "255.255.255.0"
-
-    def test_16_prefix(self):
-        assert cidr_to_netmask(16) == "255.255.0.0"
-
-    def test_8_prefix(self):
-        assert cidr_to_netmask(8) == "255.0.0.0"
-
-    def test_32_prefix(self):
-        assert cidr_to_netmask(32) == "255.255.255.255"
-
-    def test_0_prefix(self):
-        assert cidr_to_netmask(0) == "0.0.0.0"
-
-    def test_28_prefix(self):
-        assert cidr_to_netmask(28) == "255.255.255.240"
-
-    def test_25_prefix(self):
-        assert cidr_to_netmask(25) == "255.255.255.128"
-
-    def test_20_prefix(self):
-        assert cidr_to_netmask(20) == "255.255.240.0"
-
-    def test_invalid_prefix_raises(self):
-        """Prefix > 32 raises ValueError."""
-        with pytest.raises(ValueError):
-            cidr_to_netmask(33)
-
-    def test_negative_prefix_raises(self):
-        """Negative prefix raises ValueError."""
-        with pytest.raises(ValueError):
-            cidr_to_netmask(-1)
 
 
 class TestPrefixlen:

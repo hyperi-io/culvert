@@ -12,6 +12,7 @@ Generates server configs from templates, starts OpenVPN processes,
 and handles auto-generation of client configs.
 """
 
+import ipaddress
 import re
 import signal
 import tempfile
@@ -19,7 +20,6 @@ from pathlib import Path
 
 from scalo.logger import logger
 
-from lib.network import cidr_to_netmask
 from lib.process import run, write_secret
 
 # Each listener's template names its own log file (openvpn.log, openvpn-tcp.log,
@@ -122,11 +122,13 @@ def _apply_common_options(content: str, cfg, listener: str = "") -> str:
     if cfg.push_routes:
         for route in cfg.push_routes.split(","):
             route = route.strip()
-            if "/" in route:
-                network, prefix_len = route.split("/")
-                netmask = cidr_to_netmask(int(prefix_len))
-                content += f'push "route {network} {netmask}"\n'
-                logger.info(f"{prefix}Pushing route: {route}")
+            try:
+                # A bare address is a /32, as validate_cidr_routes accepts it.
+                net = ipaddress.IPv4Network(route, strict=False)
+            except ValueError:
+                continue
+            content += f'push "route {net.network_address} {net.netmask}"\n'
+            logger.info(f"{prefix}Pushing route: {route}")
 
     if cfg.full_tunnel:
         content += 'push "redirect-gateway def1 bypass-dhcp"\n'

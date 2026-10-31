@@ -24,6 +24,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NoReturn
 
 from scalo.config import get_config
 from scalo.logger import logger
@@ -87,8 +88,9 @@ def validate_hostname(value: str, name: str) -> None:
         r"^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?"
         r"(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$"
     )
-    if not re.match(pattern, value):
-        raise ValidationError(f"{name}='{value}' is not a valid hostname")
+    # fullmatch: a trailing newline satisfies `$` under match().
+    if not re.fullmatch(pattern, value):
+        raise ValidationError(f"{name}={value!r} is not a valid hostname")
 
 
 def validate_endpoint(value: str, name: str) -> None:
@@ -533,7 +535,7 @@ class Config:
         if raw_max is None or str(raw_max).lower() == "auto":
             max_clients = None
         else:
-            max_clients = int(raw_max)
+            max_clients = _settings_int(s, "max_clients", 0)
 
         crl_days, crl_days_invalid = _settings_crl_days(s)
 
@@ -829,6 +831,14 @@ class Config:
                 " download server is enabled (configs embed private keys)"
             )
 
+        if self.client_download_enabled and bool(self.client_download_tls_cert) != bool(
+            self.client_download_tls_key
+        ):
+            errors.append(
+                "CULVERT_CLIENT_DOWNLOAD_TLS_CERT and"
+                " CULVERT_CLIENT_DOWNLOAD_TLS_KEY must be set together"
+            )
+
         # wstunnel serves WSS with the same cert pair; without it the
         # wstunnel server exits at startup and the HTTPS-tunnel port is dead
         if self.wg_https_tunnel_enabled and self.protocol in (
@@ -987,6 +997,12 @@ class Config:
                 errors.append(
                     f"CULVERT_OAUTH2_ISSUER='{self.oauth2_issuer}' must be a valid URL"
                 )
+            elif self.oauth2_issuer.startswith("http://"):
+                warnings.append(
+                    "CULVERT_OAUTH2_ISSUER is plain http, so anyone on the path"
+                    " to the identity provider can forge its discovery document"
+                    " and signing keys"
+                )
 
             if not self.oauth2_client_id:
                 errors.append(
@@ -1030,25 +1046,51 @@ class Config:
         logger.info("Configuration validation passed")
 
 
+_TRUE_WORDS = frozenset({"true", "1", "yes", "on"})
+_FALSE_WORDS = frozenset({"false", "0", "no", "off"})
+
+
+def _reject_setting(key: str, value: object, expected: str) -> NoReturn:
+    """Stop startup on a setting that is not `expected`, instead of guessing."""
+    logger.error(f"CULVERT_{key.upper()}={value!r} is not {expected}")
+    sys.exit(1)
+
+
 def _settings_bool(s, key: str, default: bool) -> bool:
-    """Read a boolean from settings with a default."""
+    """Read a boolean from settings with a default.
+
+    A word that is neither true nor false stops startup: reading it as False
+    would turn off the opt-out defaults (client isolation, the link-local guard)
+    on a typo. An empty value reads as unset.
+    """
     val = s.get(key, default)
-    if isinstance(val, bool):
-        return val
     if isinstance(val, str):
-        return val.lower() in ("true", "1", "yes", "on")
+        word = val.strip().lower()
+        if not word:
+            return default
+        if word in _TRUE_WORDS:
+            return True
+        if word in _FALSE_WORDS:
+            return False
+        _reject_setting(key, val, "true or false")
     return bool(val)
 
 
 def _settings_int(s, key: str, default: int) -> int:
-    """Read an integer from settings with a default."""
+    """Read an integer from settings with a default.
+
+    Text that is not a whole number stops startup, so a mistyped port is not
+    replaced by the default.
+    """
     val = s.get(key, default)
+    if val is None or val == "":
+        return default
     if isinstance(val, int):
         return val
     try:
         return int(val)
     except ValueError, TypeError:
-        return default
+        _reject_setting(key, val, "a whole number")
 
 
 def _settings_crl_days(s) -> tuple[int, str]:
