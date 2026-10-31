@@ -10,6 +10,7 @@
 
 import signal
 import sys
+from pathlib import Path
 
 import pytest
 from lib.process import ProcessManager
@@ -85,3 +86,90 @@ def easyrsa(tmp_path, monkeypatch):
     # An inherited EASYRSA_CRL_DAYS must not stand in for the one lib.pki passes.
     monkeypatch.delenv("EASYRSA_CRL_DAYS", raising=False)
     return install
+
+
+class FakeManagement:
+    """An OpenVPN management socket that records what it is sent.
+
+    Speaks the protocol lib.management uses: an optional password prompt, the
+    >INFO banner, then one reply per `kill` until `quit`.
+    """
+
+    def __init__(self, path, mode="plain", password="", on_kill=None):
+        import socket
+        import threading
+
+        self.commands: list[str] = []
+        self.passwords: list[str] = []
+        self.mode = mode
+        self.password = password
+        self.on_kill = on_kill
+        self._server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._server.bind(str(path))
+        self._server.listen()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                conn, _ = self._server.accept()
+            except OSError:
+                return
+            with conn:
+                try:
+                    self._handle(conn)
+                except OSError:
+                    # The client hung up first, as it does on a refused password.
+                    pass
+
+    def _handle(self, conn) -> None:
+        if self.mode == "silent":
+            conn.recv(1)
+            return
+        reader = conn.makefile("rb")
+        if self.mode in ("password", "bad-password"):
+            conn.sendall(b"ENTER PASSWORD:")
+            given = reader.readline().decode().strip()
+            self.passwords.append(given)
+            if self.mode == "bad-password" or given != self.password:
+                conn.sendall(b"ERROR: bad password\r\n")
+                return
+            conn.sendall(b"SUCCESS: password is correct\r\n")
+        conn.sendall(b">INFO:OpenVPN Management Interface Version 5\r\n")
+        for raw in reader:
+            command = raw.decode().strip()
+            self.commands.append(command)
+            if command == "quit":
+                return
+            if self.on_kill:
+                self.on_kill()
+            if self.mode == "not-found":
+                conn.sendall(b"ERROR: common name 'x' not found\r\n")
+            else:
+                conn.sendall(b"SUCCESS: common name 'x' found, 1 client(s) killed\r\n")
+
+    def close(self) -> None:
+        self._server.close()
+
+
+class ManagementDir(type(Path())):
+    """A run directory that can start fake management sockets inside itself."""
+
+    def add(self, listener="udp", **kwargs) -> FakeManagement:
+        server = FakeManagement(self / f"management-{listener}.sock", **kwargs)
+        self.servers.append(server)
+        return server
+
+
+@pytest.fixture
+def management_dir():
+    """A short run directory (unix socket paths are limited to about 100 bytes)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="mg") as tmp:
+        run_dir = ManagementDir(tmp)
+        run_dir.servers = []
+        yield run_dir
+        for server in run_dir.servers:
+            server.close()

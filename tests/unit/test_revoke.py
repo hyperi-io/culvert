@@ -401,6 +401,21 @@ class TestOpenVpnRevocation:
             "alice-laptop-udp-split.ovpn"
         ]
 
+    def test_live_sessions_are_ended_once_the_crl_carries_the_revocation(
+        self, alice, monkeypatch, management_dir
+    ):
+        """Killing before the CRL is written lets the client straight back in."""
+        crl = alice.pki / "crl.pem"
+        crl_present = []
+        server = management_dir.add(on_kill=lambda: crl_present.append(crl.exists()))
+        monkeypatch.setattr(alice.module, "RUN_DIR", management_dir)
+        monkeypatch.setattr(alice.module, "PASSWORD_FILE", management_dir / "no")
+
+        alice("--protocol", "openvpn", "alice")
+
+        assert server.commands == ["kill alice", "quit"]
+        assert crl_present == [True]
+
     def test_a_failed_regeneration_exits_1(self, alice, monkeypatch):
         """A revocation the CRL does not yet carry is not enforced."""
         monkeypatch.setenv("FAKE_EASYRSA_FAIL", "gen-crl")
