@@ -340,11 +340,19 @@ def init_pki(cfg) -> None:
             )
             sys.exit(1)
 
-        # Mint a tls-crypt-v2 key only if the provider did not supply one. A
-        # locally minted key is fine for a single server and wrong for several:
-        # a client's key derives from it, so siblings reject each other's clients.
+        # Mint a tls-crypt-v2 key only when none is configured. A locally minted
+        # key is fine for a single server and wrong for several: a client's key
+        # derives from it, so siblings reject each other's clients.
         tc_key = cfg.pki_dir / "tc.key"
         if not tc_key.exists():
+            if cfg.secrets_tc_key_path:
+                logger.error(
+                    "CULVERT_SECRETS_TC_KEY_PATH is set, but the shared"
+                    f" tls-crypt-v2 key could not be fetched from"
+                    f" '{cfg.secrets_tc_key_path}' and none is cached. Refusing to"
+                    " mint a local one - siblings would reject each other's clients."
+                )
+                sys.exit(1)
             generate_tc_key(cfg.pki_dir)
         return
 

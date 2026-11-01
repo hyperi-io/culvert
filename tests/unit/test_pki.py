@@ -334,6 +334,31 @@ class TestFetchExternalPki:
         init_pki(cfg)
         assert "FAKE_CA" in (pki / "ca.crt").read_text()
 
+    @pytest.mark.parametrize("cached_tc_key", [True, False], ids=["cached", "none"])
+    def test_a_configured_shared_tc_key_is_never_minted_locally(
+        self, pki_env, cached_tc_key
+    ):
+        """A server holding its own tc.key rejects every client its siblings issue."""
+        from lib.pki import init_pki
+
+        cfg, pki, src = pki_env
+        cfg.secrets_tc_key_path = str(src / "tc.key")
+        (pki / "ca.crt").write_text(FAKE_CA)
+        (pki / "issued" / "server.crt").write_text(FAKE_CERT)
+        (pki / "private" / "server.key").write_text(FAKE_KEY)
+        if cached_tc_key:
+            (pki / "tc.key").write_bytes(TC_SERVER_KEY)
+        # The provider is down, so nothing is fetched.
+        cfg.secrets_ca_cert_path = "/nonexistent/ca.crt"
+
+        if cached_tc_key:
+            init_pki(cfg)
+            assert (pki / "tc.key").read_bytes() == TC_SERVER_KEY
+        else:
+            with pytest.raises(SystemExit):
+                init_pki(cfg)
+            assert not (pki / "tc.key").exists()
+
     def test_no_local_no_provider_exits(self, pki_env):
         """Provider fails AND no local certs - init_pki exits."""
         from lib.pki import init_pki
