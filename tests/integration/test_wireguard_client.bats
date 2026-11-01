@@ -25,10 +25,10 @@ teardown() {
     assert_success
 
     # Check WireGuard configs were created
-    run docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/
+    run docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/wgonly/
     assert_success
-    [[ "${output}" == *"-wg-split.conf"* ]]
-    [[ "${output}" == *"-wg-full.conf"* ]]
+    [[ "${output}" == *"wg-split.conf"* ]]
+    [[ "${output}" == *"wg-full.conf"* ]]
 }
 
 @test "generate-client creates both OpenVPN and WireGuard configs in both mode" {
@@ -41,7 +41,8 @@ teardown() {
     assert_success
     # Should have both .ovpn and .conf files
     [[ "${output}" == *".ovpn"* ]]
-    [[ "${output}" == *"-wg-split.conf"* ]]
+    run docker exec "${TEST_CONTAINER_NAME}" test -f /etc/vpn/clients/wgboth/wg-split.conf
+    assert_success
 }
 
 @test "WireGuard client config contains correct endpoint" {
@@ -50,10 +51,7 @@ teardown() {
     run docker exec "${TEST_CONTAINER_NAME}" generate-client --name wgendpoint --protocol wireguard
     assert_success
 
-    # Find the generated config and check endpoint
-    # shellcheck disable=SC2012
-    config_file=$(docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/ | grep 'wg-split.conf' | head -1)
-    run docker exec "${TEST_CONTAINER_NAME}" grep "Endpoint" "/etc/vpn/clients/${config_file}"
+    run docker exec "${TEST_CONTAINER_NAME}" grep "Endpoint" /etc/vpn/clients/wgendpoint/wg-split.conf
     assert_success
     [[ "${output}" == *"vpn.test.io:51820"* ]]
 }
@@ -64,17 +62,17 @@ teardown() {
     run docker exec "${TEST_CONTAINER_NAME}" generate-client --name wgslots --protocol wireguard
     assert_success
 
-    run docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/
+    run docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/wgslots/
     assert_success
-    [[ "${output}" == *"wgslots-wg-split.conf"* ]]
-    [[ "${output}" == *"wgslots-wg2-split.conf"* ]]
+    [[ "${output}" == *"wg-split.conf"* ]]
+    [[ "${output}" == *"wg2-split.conf"* ]]
 
     # Distinct keys and addresses are what make the slots concurrently usable.
-    run docker exec "${TEST_CONTAINER_NAME}" grep -h "^PrivateKey" /etc/vpn/clients/wgslots-wg-split.conf /etc/vpn/clients/wgslots-wg2-split.conf
+    run docker exec "${TEST_CONTAINER_NAME}" grep -h "^PrivateKey" /etc/vpn/clients/wgslots/wg-split.conf /etc/vpn/clients/wgslots/wg2-split.conf
     assert_success
     [[ "$(echo "${output}" | sort -u | wc -l)" -eq 2 ]]
 
-    run docker exec "${TEST_CONTAINER_NAME}" grep -h "^Address" /etc/vpn/clients/wgslots-wg-split.conf /etc/vpn/clients/wgslots-wg2-split.conf
+    run docker exec "${TEST_CONTAINER_NAME}" grep -h "^Address" /etc/vpn/clients/wgslots/wg-split.conf /etc/vpn/clients/wgslots/wg2-split.conf
     assert_success
     [[ "$(echo "${output}" | sort -u | wc -l)" -eq 2 ]]
 }
@@ -86,10 +84,10 @@ teardown() {
     run docker exec "${TEST_CONTAINER_NAME}" generate-client --name wgexclusive --protocol wireguard
     assert_success
 
-    run docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/
+    run docker exec "${TEST_CONTAINER_NAME}" ls /etc/vpn/clients/wgexclusive/
     assert_success
-    [[ "${output}" == *"wgexclusive-wg-split.conf"* ]]
-    [[ "${output}" != *"wgexclusive-wg2-split.conf"* ]]
+    [[ "${output}" == *"wg-split.conf"* ]]
+    [[ "${output}" != *"wg2-split.conf"* ]]
 
     run docker exec "${TEST_CONTAINER_NAME}" grep -c '^duplicate-cn' /etc/vpn/server/server.conf
     assert_failure

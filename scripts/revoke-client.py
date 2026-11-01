@@ -292,12 +292,14 @@ def revoke_wireguard_client(client_name: str) -> bool:
         for peer in peers:
             _revoke_wireguard_peer(peer, peers_dir)
 
-        # Exact filenames only: "<name>-wg*" also matches a client named "<name>-wg-x".
         removed = 0
         for wg_conf in wireguard_files(OUTPUT_DIR, client_name):
             wg_conf.unlink()
             removed += 1
             logger.info(f"  Removed: {wg_conf}")
+        client_dir = OUTPUT_DIR / client_name
+        if client_dir.is_dir() and not any(client_dir.iterdir()):
+            client_dir.rmdir()
         _rebundle_zip(client_name)
 
         # Regenerate the server config without the removed peer, at the path the

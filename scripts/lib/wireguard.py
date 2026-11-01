@@ -16,6 +16,7 @@ interface lifecycle into a single module.
 import fcntl
 import ipaddress
 import json
+import re
 import subprocess
 import sys
 from collections import deque
@@ -89,16 +90,33 @@ def slot_infix(slot: int) -> str:
     return "" if slot == 1 else str(slot)
 
 
+# wg-quick and the Android app name the interface after the config file, and
+# Linux caps an interface name at 15 characters, so the client name is the
+# directory rather than part of the file name.
+WG_QUICK_NAME = re.compile(r"[a-zA-Z0-9_=+.-]{1,15}")
+
+
 def client_config_name(
     client_name: str, slot: int, mode: str, https: bool = False
 ) -> str:
-    """Filename of one slot's split or full config, plain or over HTTPS."""
+    """Path, under the clients directory, of one slot's split or full config.
+
+    Raises:
+        ValueError: The file name would not be a valid interface name, which
+            happens over HTTPS from slot 10.
+    """
     tunnel = "-https" if https else ""
-    return f"{client_name}-wg{slot_infix(slot)}{tunnel}-{mode}.conf"
+    stem = f"wg{slot_infix(slot)}{tunnel}-{mode}"
+    if not WG_QUICK_NAME.fullmatch(stem):
+        raise ValueError(
+            f"WireGuard config {stem}.conf is too long for an interface name,"
+            " which wg-quick and the Android app derive from it (15 characters)"
+        )
+    return f"{client_name}/{stem}.conf"
 
 
 def client_config_names(client_name: str, slot: int, https: bool) -> list[str]:
-    """Filenames of every config one slot is issued."""
+    """Paths of every config one slot is issued."""
     variants = (False, True) if https else (False,)
     return [
         client_config_name(client_name, slot, mode, https=tunnelled)

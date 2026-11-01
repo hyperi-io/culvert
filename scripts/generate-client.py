@@ -23,8 +23,8 @@ Without --name the client name derives from the server CN:
 
 Outputs vary by --protocol flag:
   openvpn:   6 .ovpn files (3 listeners x 2 tunnel modes)
-  wireguard: 2-4 .conf files PER DEVICE SLOT (split/full, plus the
-             HTTPS-tunnelled pair when WireGuard-over-HTTPS is enabled)
+  wireguard: 2-4 .conf files PER DEVICE SLOT in <name>/ (split/full, plus
+             the HTTPS-tunnelled pair when WireGuard-over-HTTPS is enabled)
   all:       both sets of files
 
 A client identity carries CULVERT_SHARED_CLIENT_SLOTS concurrent connections by
@@ -606,6 +606,7 @@ def generate_wireguard_configs(
             # Write all config files
             for filename, content in configs_to_write:
                 out_path = cfg.output_dir / filename
+                out_path.parent.mkdir(mode=0o700, exist_ok=True)
                 write_secret(out_path, content)
                 logger.info(f"Created WireGuard config: {out_path}")
 
@@ -699,13 +700,14 @@ OpenVPN output files (6 total - 3 listeners x 2 tunnel modes):
   {{name}}-https-split.ovpn - TCP {cfg.https_port} over TLS, split tunnel
   {{name}}-https-full.ovpn  - TCP {cfg.https_port} over TLS, full tunnel
 
-WireGuard output files, PER DEVICE SLOT (2-4 per slot):
-  {{name}}-wg-split.conf     - Split tunnel
-  {{name}}-wg-full.conf      - Full tunnel
-  {{name}}-wg-https-split.conf - Over HTTPS, split tunnel (if enabled)
-  {{name}}-wg-https-full.conf  - Over HTTPS, full tunnel (if enabled)
+WireGuard output files, PER DEVICE SLOT (2-4 per slot), in {{name}}/ because the
+file name is the tunnel's interface name (15 characters at most):
+  {{name}}/wg-split.conf       - Split tunnel
+  {{name}}/wg-full.conf        - Full tunnel
+  {{name}}/wg-https-split.conf - Over HTTPS, split tunnel (if enabled)
+  {{name}}/wg-https-full.conf  - Over HTTPS, full tunnel (if enabled)
 
-Slots 2+ carry the slot number ({{name}}-wg2-split.conf, ...). Each slot is an
+Slots 2+ carry the slot number ({{name}}/wg2-split.conf, ...). Each slot is an
 independent peer with its own key and tunnel IP, which is what lets one client
 identity hold {cfg.shared_client_slots} concurrent WireGuard connections.
 Set CULVERT_ALLOW_SHARED_CLIENTS=false for one exclusive connection per client.
@@ -849,6 +851,18 @@ Examples:
             " CULVERT_ALLOW_SHARED_CLIENTS=false, which allows one slot per client"
         )
         sys.exit(1)
+
+    if generate_wg:
+        from lib import wireguard
+
+        last_slot = len(args.pubkey) if args.pubkey else cfg.shared_client_slots
+        try:
+            wireguard.client_config_names(
+                client_name, last_slot, cfg.wg_https_tunnel_enabled
+            )
+        except ValueError as exc:
+            logger.error(f"{exc}. Issue fewer device slots.")
+            sys.exit(1)
 
     # An unset --days falls back to the configured cert lifetime, so a
     # deployment with a long CULVERT_CERT_EXPIRE_DAYS issues clients to match.

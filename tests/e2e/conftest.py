@@ -214,16 +214,26 @@ def compose_stack():
         f"{CLIENT_NAME}-tcp-split.ovpn",
         f"{CLIENT_NAME}-https-split.ovpn",
         f"{CLIENT_NAME}-stunnel.conf",
-        f"{CLIENT_NAME}-wg-split.conf",
-        f"{CLIENT_NAME}-wg-full.conf",
-        f"{CLIENT_NAME}-wg-https-split.conf",
+        f"{CLIENT_NAME}/wg-split.conf",
+        f"{CLIENT_NAME}/wg-full.conf",
+        f"{CLIENT_NAME}/wg-https-split.conf",
         # The second WireGuard device slot, asserted here so a generator that
         # stopped issuing slots fails rather than skipping the concurrency tests.
-        f"{CLIENT_NAME}-wg2-split.conf",
-        f"{CLIENT_NAME}-wg2-full.conf",
+        f"{CLIENT_NAME}/wg2-split.conf",
+        f"{CLIENT_NAME}/wg2-full.conf",
     ]
     result = subprocess.run(
-        ["docker", "exec", CLIENT_CONTAINER, "ls", "/etc/vpn/clients/"],
+        [
+            "docker",
+            "exec",
+            CLIENT_CONTAINER,
+            "find",
+            "/etc/vpn/clients",
+            "-type",
+            "f",
+            "-printf",
+            "%P\n",
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -298,7 +308,7 @@ def wireguard_connection():
     """Connect WireGuard, yield, then disconnect."""
     from helpers import connect_wireguard, disconnect_wireguard
 
-    config_name = f"{CLIENT_NAME}-wg-split.conf"
+    config_name = f"{CLIENT_NAME}/wg-split.conf"
     connect_wireguard(config_name)
     try:
         yield
@@ -311,7 +321,7 @@ def wireguard_full_connection():
     """Connect WireGuard in FULL-tunnel mode, yield, then disconnect."""
     from helpers import connect_wireguard, disconnect_wireguard
 
-    config_name = f"{CLIENT_NAME}-wg-full.conf"
+    config_name = f"{CLIENT_NAME}/wg-full.conf"
     connect_wireguard(config_name)
     try:
         yield
@@ -347,8 +357,8 @@ def wireguard_slot_pair_connection():
     """
     from helpers import CLIENT_B_CONTAINER, connect_wireguard, disconnect_wireguard
 
-    slot_one = f"{CLIENT_NAME}-wg-split.conf"
-    slot_two = f"{CLIENT_NAME}-wg2-split.conf"
+    slot_one = f"{CLIENT_NAME}/wg-split.conf"
+    slot_two = f"{CLIENT_NAME}/wg2-split.conf"
     connect_wireguard(slot_one, container=CLIENT_CONTAINER)
     connect_wireguard(slot_two, container=CLIENT_B_CONTAINER)
     try:
@@ -366,7 +376,7 @@ def wireguard_https_tunnel_connection():
         disconnect_wireguard_https_tunnel,
     )
 
-    config_name = f"{CLIENT_NAME}-wg-https-split.conf"
+    config_name = f"{CLIENT_NAME}/wg-https-split.conf"
     connect_wireguard_https_tunnel(config_name)
     try:
         yield

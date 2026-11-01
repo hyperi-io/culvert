@@ -15,6 +15,7 @@ on a CI runner, and the part that differs between clients is the config text.
 
 import importlib.util
 import os
+import re
 import stat
 import sys
 import zipfile
@@ -475,17 +476,17 @@ class TestWireGuardClientSideKeys:
 
     def test_issues_split_and_full_per_slot(self, run):
         out = run(*TWO_SLOTS)
-        assert sorted(p.name for p in out.glob("*.conf")) == [
-            f"{CLIENT}-wg-full.conf",
-            f"{CLIENT}-wg-split.conf",
-            f"{CLIENT}-wg2-full.conf",
-            f"{CLIENT}-wg2-split.conf",
+        assert sorted(p.name for p in (out / CLIENT).glob("*.conf")) == [
+            "wg-full.conf",
+            "wg-split.conf",
+            "wg2-full.conf",
+            "wg2-split.conf",
         ]
 
     def test_configs_carry_no_private_key_and_distinct_addresses(self, run):
         out = run(*TWO_SLOTS)
-        first = (out / f"{CLIENT}-wg-split.conf").read_text(encoding="utf-8")
-        second = (out / f"{CLIENT}-wg2-split.conf").read_text(encoding="utf-8")
+        first = (out / CLIENT / "wg-split.conf").read_text(encoding="utf-8")
+        second = (out / CLIENT / "wg2-split.conf").read_text(encoding="utf-8")
 
         assert "PrivateKey = YOUR_PRIVATE_KEY_HERE" in first
         assert f"PublicKey = {SERVER_PUBLIC}" in first
@@ -495,8 +496,8 @@ class TestWireGuardClientSideKeys:
 
     def test_split_routes_only_the_tunnel_network(self, run):
         out = run("--protocol", "wireguard", "--name", CLIENT, "--pubkey", PUBKEY_1)
-        split = (out / f"{CLIENT}-wg-split.conf").read_text(encoding="utf-8")
-        full = (out / f"{CLIENT}-wg-full.conf").read_text(encoding="utf-8")
+        split = (out / CLIENT / "wg-split.conf").read_text(encoding="utf-8")
+        full = (out / CLIENT / "wg-full.conf").read_text(encoding="utf-8")
         assert "AllowedIPs = 10.8.3.0/24" in split
         assert "AllowedIPs = 0.0.0.0/0, ::/0" in full
 
@@ -509,10 +510,33 @@ class TestWireGuardClientSideKeys:
         assert f"PublicKey = {PUBKEY_2}" in server
         assert stat.S_IMODE(run.wg_conf.stat().st_mode) == 0o600
 
+    def test_every_config_is_named_as_wg_quick_needs(self, run, monkeypatch):
+        """wg-quick and the Android app take the interface name from the file name.
+
+        Linux allows 15 characters, so "<client>-wg-https-split" fits no client
+        name at all, the 15-character default vpn-example-com included.
+        """
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
+        name = "vpn-example-com"
+        out = run(
+            "--protocol",
+            "wireguard",
+            "--name",
+            name,
+            "--pubkey",
+            PUBKEY_1,
+            "--pubkey",
+            PUBKEY_2,
+        )
+        configs = sorted((out / name).glob("*.conf"))
+        assert len(configs) == 8
+        for path in configs:
+            assert re.fullmatch(r"[a-zA-Z0-9_=+.-]{1,15}", path.stem), path.name
+
     def test_https_tunnel_variants_when_enabled(self, run, monkeypatch):
         monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
         out = run("--protocol", "wireguard", "--name", CLIENT, "--pubkey", PUBKEY_1)
-        tunnelled = (out / f"{CLIENT}-wg-https-split.conf").read_text(encoding="utf-8")
+        tunnelled = (out / CLIENT / "wg-https-split.conf").read_text(encoding="utf-8")
         assert "Endpoint = 127.0.0.1:51820" in tunnelled
         assert f"wss://{SERVER_CN}:4443" in tunnelled
 
@@ -556,7 +580,7 @@ def wg_tools(tmp_path, monkeypatch):
 
 def _wireguard_state(pki, out: Path, wg_conf: Path) -> dict[str, bytes]:
     """Every file an issue can change, by path."""
-    paths = [*(pki.dir / "wireguard").rglob("*"), *out.glob("*"), wg_conf]
+    paths = [*(pki.dir / "wireguard").rglob("*"), *out.rglob("*"), wg_conf]
     return {str(p): p.read_bytes() for p in paths if p.is_file()}
 
 

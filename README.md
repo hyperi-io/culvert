@@ -101,8 +101,8 @@ That mints a real credential, so treat the output accordingly:
 
 One identity covers Zaphod's devices concurrently, laptop and phone both
 connected. OpenVPN shares the certificate across sessions; WireGuard cannot
-share a key, so alice gets one peer per device slot (`zaphod-wg-split.conf`,
-`zaphod-wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
+share a key, so alice gets one peer per device slot (`zaphod/wg-split.conf`,
+`zaphod/wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
 `CULVERT_ALLOW_SHARED_CLIENTS=false` where a credential must identify a single
 device.
 

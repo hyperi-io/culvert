@@ -158,7 +158,7 @@ class TestWireGuardOverHTTPS:
 
     def test_connects_and_reaches_target_when_plain_blocked(self, plain_ports_blocked):
         """WireGuard over WebSocket/TLS with UDP 51820 blocked."""
-        config_name = f"{CLIENT_NAME}-wg-https-split.conf"
+        config_name = f"{CLIENT_NAME}/wg-https-split.conf"
         connect_wireguard_https_tunnel(config_name)
         try:
             body = curl_target()

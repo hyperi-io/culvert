@@ -319,14 +319,17 @@ class TestWireGuardRevocationScope:
             json.dumps({"alice": "10.8.3.2", "alice.2": "10.8.3.3", "bob": "10.8.3.4"})
         )
         (cli.pki / "wireguard" / "server_private.key").write_text("ServerPriv=\n")
-        for name in ("alice-wg-split.conf", "alice-wg2-full.conf", "bob-wg-split.conf"):
+        for name in ("alice/wg-split.conf", "alice/wg2-full.conf", "bob/wg-split.conf"):
+            (cli.clients / name).parent.mkdir(exist_ok=True)
             (cli.clients / name).write_text("config", encoding="utf-8")
 
         cli("--protocol", "wireguard", "alice")
 
         assert sorted(p.name for p in peers.iterdir()) == ["bob.key", "bob.pub"]
         assert json.loads(allocations.read_text()) == {"bob": "10.8.3.4"}
-        assert [p.name for p in cli.clients.iterdir()] == ["bob-wg-split.conf"]
+        assert sorted(
+            p.relative_to(cli.clients).as_posix() for p in cli.clients.rglob("*")
+        ) == ["bob", "bob/wg-split.conf"]
         server = cli.server_conf.read_text(encoding="utf-8")
         assert "PublicKey = BobKey=" in server
         assert "AliceKey" not in server
@@ -346,17 +349,18 @@ class TestWireGuardRevocationScope:
         assert "PostUp = iptables -A FORWARD -i wg0 -j ACCEPT\n" in server
         assert "PostDown = iptables -D FORWARD -i wg0 -j ACCEPT\n" in server
 
-    def test_a_client_whose_name_starts_with_wg_keeps_its_configs(self, cli, revoke):
-        """A "<name>-wg*" glob also matches the client "alice-wg-phone"."""
+    def test_a_client_whose_name_extends_alice_keeps_its_configs(self, cli, revoke):
+        """Each client's WireGuard configs are its own directory, whatever the name."""
         _add_peer(revoke)
-        for name in ("alice-wg-split.conf", "alice-wg-phone-wg-split.conf"):
+        for name in ("alice/wg-split.conf", "alice-wg-phone/wg-split.conf"):
+            (cli.clients / name).parent.mkdir()
             (cli.clients / name).write_text("config", encoding="utf-8")
 
         cli("--protocol", "wireguard", "alice")
 
-        assert [p.name for p in cli.clients.iterdir()] == [
-            "alice-wg-phone-wg-split.conf"
-        ]
+        assert sorted(
+            p.relative_to(cli.clients).as_posix() for p in cli.clients.rglob("*")
+        ) == ["alice-wg-phone", "alice-wg-phone/wg-split.conf"]
 
     def test_revocation_without_a_server_key_still_removes_the_peer(self, cli, revoke):
         """No server key means no config to rebuild; the peer still goes."""

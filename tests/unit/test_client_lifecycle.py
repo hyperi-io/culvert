@@ -141,11 +141,11 @@ class TestRevokeRemovesEverything:
 
         stack.revoke("--protocol", "wireguard", "alice")
 
-        assert not any(name.startswith("alice-wg") for name in _volume(stack))
+        assert "alice" not in _volume(stack)
         with zipfile.ZipFile(stack.clients / "alice.zip") as zf:
             names = zf.namelist()
         assert "alice-udp-split.ovpn" in names
-        assert not any(name.startswith("alice-wg") for name in names)
+        assert not any(name.startswith("wg") for name in names)
 
     def test_openvpn_revocation_rebuilds_the_zip_without_its_configs(self, stack):
         _issue_both_protocols(stack, "alice", ALICE_KEY)
@@ -156,8 +156,8 @@ class TestRevokeRemovesEverything:
         assert not any(name.endswith((".ovpn", "stunnel.conf")) for name in remaining)
         with zipfile.ZipFile(stack.clients / "alice.zip") as zf:
             assert sorted(zf.namelist()) == [
-                "alice-wg-full.conf",
-                "alice-wg-split.conf",
+                "wg-full.conf",
+                "wg-split.conf",
             ]
 
 
