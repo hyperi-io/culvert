@@ -131,26 +131,71 @@ def setup_directories(cfg) -> None:
     run_dir.chmod(0o700)
 
 
-def setup_log_rotation() -> None:
-    """Configure logrotate for OpenVPN logs."""
-    logger.info("Configuring log rotation...")
+# logrotate rotates daily or past maxsize, so an hourly check holds the size cap.
+LOG_ROTATION_INTERVAL_SECONDS = 3600
 
-    logrotate_conf = Path("/etc/logrotate.d/vpn")
-    logrotate_conf.write_text(
-        """
-/var/log/vpn/*.log {
+
+def setup_log_rotation(
+    cfg, conf_path: Path = Path("/etc/logrotate.d/vpn")
+) -> tuple[Path, Path]:
+    """Write the logrotate config for the server's logs, returning it and its state.
+
+    copytruncate, because OpenVPN, stunnel and the daemon logs keep an O_APPEND
+    descriptor open and never reopen it. The status files are not logs: OpenVPN
+    rewrites them in place every few seconds, so they are not listed.
+    """
+    log_dir = Path(cfg.log_dir)
+    logs = " ".join(
+        str(log_dir / name)
+        for name in ("openvpn*.log", "stunnel.log", "wstunnel.log", "oauth2-*.log")
+    )
+    conf_path.write_text(
+        f"""{logs} {{
     daily
+    maxsize 100M
     rotate 7
     compress
     delaycompress
+    copytruncate
     notifempty
     missingok
-    create 0640 nobody nogroup
-}
-""".strip()
+}}
+"""
     )
+    logger.info("Log rotation configured (daily or past 100M, 7 kept)")
+    return conf_path, log_dir / "logrotate.status"
 
-    logger.info("Log rotation configured (daily, 7 days retention)")
+
+def rotate_logs(conf_path: Path, state_path: Path, force: bool = False) -> bool:
+    """Run logrotate once over conf_path. True when it exited cleanly."""
+    cmd = ["logrotate", "--state", str(state_path), str(conf_path)]
+    if force:
+        cmd.insert(1, "--force")
+    try:
+        result = run(cmd, check=False, capture=True)
+    except FileNotFoundError:
+        logger.error("logrotate is not installed, so the server logs grow unbounded")
+        return False
+    if result.returncode != 0:
+        logger.warning(f"logrotate failed: {result.stderr.strip()}")
+    return result.returncode == 0
+
+
+def start_log_rotation(
+    conf_path: Path,
+    state_path: Path,
+    interval: float = LOG_ROTATION_INTERVAL_SECONDS,
+) -> None:
+    """Run logrotate on a schedule in a daemon thread, since no cron runs here."""
+    import threading
+    import time
+
+    def rotate_loop() -> None:
+        while True:
+            rotate_logs(conf_path, state_path)
+            time.sleep(interval)
+
+    threading.Thread(target=rotate_loop, daemon=True, name="logrotate").start()
 
 
 def setup_scripts(cfg) -> None:

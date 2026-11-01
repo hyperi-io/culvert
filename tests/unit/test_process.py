@@ -6,9 +6,11 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
+import shutil
 import signal
 import stat
 import subprocess
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -143,6 +145,45 @@ class TestSetupDirectories:
 
         setup_directories(FakeCfg())
         setup_directories(FakeCfg())  # Second call should not raise
+
+
+@pytest.mark.skipif(shutil.which("logrotate") is None, reason="needs logrotate")
+class TestLogRotation:
+    """PID 1 is Python with no cron, so culvert runs logrotate itself."""
+
+    def test_rotates_while_the_writer_keeps_its_file_open(self, tmp_path):
+        """OpenVPN and the daemons hold an O_APPEND fd that is never reopened."""
+        from lib.process import rotate_logs, setup_log_rotation
+
+        cfg = SimpleNamespace(log_dir=tmp_path)
+        conf, state = setup_log_rotation(cfg, conf_path=tmp_path / "logrotate.conf")
+        log = tmp_path / "openvpn.log"
+        status = tmp_path / "status.log"
+        status.write_text("CLIENT_LIST\talice\n")
+        with log.open("ab") as writer:
+            writer.write(b"before rotation\n")
+            writer.flush()
+            assert rotate_logs(conf, state, force=True)
+            writer.write(b"after rotation\n")
+
+        assert (tmp_path / "openvpn.log.1").read_bytes() == b"before rotation\n"
+        assert log.read_bytes() == b"after rotation\n"
+        assert status.read_text() == "CLIENT_LIST\talice\n"
+        assert not (tmp_path / "status.log.1").exists()
+
+    def test_the_schedule_runs_logrotate(self, tmp_path):
+        from lib.process import setup_log_rotation, start_log_rotation
+
+        cfg = SimpleNamespace(log_dir=tmp_path)
+        conf, state = setup_log_rotation(cfg, conf_path=tmp_path / "logrotate.conf")
+        (tmp_path / "openvpn.log").write_text("line\n")
+
+        start_log_rotation(conf, state, interval=0.05)
+
+        deadline = time.monotonic() + 10
+        while not state.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert state.exists(), "logrotate never ran, so no state file was written"
 
 
 class TestSetupScripts:
