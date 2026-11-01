@@ -20,6 +20,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from lib.pki import client_tc_key_path
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 SERVER_CN = "vpn.example.test"
@@ -81,7 +82,9 @@ def stack(tmp_path, issue_cert, easyrsa, clean_env, monkeypatch):
         client = issue_cert(name, issuer=ca)
         (pki / "issued" / f"{name}.crt").write_bytes(client.cert_pem)
         (pki / "private" / f"{name}.key").write_bytes(client.key_pem)
-        (pki / "private" / f"{name}-tc.key").write_text(TC_KEY, encoding="utf-8")
+        tc_key = client_tc_key_path(pki, name)
+        tc_key.parent.mkdir(exist_ok=True)
+        tc_key.write_text(TC_KEY, encoding="utf-8")
 
     def run(module, prog: str, *args: str) -> None:
         monkeypatch.setattr(sys, "argv", [prog, *args])
@@ -185,6 +188,38 @@ class TestSharedStunnelName:
 
         assert "alice-proxy-stunnel.conf" in _volume(stack)
         assert "alice-proxy.zip" not in _volume(stack)
+
+
+class TestTlsCryptKeyNames:
+    """A client's tls-crypt-v2 key never shares a path with another client's key.
+
+    The tls-crypt-v2 key of "alice" and the private key of "alice-tc" used to be
+    one file, so revoking one client deleted the other's key material.
+    """
+
+    def test_revoking_alice_tc_leaves_alice_able_to_reissue(self, stack):
+        stack.issue("alice")
+        stack.issue("alice-tc")
+        stack.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+        before = (stack.clients / "alice-udp-split.ovpn").read_text(encoding="utf-8")
+
+        stack.revoke("--protocol", "openvpn", "alice-tc")
+        stack.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+
+        after = (stack.clients / "alice-udp-split.ovpn").read_text(encoding="utf-8")
+        assert after.split("<tls-crypt-v2>")[1] == before.split("<tls-crypt-v2>")[1]
+        assert after.split("<key>")[1] == before.split("<key>")[1]
+
+    def test_a_stray_private_key_is_never_overwritten(self, stack):
+        """A key with no certificate is someone's material, not a free name."""
+        stray = stack.pki / "private" / "bob.key"
+        stray.write_text("not bob's to lose\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc:
+            stack.generate("--protocol", "openvpn", "--name", "bob")
+
+        assert exc.value.code == 1
+        assert stray.read_text(encoding="utf-8") == "not bob's to lose\n"
 
 
 class TestRevokeDuringReissue:

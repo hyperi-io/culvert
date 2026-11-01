@@ -48,6 +48,15 @@ def validate_client_name(name: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9_-]+$", name))
 
 
+def client_tc_key_path(pki_dir: Path, client_name: str) -> Path:
+    """Return where a client's tls-crypt-v2 key lives.
+
+    Outside Easy-RSA's private/ directory, so it can never be another client's
+    private key: "<alice>-tc.key" there was also the key of a client "alice-tc".
+    """
+    return Path(pki_dir) / "tls-crypt-v2" / f"{client_name}.key"
+
+
 # ---------------------------------------------------------------------------
 # PEM validation
 # ---------------------------------------------------------------------------

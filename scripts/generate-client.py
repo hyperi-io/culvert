@@ -52,7 +52,7 @@ from lib.clients import (  # noqa: E402
     client_files,
     collides_with_proxy_stunnel,
 )
-from lib.pki import validate_client_name  # noqa: E402
+from lib.pki import client_tc_key_path, validate_client_name  # noqa: E402
 from lib.process import write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
@@ -182,8 +182,15 @@ def generate_certificate(
         capture_output=True,
     )
 
-    # Generate tls-crypt-v2 client key
+    generate_tc_client_key(client_name, pki_dir)
+    logger.info("Certificate generated successfully", client=client_name)
+
+
+def generate_tc_client_key(client_name: str, pki_dir: Path) -> None:
+    """Mint the client's tls-crypt-v2 key, wrapped by the server's tc.key."""
     logger.info("Generating tls-crypt-v2 client key...")
+    key_path = client_tc_key_path(pki_dir, client_name)
+    key_path.parent.mkdir(mode=0o700, exist_ok=True)
     subprocess.run(
         [
             "openvpn",
@@ -191,13 +198,12 @@ def generate_certificate(
             str(pki_dir / "tc.key"),
             "--genkey",
             "tls-crypt-v2-client",
-            str(pki_dir / "private" / f"{client_name}-tc.key"),
+            str(key_path),
         ],
         check=True,
         capture_output=True,
     )
-
-    logger.info("Certificate generated successfully", client=client_name)
+    key_path.chmod(0o600)
 
 
 # ===============================================================================
@@ -318,7 +324,7 @@ checkHost = {cfg.server_cn}
     # Read certificate files
     ca_cert = (cfg.pki_dir / "ca.crt").read_text()
     client_key = (cfg.pki_dir / "private" / f"{client_name}.key").read_text()
-    tc_key = (cfg.pki_dir / "private" / f"{client_name}-tc.key").read_text()
+    tc_key = client_tc_key_path(cfg.pki_dir, client_name).read_text()
 
     # Extract just the certificate (not the full chain info)
     result = subprocess.run(
@@ -862,6 +868,14 @@ Examples:
                     "or use --config-only to regenerate configs"
                 )
                 sys.exit(1)
+            # Easy-RSA in batch mode overwrites an existing key without asking.
+            stray_key = cfg.pki_dir / "private" / f"{client_name}.key"
+            if stray_key.exists():
+                logger.error(
+                    f"{stray_key} exists with no certificate beside it. Refusing"
+                    " to overwrite key material: remove it, or choose another --name."
+                )
+                sys.exit(1)
             generate_certificate(
                 client_name,
                 cert_days,
@@ -950,7 +964,9 @@ Examples:
             logger.info("OpenVPN certificate files:")
             logger.info(f"  Certificate:  {cfg.pki_dir}/issued/{client_name}.crt")
             logger.info(f"  Private key:  {cfg.pki_dir}/private/{client_name}.key")
-            logger.info(f"  TLS key:      {cfg.pki_dir}/private/{client_name}-tc.key")
+            logger.info(
+                f"  TLS key:      {client_tc_key_path(cfg.pki_dir, client_name)}"
+            )
 
         logger.info("")
         logger.info("OpenVPN configuration files (6 total):")

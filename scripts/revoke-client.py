@@ -52,6 +52,7 @@ from lib.management import (  # noqa: E402
 )
 from lib.pki import (  # noqa: E402
     EASYRSA_DIR,
+    client_tc_key_path,
     regenerate_local_crl,
     validate_client_name,
 )
@@ -177,7 +178,7 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
     logger.info("Removing client files...")
     files_to_remove = [
         PKI_DIR / "private" / f"{client_name}.key",
-        PKI_DIR / "private" / f"{client_name}-tc.key",
+        client_tc_key_path(PKI_DIR, client_name),
         PKI_DIR / "reqs" / f"{client_name}.req",
     ]
 

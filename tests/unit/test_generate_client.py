@@ -21,6 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from lib.pki import client_tc_key_path
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "generate-client.py"
 
@@ -72,7 +73,8 @@ def pki(tmp_path, issue_cert):
         CERT_TEXT_DUMP + client.cert_pem.decode(), encoding="utf-8"
     )
     (pki_dir / "private" / f"{CLIENT}.key").write_bytes(client.key_pem)
-    (pki_dir / "private" / f"{CLIENT}-tc.key").write_text(TC_KEY, encoding="utf-8")
+    (pki_dir / "tls-crypt-v2").mkdir()
+    (pki_dir / "tls-crypt-v2" / f"{CLIENT}.key").write_text(TC_KEY, encoding="utf-8")
 
     wg_dir = pki_dir / "wireguard"
     (wg_dir / "server_private.key").write_text("ServerPrivate=\n", encoding="utf-8")
@@ -281,7 +283,7 @@ def issue_client(pki, issue_cert):
         client = issue_cert(name, issuer=pki.ca)
         (pki.dir / "issued" / f"{name}.crt").write_bytes(client.cert_pem)
         (pki.dir / "private" / f"{name}.key").write_bytes(client.key_pem)
-        (pki.dir / "private" / f"{name}-tc.key").write_text(TC_KEY, encoding="utf-8")
+        client_tc_key_path(pki.dir, name).write_text(TC_KEY, encoding="utf-8")
         return client
 
     return issue
