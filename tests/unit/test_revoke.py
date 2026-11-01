@@ -413,6 +413,8 @@ class TestOpenVpnRevocation:
 
         alice("--protocol", "openvpn", "alice")
 
+        # revoke-client returns before the stand-in has recorded "quit".
+        assert server.handled.wait(5)
         assert server.commands == ["kill alice", "quit"]
         assert crl_present == [True]
 
