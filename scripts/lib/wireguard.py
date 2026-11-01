@@ -467,11 +467,6 @@ def generate_client_config(
     return "\n".join(lines)
 
 
-# wg-quick's fwmark for a full tunnel, which it routes outside wg0. It takes the
-# next free table number when 51820 is in use, which a client host rarely has.
-WG_QUICK_FWMARK = 51820
-
-
 def generate_https_tunnel_client_config(
     client_private_key: str | None,
     client_ip: str,
@@ -502,12 +497,6 @@ def generate_https_tunnel_client_config(
     if tls_server_name and tls_server_name != server_endpoint:
         tls_flags += f" --tls-sni-override {tls_server_name}"
 
-    # A full tunnel would carry wstunnel's own connection to the server inside
-    # the tunnel it carries, so the full variant marks it to bypass wg0.
-    full_tunnel = "0.0.0.0/0" in allowed_ips
-    if full_tunnel:
-        tls_flags += f" --socket-so-mark {WG_QUICK_FWMARK}"
-
     header = [
         "# WireGuard over HTTPS (wstunnel required)",
         "#",
@@ -521,12 +510,21 @@ def generate_https_tunnel_client_config(
         "# wstunnel carries the UDP tunnel inside WebSocket/TLS, so it travels",
         "# as ordinary HTTPS on a web port.",
     ]
-    if full_tunnel:
+    # A full tunnel would carry wstunnel's own connection to the server inside
+    # the tunnel it carries. wstunnel's documented fix is a host route.
+    if "0.0.0.0/0" in allowed_ips:
+        try:
+            server = str(ipaddress.ip_address(server_endpoint))
+        except ValueError:
+            server = f"<address of {server_endpoint}>"
         header += [
             "#",
-            "# --socket-so-mark keeps wstunnel's connection out of this tunnel. It",
-            "# is Linux only and needs root. Elsewhere, drop it and route",
-            f"# {server_endpoint} through your normal gateway instead.",
+            "# Full tunnel: before activating, route the server outside the tunnel,",
+            "# through the gateway your machine uses now, or wstunnel's own",
+            "# connection to the server loops back into the tunnel it carries:",
+            f"#   Linux:   sudo ip route add {server} via <gateway>",
+            f"#   macOS:   sudo route -n add -host {server} <gateway>",
+            f"#   Windows: route add {server} mask 255.255.255.255 <gateway>",
         ]
     header.append("")
 

@@ -77,8 +77,9 @@ stunnel listens on `127.0.0.1:1195` and forwards to your server on
 config:
 
 ```bash
-# --socket-so-mark keeps wstunnel's own connection out of the full tunnel (Linux, root)
-sudo wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820 --socket-so-mark 51820
+wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
+# a full tunnel needs the server routed outside it first (Linux shown)
+sudo ip route add <server address> via <your gateway>
 # then activate laptop/wg-https-full.conf in your WireGuard client
 ```
 

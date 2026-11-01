@@ -23,6 +23,7 @@ import pytest
 from conftest import CLIENT_NAME
 from helpers import (
     CLIENT_CONTAINER,
+    SERVER_CONTAINER,
     TARGET_RESPONSE,
     assert_tunnel_mode,
     block_plain_vpn_ports,
@@ -178,7 +179,17 @@ class TestWireGuardOverHTTPS:
         assert_tunnel_mode("wg0", "full")
 
         body = curl_target()
+        state = docker_exec(
+            CLIENT_CONTAINER,
+            "cat /tmp/wstunnel.log; wg show; ip rule; ip route; ss -tnp;"
+            " sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.eth0.rp_filter",
+            check=False,
+        )
+        server_log = docker_exec(
+            SERVER_CONTAINER, "tail -20 /var/log/vpn/wstunnel.log", check=False
+        )
         assert body == TARGET_RESPONSE, (
             f"Expected '{TARGET_RESPONSE}', got '{body}': the full tunnel over"
-            " HTTPS did not carry traffic"
+            f" HTTPS did not carry traffic\n{state.stdout}{state.stderr}"
+            f"\nserver wstunnel:\n{server_log.stdout}"
         )

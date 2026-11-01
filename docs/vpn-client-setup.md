@@ -190,9 +190,10 @@ For networks that block WireGuard, use the HTTPS-tunnel configs (`wg-https-*.con
    each `wg-https-*.conf` carry the exact command for that config.)
 
    A full tunnel would route wstunnel's own connection into the tunnel it
-   carries. On Linux, start wstunnel with `sudo` and add `--socket-so-mark 51820`,
-   which wg-quick sends outside the tunnel. Elsewhere, route the server's address
-   through your normal gateway before you activate `wg-https-full.conf`.
+   carries. Before you activate `wg-https-full.conf`, route the server's address
+   through the gateway you use now, for example
+   `sudo ip route add 203.0.113.10 via 192.168.1.1` on Linux. The config's first
+   lines give the macOS and Windows forms.
 
 2. Then import and activate the `wg-https-*.conf` config in your WireGuard client
 

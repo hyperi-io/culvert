@@ -387,15 +387,36 @@ def wireguard_https_tunnel_connection():
 
 @pytest.fixture
 def wireguard_https_full_connection():
-    """Connect WireGuard over HTTPS in FULL-tunnel mode, yield, then disconnect."""
+    """Connect WireGuard over HTTPS in FULL-tunnel mode, yield, then disconnect.
+
+    The server shares the client's subnet, and wg-quick's full tunnel leaves a
+    subnet route alone, so wstunnel would reach it either way. The client goes
+    through the default route instead, as it does to a server on the internet,
+    and adds the host route the config tells a full-tunnel user to add.
+    """
     from helpers import (
+        SERVER_INTERNAL_IP,
+        SERVER_IP,
         connect_wireguard_https_tunnel,
         disconnect_wireguard_https_tunnel,
+        docker_exec,
+        tls_handshake,
     )
 
+    gateway = docker_exec(CLIENT_CONTAINER, "ip route show default").stdout.split()[2]
+    docker_exec(CLIENT_CONTAINER, f"ip route replace default via {SERVER_IP}")
     config_name = f"{CLIENT_NAME}/wg-https-full.conf"
-    connect_wireguard_https_tunnel(config_name)
     try:
+        reached = tls_handshake(4443, host=SERVER_INTERNAL_IP)
+        assert "Protocol version" in reached, (
+            f"the server is not reachable through the default route:\n{reached}"
+        )
+        docker_exec(
+            CLIENT_CONTAINER, f"ip route add {SERVER_INTERNAL_IP} via {SERVER_IP}"
+        )
+        connect_wireguard_https_tunnel(config_name, server=SERVER_INTERNAL_IP)
         yield
     finally:
         disconnect_wireguard_https_tunnel(config_name)
+        docker_exec(CLIENT_CONTAINER, f"ip route del {SERVER_INTERNAL_IP}", check=False)
+        docker_exec(CLIENT_CONTAINER, f"ip route replace default via {gateway}")
