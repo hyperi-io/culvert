@@ -3,6 +3,12 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.30](https://github.com/hyperi-io/culvert/compare/v2.1.29...v2.1.30) (2026-11-01)
+
+### Bug Fixes
+
+* check external PKI as a set, fix WireGuard naming and rollback, drain on SIGTERM ([#111](https://github.com/hyperi-io/culvert/issues/111)) ([a539dab](https://github.com/hyperi-io/culvert/commit/a539dab47522e42617e7cf94a14f9cfa0dbb3320))
+
 ## [2.1.29](https://github.com/hyperi-io/culvert/compare/v2.1.28...v2.1.29) (2026-10-31)
 
 ### Bug Fixes
