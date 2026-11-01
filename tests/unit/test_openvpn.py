@@ -65,6 +65,24 @@ class TestShippedServerTemplates:
         ]
         assert not active, f"{name} enables external scripts: {active}"
 
+    @pytest.mark.parametrize("name", SERVER_TEMPLATES)
+    def test_status_file_is_the_format_metrics_reads(self, name):
+        """The metrics collector reads tab-separated status-version 3 only.
+
+        OpenVPN writes version 1 unless told otherwise, and the collector then
+        counts no client on any listener.
+        """
+        from lib.metrics import OPENVPN_STATUS_FILES
+
+        lines = (REPO_ROOT / "config" / name).read_text(encoding="utf-8").splitlines()
+        directives = {
+            line.split()[0]: line.split()[1:]
+            for line in (raw.strip() for raw in lines)
+            if line and not line.startswith("#")
+        }
+        assert directives.get("status-version") == ["3"], name
+        assert directives["status"][0] in OPENVPN_STATUS_FILES, name
+
     def test_https_listener_binds_loopback_only(self):
         """The stunnel-fronted listener must not be reachable directly.
 
@@ -173,6 +191,14 @@ class TestApplyCommonOptions:
         cfg = self.FakeCfg(full_tunnel=True)
         content = _apply_common_options("", cfg)
         assert 'push "redirect-gateway def1 bypass-dhcp"' in content
+        assert 'push "route-ipv6 2000::/3"' in content
+        assert 'push "block-ipv6"' in content
+        assert "ifconfig-ipv6" not in content
+
+    def test_split_tunnel_leaves_ipv6_alone(self):
+        content = _apply_common_options("", self.FakeCfg(full_tunnel=False))
+        assert "redirect-gateway" not in content
+        assert "block-ipv6" not in content
 
     def test_all_options_combined(self):
         """All options work together."""
@@ -372,6 +398,7 @@ class TestShippedListenerRender:
         assert 'push "dhcp-option DOMAIN corp.example.test"' in rendered
         assert 'push "route 10.20.0.0 255.255.0.0"' in rendered
         assert 'push "redirect-gateway def1 bypass-dhcp"' in rendered
+        assert 'push "block-ipv6"' in rendered
 
     @pytest.mark.parametrize("listener", sorted(LISTENERS))
     def test_disabled_listener_writes_nothing(self, server_dir, listener):

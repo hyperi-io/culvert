@@ -44,6 +44,7 @@ from lib.process import (
     setup_directories,
     setup_log_rotation,
     setup_scripts,
+    start_log_rotation,
 )
 from lib.stunnel import configure_stunnel
 from lib.wireguard import setup_wireguard, start_wg_connection_monitor, start_wireguard
@@ -59,7 +60,7 @@ def run_server(cfg: Config) -> None:
 
     # Infrastructure setup
     setup_directories(cfg)
-    setup_log_rotation()
+    start_log_rotation(*setup_log_rotation(cfg))
     setup_network(cfg)
     setup_routing_control(cfg)
     # LAST of the three: it inserts at FORWARD position 1, and it has to sit

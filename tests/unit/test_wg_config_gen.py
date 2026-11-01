@@ -233,6 +233,54 @@ class TestWstunnelTlsVerification:
         assert "--tls-sni-override" not in config
 
 
+class TestWstunnelFullTunnel:
+    """A full tunnel routes everything into wg0, wstunnel's own connection too.
+
+    That connection is what carries wg0, so the server needs a host route
+    outside the tunnel, which is wstunnel's own documented fix.
+    """
+
+    @staticmethod
+    def _config(endpoint: str, allowed_ips: str) -> str:
+        return generate_https_tunnel_client_config(
+            client_private_key=FAKE_CLIENT_PRIV,
+            client_ip="10.8.0.2",
+            server_public_key=FAKE_SERVER_PUB,
+            server_endpoint=endpoint,
+            server_port=51820,
+            dns_servers=["1.1.1.1"],
+            allowed_ips=allowed_ips,
+        )
+
+    @pytest.mark.parametrize(
+        ("endpoint", "allowed_ips", "route"),
+        [
+            pytest.param(
+                "203.0.113.10",
+                "0.0.0.0/0, ::/0",
+                "sudo ip route add 203.0.113.10 via <gateway>",
+                id="full_ip",
+            ),
+            pytest.param(
+                "vpn.example.com",
+                "0.0.0.0/0, ::/0",
+                "sudo ip route add <address of vpn.example.com> via <gateway>",
+                id="full_hostname",
+            ),
+            pytest.param("203.0.113.10", "10.8.3.0/24", None, id="split"),
+        ],
+    )
+    def test_only_the_full_tunnel_routes_the_server_outside(
+        self, endpoint, allowed_ips, route
+    ):
+        config = self._config(endpoint, allowed_ips)
+        if route is None:
+            assert "ip route add" not in config
+        else:
+            assert f"#   Linux:   {route}\n" in config
+            assert "route add" in config.split("Windows:")[1]
+
+
 class TestGenerateClientConfig:
     """Tests for generate_client_config."""
 

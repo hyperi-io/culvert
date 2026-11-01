@@ -44,18 +44,21 @@ These clients support the web-based OAuth2 authentication flow required for SSO.
 
 ### WireGuard
 
+WireGuard configs come in a folder named for you, because the file name is the
+name of the tunnel and Linux and Android allow it 15 characters.
+
 | File | Protocol | Use Case |
 |------|----------|----------|
-| `*-wg-split.conf` | UDP 51820 | **Recommended** - VPN routes only |
-| `*-wg-full.conf` | UDP 51820 | All traffic through VPN |
-| `*-wg-https-split.conf` | WSS 4443 (wstunnel) | over HTTPS, VPN routes only |
-| `*-wg-https-full.conf` | WSS 4443 (wstunnel) | over HTTPS, all traffic |
+| `wg-split.conf` | UDP 51820 | **Recommended** - VPN routes only |
+| `wg-full.conf` | UDP 51820 | All traffic through VPN |
+| `wg-https-split.conf` | WSS 4443 (wstunnel) | over HTTPS, VPN routes only |
+| `wg-https-full.conf` | WSS 4443 (wstunnel) | over HTTPS, all traffic |
 
 ### Using more than one device
 
 The same `.ovpn` works on a laptop and a phone at once. WireGuard does not: a
 key connects from one place at a time, so you get a set of files per device -
-`*-wg-split.conf` for the first, `*-wg2-split.conf` for the second. Load one set
+`wg-split.conf` for the first, `wg2-split.conf` for the second. Load one set
 per device, or they will keep knocking each other offline.
 
 **Which to use:**
@@ -85,33 +88,33 @@ These files are a snapshot of the server's settings when they were issued. Ask y
 ### Importing Configuration
 
 1. Request your configuration files from the VPN administrator
-2. You will receive `{name}-wg-split.conf` and `{name}-wg-full.conf`
+2. You will receive `wg-split.conf` and `wg-full.conf`, in a folder named for you
 3. Import into your WireGuard client (drag and drop, or "Import tunnel from file")
 4. Activate the tunnel
 
 ### Split vs Full Tunnel
 
-- **Split tunnel** (`*-wg-split.conf`): Only VPN traffic goes through the tunnel. Internet traffic uses your normal connection.
-- **Full tunnel** (`*-wg-full.conf`): All traffic goes through the tunnel. Use when you need full network isolation.
+- **Split tunnel** (`wg-split.conf`): Only VPN traffic goes through the tunnel. Internet traffic uses your normal connection.
+- **Full tunnel** (`wg-full.conf`): All traffic goes through the tunnel. Use when you need full network isolation.
 
 ### Linux: Command Line
 
 ```bash
 # Import and bring up the tunnel
-sudo wg-quick up ./alice-wg-split.conf
+sudo wg-quick up ./wg-split.conf
 
 # Check status
 sudo wg show
 
 # Bring down the tunnel
-sudo wg-quick down ./alice-wg-split.conf
+sudo wg-quick down ./wg-split.conf
 ```
 
 ### Linux: Always-On WireGuard (systemd)
 
 ```bash
 # Copy config to system directory
-sudo cp alice-wg-split.conf /etc/wireguard/culvert.conf
+sudo cp wg-split.conf /etc/wireguard/culvert.conf
 
 # Enable and start
 sudo systemctl enable wg-quick@culvert
@@ -134,7 +137,7 @@ sudo systemctl status wg-quick@culvert
 
 ```bash
 brew install wireguard-tools
-sudo wg-quick up ./alice-wg-split.conf
+sudo wg-quick up ./wg-split.conf
 ```
 
 ### Windows
@@ -167,7 +170,7 @@ The `*-https-*.ovpn` configs use stunnel to wrap OpenVPN in real TLS on port 443
 
 ### WireGuard over HTTPS (wstunnel)
 
-For networks that block WireGuard, use the HTTPS-tunnel configs (`*-wg-https-*.conf`). These require wstunnel on your machine.
+For networks that block WireGuard, use the HTTPS-tunnel configs (`wg-https-*.conf`). These require wstunnel on your machine.
 
 #### Installing wstunnel
 
@@ -183,9 +186,16 @@ For networks that block WireGuard, use the HTTPS-tunnel configs (`*-wg-https-*.c
    wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
    ```
 
-   (Replace `vpn.example.com` with your VPN server hostname)
+   (Replace `vpn.example.com` with your VPN server hostname. The first lines of
+   each `wg-https-*.conf` carry the exact command for that config.)
 
-2. Then import and activate the `*-wg-https-*.conf` config in your WireGuard client
+   A full tunnel would route wstunnel's own connection into the tunnel it
+   carries. Before you activate `wg-https-full.conf`, route the server's address
+   through the gateway you use now, for example
+   `sudo ip route add 203.0.113.10 via 192.168.1.1` on Linux. The config's first
+   lines give the macOS and Windows forms.
+
+2. Then import and activate the `wg-https-*.conf` config in your WireGuard client
 
 3. The VPN traffic is tunnelled over WebSocket/TLS on port 4443, which looks like normal HTTPS to firewalls
 
@@ -201,10 +211,10 @@ wstunnel client "wss://${VPN_SERVER}:${WS_PORT}" -L udp://51820:127.0.0.1:51820 
 WSTUNNEL_PID=$!
 sleep 2
 
-sudo wg-quick up ./your-config-wg-https-split.conf
+sudo wg-quick up ./wg-https-split.conf
 
 # Cleanup on exit
-trap 'sudo wg-quick down ./your-config-wg-https-split.conf; kill $WSTUNNEL_PID' EXIT
+trap 'sudo wg-quick down ./wg-https-split.conf; kill $WSTUNNEL_PID' EXIT
 wait
 ```
 
@@ -573,9 +583,7 @@ config works unchanged on a normal host.
 ### Split vs Full Tunnel
 
 - **Split tunnel:** Only routes to your site's internal networks go through the VPN
-- **Full tunnel:** All traffic goes through VPN (including internet)
-
-Use split tunnel for normal work; use full tunnel for maximum security.
+- **Full tunnel:** All traffic, internet included. OpenVPN refuses IPv6 while it is up, as the tunnel carries IPv4 only.
 
 ---
 

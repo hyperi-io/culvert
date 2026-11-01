@@ -92,7 +92,7 @@ teardown_file() {
 @test "client tls-crypt-v2 key is created" {
     generate_test_client "testuser6"
 
-    run container_exec test -f /etc/vpn/pki/private/testuser6-tc.key
+    run container_exec test -f /etc/vpn/pki/tls-crypt-v2/testuser6.key
     assert_success
 }
 

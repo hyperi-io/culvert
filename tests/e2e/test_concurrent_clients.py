@@ -28,6 +28,7 @@ from helpers import (
     has_wireguard_module,
     wait_for_tunnel,
 )
+from lib.metrics import parse_openvpn_status_v3
 
 # The connectivity stack is shared across this module's tests.
 pytestmark = pytest.mark.usefixtures("compose_stack")
@@ -45,28 +46,28 @@ def wireguard_available() -> bool:
 
 def _wait_for_status_sessions(
     common_name: str, wanted: int, timeout: int = 45
-) -> tuple[list[str], str]:
+) -> tuple[list[dict], str]:
     """Poll the server's status log until it lists ``wanted`` sessions.
 
     The server rewrites status.log on a 10s timer, so a read taken straight
-    after a client connects still shows the previous state. Returns the
-    matching lines and the last status file read, so a failure can show both.
+    after a client connects still shows the previous state. The file is read
+    with the metrics collector's own parser, so this also proves the server
+    writes the format the collector reads. Returns the matching sessions and the
+    last status file read, so a failure can show both.
     """
     deadline = time.monotonic() + timeout
     status = ""
-    sessions: list[str] = []
+    sessions: list[dict] = []
     while time.monotonic() < deadline:
         status = docker_exec(
             SERVER_CONTAINER,
             "cat /var/log/vpn/status.log",
             check=False,
         ).stdout
-        # Only the CLIENT LIST rows name a session; the routing table repeats
-        # the common name once per virtual address and would double the count.
         sessions = [
-            line
-            for line in status.split("ROUTING TABLE")[0].splitlines()
-            if line.startswith(f"{common_name},")
+            client
+            for client in parse_openvpn_status_v3(status).clients
+            if client["common_name"] == common_name
         ]
         if len(sessions) >= wanted:
             return sessions, status

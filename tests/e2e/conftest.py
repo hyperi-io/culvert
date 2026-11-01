@@ -214,16 +214,27 @@ def compose_stack():
         f"{CLIENT_NAME}-tcp-split.ovpn",
         f"{CLIENT_NAME}-https-split.ovpn",
         f"{CLIENT_NAME}-stunnel.conf",
-        f"{CLIENT_NAME}-wg-split.conf",
-        f"{CLIENT_NAME}-wg-full.conf",
-        f"{CLIENT_NAME}-wg-https-split.conf",
+        f"{CLIENT_NAME}/wg-split.conf",
+        f"{CLIENT_NAME}/wg-full.conf",
+        f"{CLIENT_NAME}/wg-https-split.conf",
+        f"{CLIENT_NAME}/wg-https-full.conf",
         # The second WireGuard device slot, asserted here so a generator that
         # stopped issuing slots fails rather than skipping the concurrency tests.
-        f"{CLIENT_NAME}-wg2-split.conf",
-        f"{CLIENT_NAME}-wg2-full.conf",
+        f"{CLIENT_NAME}/wg2-split.conf",
+        f"{CLIENT_NAME}/wg2-full.conf",
     ]
     result = subprocess.run(
-        ["docker", "exec", CLIENT_CONTAINER, "ls", "/etc/vpn/clients/"],
+        [
+            "docker",
+            "exec",
+            CLIENT_CONTAINER,
+            "find",
+            "/etc/vpn/clients",
+            "-type",
+            "f",
+            "-printf",
+            "%P\n",
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -298,7 +309,7 @@ def wireguard_connection():
     """Connect WireGuard, yield, then disconnect."""
     from helpers import connect_wireguard, disconnect_wireguard
 
-    config_name = f"{CLIENT_NAME}-wg-split.conf"
+    config_name = f"{CLIENT_NAME}/wg-split.conf"
     connect_wireguard(config_name)
     try:
         yield
@@ -311,7 +322,7 @@ def wireguard_full_connection():
     """Connect WireGuard in FULL-tunnel mode, yield, then disconnect."""
     from helpers import connect_wireguard, disconnect_wireguard
 
-    config_name = f"{CLIENT_NAME}-wg-full.conf"
+    config_name = f"{CLIENT_NAME}/wg-full.conf"
     connect_wireguard(config_name)
     try:
         yield
@@ -347,8 +358,8 @@ def wireguard_slot_pair_connection():
     """
     from helpers import CLIENT_B_CONTAINER, connect_wireguard, disconnect_wireguard
 
-    slot_one = f"{CLIENT_NAME}-wg-split.conf"
-    slot_two = f"{CLIENT_NAME}-wg2-split.conf"
+    slot_one = f"{CLIENT_NAME}/wg-split.conf"
+    slot_two = f"{CLIENT_NAME}/wg2-split.conf"
     connect_wireguard(slot_one, container=CLIENT_CONTAINER)
     connect_wireguard(slot_two, container=CLIENT_B_CONTAINER)
     try:
@@ -366,9 +377,46 @@ def wireguard_https_tunnel_connection():
         disconnect_wireguard_https_tunnel,
     )
 
-    config_name = f"{CLIENT_NAME}-wg-https-split.conf"
+    config_name = f"{CLIENT_NAME}/wg-https-split.conf"
     connect_wireguard_https_tunnel(config_name)
     try:
         yield
     finally:
         disconnect_wireguard_https_tunnel(config_name)
+
+
+@pytest.fixture
+def wireguard_https_full_connection():
+    """Connect WireGuard over HTTPS in FULL-tunnel mode, yield, then disconnect.
+
+    The server shares the client's subnet, and wg-quick's full tunnel leaves a
+    subnet route alone, so wstunnel would reach it either way. The client goes
+    through the default route instead, as it does to a server on the internet,
+    and adds the host route the config tells a full-tunnel user to add.
+    """
+    from helpers import (
+        SERVER_INTERNAL_IP,
+        SERVER_IP,
+        connect_wireguard_https_tunnel,
+        disconnect_wireguard_https_tunnel,
+        docker_exec,
+        tls_handshake,
+    )
+
+    gateway = docker_exec(CLIENT_CONTAINER, "ip route show default").stdout.split()[2]
+    docker_exec(CLIENT_CONTAINER, f"ip route replace default via {SERVER_IP}")
+    config_name = f"{CLIENT_NAME}/wg-https-full.conf"
+    try:
+        reached = tls_handshake(4443, host=SERVER_INTERNAL_IP)
+        assert "Protocol version" in reached, (
+            f"the server is not reachable through the default route:\n{reached}"
+        )
+        docker_exec(
+            CLIENT_CONTAINER, f"ip route add {SERVER_INTERNAL_IP} via {SERVER_IP}"
+        )
+        connect_wireguard_https_tunnel(config_name, server=SERVER_INTERNAL_IP)
+        yield
+    finally:
+        disconnect_wireguard_https_tunnel(config_name)
+        docker_exec(CLIENT_CONTAINER, f"ip route del {SERVER_INTERNAL_IP}", check=False)
+        docker_exec(CLIENT_CONTAINER, f"ip route replace default via {gateway}")

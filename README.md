@@ -101,8 +101,8 @@ That mints a real credential, so treat the output accordingly:
 
 One identity covers Zaphod's devices concurrently, laptop and phone both
 connected. OpenVPN shares the certificate across sessions; WireGuard cannot
-share a key, so alice gets one peer per device slot (`zaphod-wg-split.conf`,
-`zaphod-wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
+share a key, so Zaphod gets one peer per device slot (`zaphod/wg-split.conf`,
+`zaphod/wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
 `CULVERT_ALLOW_SHARED_CLIENTS=false` where a credential must identify a single
 device.
 
@@ -211,6 +211,12 @@ culvert supports three external PKI backends via
 
 Local PKI mode (self-generated Easy-RSA CA) is the default for quick
 starts and dev environments.
+
+External PKI keeps the CA key at your CA, so culvert neither signs nor revokes
+OpenVPN client certificates. Issue one there, place it at `pki/issued/<name>.crt`
+and `pki/private/<name>.key`, and run `generate-client --config-only --name
+<name>`. Revoke at the CA too: the refresh from `CULVERT_SECRETS_CRL_PATH` ends
+the session. WireGuard peers work as in local mode.
 
 ## Cryptography and CNSA 2.0
 

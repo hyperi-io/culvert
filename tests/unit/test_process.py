@@ -6,9 +6,11 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
+import shutil
 import signal
 import stat
 import subprocess
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -39,6 +41,22 @@ class TestWriteFileAtomic:
         write_file_atomic(target, b"new", 0o644)
 
         assert other.read_bytes() == b"half written by another container"
+
+    def test_flushes_the_file_and_then_the_directory(self, tmp_path, monkeypatch):
+        """Without both, a power cut can leave the name pointing at an empty file."""
+        import os
+
+        synced = []
+        real_fsync = os.fsync
+
+        def recording_fsync(fd):
+            synced.append(stat.S_ISDIR(os.fstat(fd).st_mode))
+            real_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", recording_fsync)
+        write_file_atomic(tmp_path / "allocations.json", b"{}", 0o644)
+
+        assert synced == [False, True]
 
 
 class TestWriteSecret:
@@ -127,6 +145,47 @@ class TestSetupDirectories:
 
         setup_directories(FakeCfg())
         setup_directories(FakeCfg())  # Second call should not raise
+
+
+@pytest.mark.skipif(shutil.which("logrotate") is None, reason="needs logrotate")
+class TestLogRotation:
+    """PID 1 is Python with no cron, so culvert runs logrotate itself."""
+
+    def test_rotates_while_the_writer_keeps_its_file_open(self, tmp_path):
+        """OpenVPN and the daemons hold an O_APPEND fd that is never reopened."""
+        from lib.process import rotate_logs, setup_log_rotation
+
+        cfg = SimpleNamespace(log_dir=tmp_path)
+        conf, state = setup_log_rotation(cfg, conf_path=tmp_path / "logrotate.conf")
+        log = tmp_path / "openvpn.log"
+        status = tmp_path / "status.log"
+        status.write_text("CLIENT_LIST\talice\n")
+        with log.open("ab") as writer:
+            writer.write(b"before rotation\n")
+            writer.flush()
+            assert rotate_logs(conf, state, force=True)
+            writer.write(b"after rotation\n")
+
+        assert (tmp_path / "openvpn.log.1").read_bytes() == b"before rotation\n"
+        assert log.read_bytes() == b"after rotation\n"
+        assert status.read_text() == "CLIENT_LIST\talice\n"
+        assert not (tmp_path / "status.log.1").exists()
+
+    def test_the_schedule_runs_logrotate(self, tmp_path):
+        from lib.process import setup_log_rotation, start_log_rotation
+
+        cfg = SimpleNamespace(log_dir=tmp_path)
+        conf, state = setup_log_rotation(cfg, conf_path=tmp_path / "logrotate.conf")
+        (tmp_path / "openvpn.log").write_text("line\n")
+
+        stop = start_log_rotation(conf, state, interval=0.05)
+        try:
+            deadline = time.monotonic() + 10
+            while not state.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+        finally:
+            stop.set()
+        assert state.exists(), "logrotate never ran, so no state file was written"
 
 
 class TestSetupScripts:
@@ -278,3 +337,83 @@ class TestShutdown:
         else:
             with pytest.raises(subprocess.TimeoutExpired):
                 proc.wait(timeout=1)
+
+
+class TestDrain:
+    """SIGTERM drops readiness, gives load balancers time, then stops the children.
+
+    Stopping at once lets a load balancer that has not yet seen readiness drop
+    send a client to a server that is already gone.
+    """
+
+    @staticmethod
+    def _draining(manager, drain_seconds, connected):
+        """Record, at each count, whether the child is up and the pod is ready."""
+        from lib.health import health
+
+        manager.config = SimpleNamespace(
+            drain_seconds=drain_seconds, protocol="openvpn"
+        )
+        child = manager.start("openvpn-udp", ["sleep", "30"])
+        seen = []
+
+        def count():
+            seen.append((child.poll() is None, health.is_ready()))
+            return connected
+
+        health.set_ready(True)
+        return child, seen, count
+
+    def test_children_serve_through_the_drain_while_clients_are_connected(
+        self, manager
+    ):
+        child, seen, count = self._draining(manager, drain_seconds=2, connected=3)
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager._signal_handler(signal.SIGTERM, None, count_connected=count)
+
+        assert time.monotonic() - started >= 2
+        assert seen and all(alive and not ready for alive, ready in seen)
+        assert child.poll() is not None
+
+    def test_the_drain_ends_once_no_client_is_connected(self, manager):
+        _, seen, count = self._draining(manager, drain_seconds=30, connected=0)
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager._signal_handler(signal.SIGTERM, None, count_connected=count)
+
+        assert time.monotonic() - started < 10
+        assert len(seen) == 1
+
+    def test_a_second_signal_stops_without_finishing_the_drain(self, manager):
+        child, _, count = self._draining(manager, drain_seconds=30, connected=3)
+
+        def second_signal():
+            count()
+            manager._signal_handler(signal.SIGTERM, None)
+            return 3
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager._signal_handler(signal.SIGTERM, None, count_connected=second_signal)
+
+        assert time.monotonic() - started < 10
+        assert child.poll() is not None
+
+    def test_children_share_one_stop_deadline(self, manager):
+        """Sequential per-child timeouts outlast a 30 second grace period."""
+        manager.stop_timeout = 1
+        for name in ("openvpn-udp", "openvpn-tcp", "stunnel"):
+            manager.start(name, ["sh", "-c", "trap '' TERM; sleep 30"])
+        time.sleep(0.2)
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager.shutdown()
+
+        assert time.monotonic() - started < 3
+        assert all(
+            proc.poll() == -signal.SIGKILL for proc in manager.processes.values()
+        )

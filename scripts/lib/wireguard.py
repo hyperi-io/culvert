@@ -16,6 +16,7 @@ interface lifecycle into a single module.
 import fcntl
 import ipaddress
 import json
+import re
 import subprocess
 import sys
 from collections import deque
@@ -24,24 +25,38 @@ from pathlib import Path
 
 from scalo.logger import logger
 
-from lib.process import write_secret
+from lib.process import write_file_atomic, write_secret
 
 
 @contextmanager
+def _exclusive(lock_path: Path):
+    """Hold an exclusive flock on lock_path, across processes."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w", encoding="utf-8") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
+
+
 def _alloc_lock(wg_dir: Path):
     """Serialise read-modify-write of allocations.json across processes.
 
     Concurrent generate-client / revoke-client runs would otherwise race and
     double-allocate an IP or clobber the peer list.
     """
-    wg_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = wg_dir / "allocations.lock"
-    with open(lock_path, "w") as lf:
-        fcntl.flock(lf, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lf, fcntl.LOCK_UN)
+    return _exclusive(wg_dir / "allocations.lock")
+
+
+def peer_lifecycle_lock(pki_dir: Path):
+    """Serialise a whole issue, revoke or server-config rebuild across processes.
+
+    Hold it from the first read of peers and allocations to the live sync. An
+    issuer that read a peer just before a revoke would otherwise write the
+    revoked key back into wg0.conf and the running interface.
+    """
+    return _exclusive(pki_dir / "wireguard" / "lifecycle.lock")
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +88,42 @@ def peer_ids(client_name: str, slots: int) -> list[str]:
 def slot_infix(slot: int) -> str:
     """Filename infix separating a client's slots (slot 1 is unsuffixed)."""
     return "" if slot == 1 else str(slot)
+
+
+# wg-quick and the Android app name the interface after the config file, and
+# Linux caps an interface name at 15 characters, so the client name is the
+# directory rather than part of the file name.
+WG_QUICK_NAME = re.compile(r"[a-zA-Z0-9_=+.-]{1,15}")
+
+
+def client_config_name(
+    client_name: str, slot: int, mode: str, https: bool = False
+) -> str:
+    """Path, under the clients directory, of one slot's split or full config.
+
+    Raises:
+        ValueError: The file name would not be a valid interface name, which
+            happens over HTTPS from slot 10.
+
+    """
+    tunnel = "-https" if https else ""
+    stem = f"wg{slot_infix(slot)}{tunnel}-{mode}"
+    if not WG_QUICK_NAME.fullmatch(stem):
+        raise ValueError(
+            f"WireGuard config {stem}.conf is too long for an interface name,"
+            " which wg-quick and the Android app derive from it (15 characters)"
+        )
+    return f"{client_name}/{stem}.conf"
+
+
+def client_config_names(client_name: str, slot: int, https: bool) -> list[str]:
+    """Paths of every config one slot is issued."""
+    variants = (False, True) if https else (False,)
+    return [
+        client_config_name(client_name, slot, mode, https=tunnelled)
+        for tunnelled in variants
+        for mode in ("split", "full")
+    ]
 
 
 def existing_peer_ids(pki_dir: Path, client_name: str) -> list[str]:
@@ -187,6 +238,12 @@ def load_or_generate_client_keys(
 # ---------------------------------------------------------------------------
 
 
+def _write_allocations(alloc_file: Path, allocations: dict[str, str]) -> None:
+    """Replace allocations.json whole, so a failed write leaves the old one."""
+    data = (json.dumps(allocations, indent=2) + "\n").encode()
+    write_file_atomic(alloc_file, data, 0o644)
+
+
 def allocate_peer_ip(pki_dir: Path, network: str, client_name: str) -> str:
     """Allocate next available IP for a WireGuard peer."""
     alloc_file = pki_dir / "wireguard" / "allocations.json"
@@ -208,7 +265,7 @@ def allocate_peer_ip(pki_dir: Path, network: str, client_name: str) -> str:
             ip_str = str(host)
             if ip_str not in used_ips:
                 allocations[client_name] = ip_str
-                alloc_file.write_text(json.dumps(allocations, indent=2) + "\n")
+                _write_allocations(alloc_file, allocations)
                 return ip_str
 
     raise RuntimeError(f"No available IPs in {network}")
@@ -224,7 +281,7 @@ def deallocate_peer_ip(pki_dir: Path, client_name: str) -> str | None:
         allocations: dict[str, str] = json.loads(alloc_file.read_text())
         ip = allocations.pop(client_name, None)
         if ip:
-            alloc_file.write_text(json.dumps(allocations, indent=2) + "\n")
+            _write_allocations(alloc_file, allocations)
     return ip
 
 
@@ -452,8 +509,24 @@ def generate_https_tunnel_client_config(
         "# The WireGuard Endpoint below connects to the local wstunnel listener.",
         "# wstunnel carries the UDP tunnel inside WebSocket/TLS, so it travels",
         "# as ordinary HTTPS on a web port.",
-        "",
     ]
+    # A full tunnel would carry wstunnel's own connection to the server inside
+    # the tunnel it carries. wstunnel's documented fix is a host route.
+    if "0.0.0.0/0" in allowed_ips:
+        try:
+            server = str(ipaddress.ip_address(server_endpoint))
+        except ValueError:
+            server = f"<address of {server_endpoint}>"
+        header += [
+            "#",
+            "# Full tunnel: before activating, route the server outside the tunnel,",
+            "# through the gateway your machine uses now, or wstunnel's own",
+            "# connection to the server loops back into the tunnel it carries:",
+            f"#   Linux:   sudo ip route add {server} via <gateway>",
+            f"#   macOS:   sudo route -n add -host {server} <gateway>",
+            f"#   Windows: route add {server} mask 255.255.255.255 <gateway>",
+        ]
+    header.append("")
 
     body = [
         "[Interface]",
@@ -491,26 +564,31 @@ def setup_wireguard(cfg) -> None:
         )
         sys.exit(1)
 
-    server_priv, server_pub = generate_server_keys(cfg.pki_dir)
-    logger.info(f"WireGuard server public key: {server_pub}")
-
     peers_dir = cfg.pki_dir / "wireguard" / "peers"
     alloc_file = cfg.pki_dir / "wireguard" / "allocations.json"
 
-    config_content = generate_server_config(
-        private_key=server_priv,
-        network=cfg.wg_network,
-        listen_port=cfg.wg_port,
-        mtu=cfg.wg_mtu,
-        peers_dir=peers_dir,
-        alloc_file=alloc_file,
-        post_up=cfg.wg_post_up,
-        post_down=cfg.wg_post_down,
-    )
+    with peer_lifecycle_lock(cfg.pki_dir):
+        server_priv, server_pub = generate_server_keys(cfg.pki_dir)
+        logger.info(f"WireGuard server public key: {server_pub}")
 
-    # wg0.conf embeds the server private key - 0600 from creation.
-    write_secret(cfg.wg_conf, config_content)
+        config_content = generate_server_config(
+            private_key=server_priv,
+            network=cfg.wg_network,
+            listen_port=cfg.wg_port,
+            mtu=cfg.wg_mtu,
+            peers_dir=peers_dir,
+            alloc_file=alloc_file,
+            post_up=cfg.wg_post_up,
+            post_down=cfg.wg_post_down,
+        )
+
+        # wg0.conf embeds the server private key - 0600 from creation.
+        write_secret(cfg.wg_conf, config_content)
     logger.info(f"WireGuard config written to {cfg.wg_conf}")
+
+
+class WireGuardSyncError(RuntimeError):
+    """The running wg0 interface refused the new peer list and kept the old one."""
 
 
 def sync_running_interface(conf_path: Path) -> bool:
@@ -523,6 +601,11 @@ def sync_running_interface(conf_path: Path) -> bool:
     Returns False when there is no interface to sync, which is the normal case
     for issuing a config before the server has started. A missing `wg` binary
     is the same case: there is no WireGuard here to sync.
+
+    Raises:
+        WireGuardSyncError: The interface is up and did not take the new peers,
+            so it still accepts whatever keys it held before.
+
     """
     try:
         shown = subprocess.run(["wg", "show", "wg0"], capture_output=True)
@@ -541,8 +624,9 @@ def sync_running_interface(conf_path: Path) -> bool:
         errors="replace",
     )
     if stripped.returncode != 0:
-        logger.warning(f"Could not read {conf_path}: {stripped.stderr.strip()}")
-        return False
+        raise WireGuardSyncError(
+            f"could not read {conf_path}: {stripped.stderr.strip()}"
+        )
 
     # syncconf takes a path, and the stripped form still carries the server
     # private key, so it goes to a 0600 file beside the config and is removed.
@@ -560,8 +644,9 @@ def sync_running_interface(conf_path: Path) -> bool:
         tmp_path.unlink(missing_ok=True)
 
     if result.returncode != 0:
-        logger.warning(f"Could not apply peers to wg0: {result.stderr.strip()}")
-        return False
+        raise WireGuardSyncError(
+            f"wg0 refused the new peer list: {result.stderr.strip()}"
+        )
     logger.info("Applied peer list to the running wg0 interface")
     return True
 
@@ -649,6 +734,11 @@ class EndpointFlapDetector:
                 del state[peer]
 
 
+# A peer with no handshake for this long is disconnected. WireGuard rekeys every
+# 2 minutes while traffic flows.
+PEER_ACTIVE_SECONDS = 180
+
+
 def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
     """Start background thread that polls WireGuard for connection events.
 
@@ -664,8 +754,6 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
         parse_wg_transfer,
         record_endpoint_flap,
     )
-
-    stale_threshold = 180  # 3 minutes without handshake = disconnected
 
     def _poll_loop():
         pubkey_names = _build_pubkey_to_name(cfg.pki_dir)
@@ -742,7 +830,7 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
                     age = now - hs.timestamp
                     name = pubkey_names.get(pubkey, pubkey[:8])
 
-                    if age <= stale_threshold:
+                    if age <= PEER_ACTIVE_SECONDS:
                         current_connected.add(pubkey)
 
                         if pubkey not in connected_peers:

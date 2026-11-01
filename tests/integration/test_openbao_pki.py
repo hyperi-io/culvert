@@ -28,28 +28,8 @@ pytestmark = pytest.mark.skipif(
     reason="OPENBAO_ADDR not set - no OpenBao access",
 )
 
-FAKE_CA = (
-    "-----BEGIN CERTIFICATE-----\n"
-    "TEST_CA_CERT_FOR_CULVERT_INTEGRATION\n"
-    "-----END CERTIFICATE-----\n"
-)
-FAKE_CERT = (
-    "-----BEGIN CERTIFICATE-----\n"
-    "TEST_SERVER_CERT_FOR_CULVERT_INTEGRATION\n"
-    "-----END CERTIFICATE-----\n"
-)
-FAKE_KEY = (
-    "-----BEGIN PRIVATE KEY-----\n"
-    "TEST_SERVER_KEY_FOR_CULVERT_INTEGRATION\n"
-    "-----END PRIVATE KEY-----\n"
-)
-
 SECRET_BASE = "secret/data/culvert-test"
-TEST_SECRETS = {
-    "ca-cert": FAKE_CA,
-    "server-cert": FAKE_CERT,
-    "server-key": FAKE_KEY,
-}
+SECRET_NAMES = ("ca-cert", "server-cert", "server-key")
 
 
 def _bao_request(method: str, path: str, data: dict | None = None):
@@ -74,21 +54,33 @@ def _bao_request(method: str, path: str, data: dict | None = None):
     return urllib.request.urlopen(req, timeout=10, context=ctx)
 
 
-@pytest.fixture(scope="module")
-def openbao_test_secrets():
-    """Store test secrets in OpenBao, yield, then clean up."""
-    # Write test secrets
-    for name, content in TEST_SECRETS.items():
+@pytest.fixture
+def openbao_test_secrets(issue_cert):
+    """Store a real CA, server certificate and key in OpenBao, then clean up.
+
+    Real material, because the fetch accepts only a server certificate that
+    verifies against the CA and matches the key.
+    """
+    ca = issue_cert("culvert-integration-ca", is_ca=True)
+    server = issue_cert("culvert-integration-server", issuer=ca)
+    secrets = dict(
+        zip(
+            SECRET_NAMES,
+            (pem.decode() for pem in (ca.cert_pem, server.cert_pem, server.key_pem)),
+            strict=True,
+        )
+    )
+    for name, content in secrets.items():
         _bao_request(
             "POST",
             f"{SECRET_BASE}/{name}",
             {"data": {"value": content}},
         )
 
-    yield
+    yield secrets
 
     # Cleanup
-    for name in TEST_SECRETS:
+    for name in SECRET_NAMES:
         try:
             _bao_request("DELETE", f"{SECRET_BASE}/{name}")
         except Exception:
@@ -144,11 +136,8 @@ def test_fetch_certs_from_openbao(openbao_test_secrets, tmp_path):
     result = fetch_external_pki(cfg)
     assert result is True
 
-    ca = (pki / "ca.crt").read_text()
-    assert "TEST_CA_CERT" in ca
-
+    assert (pki / "ca.crt").read_text() == openbao_test_secrets["ca-cert"]
     cert = (pki / "issued" / "server.crt").read_text()
-    assert "TEST_SERVER_CERT" in cert
-
+    assert cert == openbao_test_secrets["server-cert"]
     key = (pki / "private" / "server.key").read_text()
-    assert "TEST_SERVER_KEY" in key
+    assert key == openbao_test_secrets["server-key"]

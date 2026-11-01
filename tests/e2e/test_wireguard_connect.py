@@ -91,7 +91,7 @@ class TestWireGuardOverHTTPSOpenNetwork:
         """Skip if HTTPS-tunnel client config was not generated."""
         result = docker_exec(
             CLIENT_CONTAINER,
-            f"test -f /etc/vpn/clients/{CLIENT_NAME}-wg-https-split.conf",
+            f"test -f /etc/vpn/clients/{CLIENT_NAME}/wg-https-split.conf",
             check=False,
         )
         if result.returncode != 0:

@@ -14,6 +14,8 @@ on a CI runner, and the part that differs between clients is the config text.
 """
 
 import importlib.util
+import os
+import re
 import stat
 import sys
 import zipfile
@@ -21,6 +23,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from lib.pki import client_tc_key_path
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "generate-client.py"
 
@@ -72,7 +75,8 @@ def pki(tmp_path, issue_cert):
         CERT_TEXT_DUMP + client.cert_pem.decode(), encoding="utf-8"
     )
     (pki_dir / "private" / f"{CLIENT}.key").write_bytes(client.key_pem)
-    (pki_dir / "private" / f"{CLIENT}-tc.key").write_text(TC_KEY, encoding="utf-8")
+    (pki_dir / "tls-crypt-v2").mkdir()
+    (pki_dir / "tls-crypt-v2" / f"{CLIENT}.key").write_text(TC_KEY, encoding="utf-8")
 
     wg_dir = pki_dir / "wireguard"
     (wg_dir / "server_private.key").write_text("ServerPrivate=\n", encoding="utf-8")
@@ -180,7 +184,14 @@ class TestOpenVpnConfigs:
         assert "route 10.1.0.0/16\n" in split
         assert "route 192.168.5.0/24\n" in split
         assert "redirect-gateway" not in split
-        assert "redirect-gateway def1 bypass-dhcp" in full
+        assert "block-ipv6" not in split
+        # The tunnel carries IPv4 only, so a full tunnel routes IPv6 in and drops
+        # it there rather than letting a dual-stack client send it outside.
+        assert "redirect-gateway def1 bypass-dhcp\n" in full
+        assert "\nroute-ipv6 2000::/3\n" in full
+        assert "\nblock-ipv6\n" in full
+        # ifconfig-ipv6 would make a client with IPv6 disabled exit at connect.
+        assert "ifconfig-ipv6" not in full
         assert "route 10.1.0.0/16" not in full
 
     def test_https_listener_gets_a_tls_1_3_stunnel_config(self, run):
@@ -274,7 +285,7 @@ def issue_client(pki, issue_cert):
         client = issue_cert(name, issuer=pki.ca)
         (pki.dir / "issued" / f"{name}.crt").write_bytes(client.cert_pem)
         (pki.dir / "private" / f"{name}.key").write_bytes(client.key_pem)
-        (pki.dir / "private" / f"{name}-tc.key").write_text(TC_KEY, encoding="utf-8")
+        client_tc_key_path(pki.dir, name).write_text(TC_KEY, encoding="utf-8")
         return client
 
     return issue
@@ -465,17 +476,17 @@ class TestWireGuardClientSideKeys:
 
     def test_issues_split_and_full_per_slot(self, run):
         out = run(*TWO_SLOTS)
-        assert sorted(p.name for p in out.glob("*.conf")) == [
-            f"{CLIENT}-wg-full.conf",
-            f"{CLIENT}-wg-split.conf",
-            f"{CLIENT}-wg2-full.conf",
-            f"{CLIENT}-wg2-split.conf",
+        assert sorted(p.name for p in (out / CLIENT).glob("*.conf")) == [
+            "wg-full.conf",
+            "wg-split.conf",
+            "wg2-full.conf",
+            "wg2-split.conf",
         ]
 
     def test_configs_carry_no_private_key_and_distinct_addresses(self, run):
         out = run(*TWO_SLOTS)
-        first = (out / f"{CLIENT}-wg-split.conf").read_text(encoding="utf-8")
-        second = (out / f"{CLIENT}-wg2-split.conf").read_text(encoding="utf-8")
+        first = (out / CLIENT / "wg-split.conf").read_text(encoding="utf-8")
+        second = (out / CLIENT / "wg2-split.conf").read_text(encoding="utf-8")
 
         assert "PrivateKey = YOUR_PRIVATE_KEY_HERE" in first
         assert f"PublicKey = {SERVER_PUBLIC}" in first
@@ -485,8 +496,8 @@ class TestWireGuardClientSideKeys:
 
     def test_split_routes_only_the_tunnel_network(self, run):
         out = run("--protocol", "wireguard", "--name", CLIENT, "--pubkey", PUBKEY_1)
-        split = (out / f"{CLIENT}-wg-split.conf").read_text(encoding="utf-8")
-        full = (out / f"{CLIENT}-wg-full.conf").read_text(encoding="utf-8")
+        split = (out / CLIENT / "wg-split.conf").read_text(encoding="utf-8")
+        full = (out / CLIENT / "wg-full.conf").read_text(encoding="utf-8")
         assert "AllowedIPs = 10.8.3.0/24" in split
         assert "AllowedIPs = 0.0.0.0/0, ::/0" in full
 
@@ -499,9 +510,118 @@ class TestWireGuardClientSideKeys:
         assert f"PublicKey = {PUBKEY_2}" in server
         assert stat.S_IMODE(run.wg_conf.stat().st_mode) == 0o600
 
+    def test_every_config_is_named_as_wg_quick_needs(self, run, monkeypatch):
+        """wg-quick and the Android app take the interface name from the file name.
+
+        Linux allows 15 characters, so "<client>-wg-https-split" fits no client
+        name at all, the 15-character default vpn-example-com included.
+        """
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
+        name = "vpn-example-com"
+        out = run(
+            "--protocol",
+            "wireguard",
+            "--name",
+            name,
+            "--pubkey",
+            PUBKEY_1,
+            "--pubkey",
+            PUBKEY_2,
+        )
+        configs = sorted((out / name).glob("*.conf"))
+        assert len(configs) == 8
+        for path in configs:
+            assert re.fullmatch(r"[a-zA-Z0-9_=+.-]{1,15}", path.stem), path.name
+
     def test_https_tunnel_variants_when_enabled(self, run, monkeypatch):
         monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
         out = run("--protocol", "wireguard", "--name", CLIENT, "--pubkey", PUBKEY_1)
-        tunnelled = (out / f"{CLIENT}-wg-https-split.conf").read_text(encoding="utf-8")
+        tunnelled = (out / CLIENT / "wg-https-split.conf").read_text(encoding="utf-8")
         assert "Endpoint = 127.0.0.1:51820" in tunnelled
         assert f"wss://{SERVER_CN}:4443" in tunnelled
+
+    def test_the_bundle_carries_the_full_tunnel_host_route(self, run, monkeypatch):
+        """The client's gateway is unknowable here, so the config names the command."""
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
+        out = run("--protocol", "wireguard", "--name", CLIENT, "--pubkey", PUBKEY_1)
+        with zipfile.ZipFile(out / f"{CLIENT}.zip") as zf:
+            full = zf.read("wg-https-full.conf").decode()
+        route = f"sudo ip route add <address of {SERVER_CN}> via <gateway>"
+        assert f"#   Linux:   {route}\n" in full
+
+
+# Stand-ins for wg and wg-quick against a server whose interface is up. Keys are
+# real-shaped base64, and FAKE_WG_SYNC_FAIL makes the live sync refuse.
+FAKE_WG = """
+import base64
+import hashlib
+import os
+import sys
+
+command = sys.argv[1]
+if command == "genkey":
+    print(base64.b64encode(os.urandom(32)).decode())
+elif command == "pubkey":
+    print(base64.b64encode(hashlib.sha256(sys.stdin.read().encode()).digest()).decode())
+elif command == "syncconf" and os.environ.get("FAKE_WG_SYNC_FAIL"):
+    sys.exit("Unable to modify interface: Operation not permitted")
+"""
+FAKE_WG_QUICK = """
+import sys
+from pathlib import Path
+
+print(Path(sys.argv[2]).read_text(), end="")
+"""
+
+
+@pytest.fixture
+def wg_tools(tmp_path, monkeypatch):
+    """Put wg and wg-quick stand-ins first on PATH, for a server that is running."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in (("wg", FAKE_WG), ("wg-quick", FAKE_WG_QUICK)):
+        script = bin_dir / name
+        script.write_text(f"#!{sys.executable}\n{body}", encoding="utf-8")
+        script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.delenv("FAKE_WG_SYNC_FAIL", raising=False)
+
+
+def _wireguard_state(pki, out: Path, wg_conf: Path) -> dict[str, bytes]:
+    """Every file an issue can change, by path."""
+    paths = [*(pki.dir / "wireguard").rglob("*"), *out.rglob("*"), wg_conf]
+    return {str(p): p.read_bytes() for p in paths if p.is_file()}
+
+
+class TestWireGuardLiveSyncFailure:
+    """A peer list the running interface refused is not an issued client.
+
+    Reporting success would leave the kernel on the old key after a --rotate,
+    so the retired key keeps working while the operator believes it is gone.
+    """
+
+    def test_a_refused_rotate_fails_and_keeps_the_live_key(
+        self, run, pki, wg_tools, monkeypatch
+    ):
+        run("--protocol", "wireguard", "--name", CLIENT)
+        before = _wireguard_state(pki, run.out, run.wg_conf)
+
+        monkeypatch.setenv("FAKE_WG_SYNC_FAIL", "1")
+        with pytest.raises(SystemExit) as exc:
+            run("--protocol", "wireguard", "--name", CLIENT, "--rotate")
+
+        assert exc.value.code == 1
+        assert _wireguard_state(pki, run.out, run.wg_conf) == before
+
+    def test_a_refused_new_client_leaves_nothing_issued(
+        self, run, pki, wg_tools, monkeypatch
+    ):
+        run("--protocol", "wireguard", "--name", CLIENT)
+        before = _wireguard_state(pki, run.out, run.wg_conf)
+
+        monkeypatch.setenv("FAKE_WG_SYNC_FAIL", "1")
+        with pytest.raises(SystemExit) as exc:
+            run("--protocol", "wireguard", "--name", SIBLING)
+
+        assert exc.value.code == 1
+        assert _wireguard_state(pki, run.out, run.wg_conf) == before

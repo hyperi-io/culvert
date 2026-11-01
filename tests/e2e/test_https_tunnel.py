@@ -23,7 +23,9 @@ import pytest
 from conftest import CLIENT_NAME
 from helpers import (
     CLIENT_CONTAINER,
+    SERVER_CONTAINER,
     TARGET_RESPONSE,
+    assert_tunnel_mode,
     block_plain_vpn_ports,
     connect_openvpn,
     connect_openvpn_https,
@@ -158,7 +160,7 @@ class TestWireGuardOverHTTPS:
 
     def test_connects_and_reaches_target_when_plain_blocked(self, plain_ports_blocked):
         """WireGuard over WebSocket/TLS with UDP 51820 blocked."""
-        config_name = f"{CLIENT_NAME}-wg-https-split.conf"
+        config_name = f"{CLIENT_NAME}/wg-https-split.conf"
         connect_wireguard_https_tunnel(config_name)
         try:
             body = curl_target()
@@ -168,3 +170,26 @@ class TestWireGuardOverHTTPS:
             )
         finally:
             disconnect_wireguard_https_tunnel(config_name)
+
+    def test_full_tunnel_reaches_target_without_routing_into_itself(
+        self, plain_ports_blocked, wireguard_https_full_connection
+    ):
+        """wstunnel's own connection must stay off the wg0 default route it carries."""
+        wait_for_tunnel("wg0", timeout=15)
+        assert_tunnel_mode("wg0", "full")
+
+        body = curl_target()
+        state = docker_exec(
+            CLIENT_CONTAINER,
+            "cat /tmp/wstunnel.log; wg show; ip rule; ip route; ss -tnp;"
+            " sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.eth0.rp_filter",
+            check=False,
+        )
+        server_log = docker_exec(
+            SERVER_CONTAINER, "tail -20 /var/log/vpn/wstunnel.log", check=False
+        )
+        assert body == TARGET_RESPONSE, (
+            f"Expected '{TARGET_RESPONSE}', got '{body}': the full tunnel over"
+            f" HTTPS did not carry traffic\n{state.stdout}{state.stderr}"
+            f"\nserver wstunnel:\n{server_log.stdout}"
+        )

@@ -17,7 +17,7 @@ import fcntl
 import hashlib
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,7 +107,7 @@ def current_protocol_state(cfg) -> dict[str, dict[str, object]]:
 
 
 @contextmanager
-def _registry_lock(pki_dir: Path) -> Iterator[None]:
+def _registry_lock(pki_dir: Path) -> Generator[None]:
     """Serialise registry read-modify-write operations."""
     pki_dir.mkdir(parents=True, exist_ok=True)
     with open(pki_dir / _LOCK, "w", encoding="utf-8") as lock_file:

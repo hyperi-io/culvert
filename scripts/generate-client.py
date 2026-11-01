@@ -23,8 +23,8 @@ Without --name the client name derives from the server CN:
 
 Outputs vary by --protocol flag:
   openvpn:   6 .ovpn files (3 listeners x 2 tunnel modes)
-  wireguard: 2-4 .conf files PER DEVICE SLOT (split/full, plus the
-             HTTPS-tunnelled pair when WireGuard-over-HTTPS is enabled)
+  wireguard: 2-4 .conf files PER DEVICE SLOT in <name>/ (split/full, plus
+             the HTTPS-tunnelled pair when WireGuard-over-HTTPS is enabled)
   all:       both sets of files
 
 A client identity carries CULVERT_SHARED_CLIENT_SLOTS concurrent connections by
@@ -52,8 +52,8 @@ from lib.clients import (  # noqa: E402
     client_files,
     collides_with_proxy_stunnel,
 )
-from lib.pki import validate_client_name  # noqa: E402
-from lib.process import write_secret  # noqa: E402
+from lib.pki import client_tc_key_path, validate_client_name  # noqa: E402
+from lib.process import restore_files, snapshot_files, write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
 # ===============================================================================
@@ -75,6 +75,7 @@ class Config:
         vpn = VpnConfig.from_settings()
         self._vpn = vpn
         self.pki_dir = vpn.pki_dir
+        self.pki_mode = vpn.pki_mode
         self.output_dir = Path(os.environ.get("OUTPUT_DIR", "/etc/vpn/clients"))
         self.server_cn = vpn.server_cn
         self.client_endpoint = vpn.client_endpoint
@@ -182,8 +183,15 @@ def generate_certificate(
         capture_output=True,
     )
 
-    # Generate tls-crypt-v2 client key
+    generate_tc_client_key(client_name, pki_dir)
+    logger.info("Certificate generated successfully", client=client_name)
+
+
+def generate_tc_client_key(client_name: str, pki_dir: Path) -> None:
+    """Mint the client's tls-crypt-v2 key, wrapped by the server's tc.key."""
     logger.info("Generating tls-crypt-v2 client key...")
+    key_path = client_tc_key_path(pki_dir, client_name)
+    key_path.parent.mkdir(mode=0o700, exist_ok=True)
     subprocess.run(
         [
             "openvpn",
@@ -191,13 +199,12 @@ def generate_certificate(
             str(pki_dir / "tc.key"),
             "--genkey",
             "tls-crypt-v2-client",
-            str(pki_dir / "private" / f"{client_name}-tc.key"),
+            str(key_path),
         ],
         check=True,
         capture_output=True,
     )
-
-    logger.info("Certificate generated successfully", client=client_name)
+    key_path.chmod(0o600)
 
 
 # ===============================================================================
@@ -318,7 +325,7 @@ checkHost = {cfg.server_cn}
     # Read certificate files
     ca_cert = (cfg.pki_dir / "ca.crt").read_text()
     client_key = (cfg.pki_dir / "private" / f"{client_name}.key").read_text()
-    tc_key = (cfg.pki_dir / "private" / f"{client_name}-tc.key").read_text()
+    tc_key = client_tc_key_path(cfg.pki_dir, client_name).read_text()
 
     # Extract just the certificate (not the full chain info)
     result = subprocess.run(
@@ -338,6 +345,11 @@ checkHost = {cfg.server_cn}
 # Full Tunnel Mode - ALL traffic through VPN
 #===============================================================================
 redirect-gateway def1 bypass-dhcp
+
+# The tunnel carries IPv4 only. IPv6 is routed into it and refused there, so a
+# dual-stack network cannot carry it around the VPN.
+route-ipv6 2000::/3
+block-ipv6
 
 # WINDOWS ONLY: stops applications querying a DNS server outside the tunnel.
 # Uncomment on Windows. Leave it commented everywhere else - OpenVPN 2.7 on
@@ -471,128 +483,154 @@ def generate_wireguard_configs(
     peers_dir = wg_dir / "peers"
     peers_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate or load server keys
-    server_private, server_public = wireguard.generate_server_keys(cfg.pki_dir)
+    with wireguard.peer_lifecycle_lock(cfg.pki_dir):
+        # Generate or load server keys
+        server_private, server_public = wireguard.generate_server_keys(cfg.pki_dir)
 
-    slots = len(pubkeys) if pubkeys else cfg.shared_client_slots
-    if slots > 1:
-        logger.info(
-            "Issuing concurrent WireGuard device slots",
-            client=client_name,
-            slots=slots,
-        )
-
-    # Lowering the slot count does not retire the peers already issued above it:
-    # they keep their key and their allocation, so the server still accepts them.
-    # Reissuing must not delete a credential, so say so instead of doing it.
-    surplus = wireguard.existing_peer_ids(cfg.pki_dir, client_name)[slots:]
-    if surplus:
-        logger.warning(
-            "Client still has WireGuard peers above the configured slot count;"
-            " they remain able to connect until revoked",
-            client=client_name,
-            slots=slots,
-            surplus=", ".join(surplus),
-            revoke=f"revoke-client --protocol wireguard {client_name}",
-        )
-
-    split_allowed_ips = wireguard.split_allowed_ips(cfg.push_routes, cfg.wg_network)
-    full_allowed_ips = "0.0.0.0/0, ::/0"
-
-    # Generate client configs
-    configs_to_write: list[tuple[str, str]] = []
-
-    for slot in range(1, slots + 1):
-        peer = wireguard.peer_id(client_name, slot)
-        infix = wireguard.slot_infix(slot)
-
-        # Each slot needs its own tunnel IP: two devices sharing one address
-        # would be indistinguishable to the server's routing table.
-        client_ip = wireguard.allocate_peer_ip(cfg.pki_dir, cfg.wg_network, peer)
-        logger.info("Allocated WireGuard IP", peer=peer, ip=client_ip)
-
-        # Reuse the slot's keypair by default; mint only when it does not exist
-        # yet or rotate is requested. Regenerating it changes the server's
-        # accepted peer and silently breaks configs already issued to that slot.
-        if pubkeys:
-            client_private = None
-            client_public = pubkeys[slot - 1]
-            (peers_dir / f"{peer}.pub").write_text(client_public + "\n")
+        slots = len(pubkeys) if pubkeys else cfg.shared_client_slots
+        if slots > 1:
             logger.info(
-                "Using provided client public key (client-side key generation)",
-                peer=peer,
-            )
-        else:
-            client_private, _ = wireguard.load_or_generate_client_keys(
-                cfg.pki_dir, peer, rotate=rotate
+                "Issuing concurrent WireGuard device slots",
+                client=client_name,
+                slots=slots,
             )
 
-        # Everything the four variants share. Held in one place so a tunnel mode
-        # cannot silently drift from the others -- they differ only in the
-        # routes they claim, and the HTTPS pair in the port wstunnel listens on.
-        peer_config = {
-            "client_private_key": client_private,
-            "client_ip": client_ip,
-            "server_public_key": server_public,
-            "server_endpoint": cfg.client_endpoint,
-            "server_port": cfg.wg_port,
-            "dns_servers": cfg.dns_servers,
-            "dns_domain": cfg.dns_domain,
-            "mtu": cfg.wg_mtu,
-            "persistent_keepalive": cfg.wg_persistent_keepalive,
-        }
+        # Lowering the slot count does not retire the peers already issued above it:
+        # they keep their key and their allocation, so the server still accepts them.
+        # Reissuing must not delete a credential, so say so instead of doing it.
+        surplus = wireguard.existing_peer_ids(cfg.pki_dir, client_name)[slots:]
+        if surplus:
+            logger.warning(
+                "Client still has WireGuard peers above the configured slot count;"
+                " they remain able to connect until revoked",
+                client=client_name,
+                slots=slots,
+                surplus=", ".join(surplus),
+                revoke=f"revoke-client --protocol wireguard {client_name}",
+            )
 
-        for mode, allowed_ips in (
-            ("split", split_allowed_ips),
-            ("full", full_allowed_ips),
-        ):
-            configs_to_write.append(
-                (
-                    f"{client_name}-wg{infix}-{mode}.conf",
-                    wireguard.generate_client_config(
-                        **peer_config, allowed_ips=allowed_ips
-                    ),
+        # A failure part way, or a live interface that refuses the new peers,
+        # puts every file back: on disk the client is then exactly what the
+        # kernel still accepts.
+        touched = [cfg.wg_conf, wg_dir / "allocations.json"]
+        for slot in range(1, slots + 1):
+            peer = wireguard.peer_id(client_name, slot)
+            touched += [peers_dir / f"{peer}.key", peers_dir / f"{peer}.pub"]
+            touched += [
+                cfg.output_dir / name
+                for name in wireguard.client_config_names(
+                    client_name, slot, cfg.wg_https_tunnel_enabled
                 )
-            )
+            ]
+        saved = snapshot_files(touched)
 
-            # HTTPS-tunnelled variant (WireGuard inside WebSocket/TLS)
-            if cfg.wg_https_tunnel_enabled:
-                configs_to_write.append(
-                    (
-                        f"{client_name}-wg{infix}-https-{mode}.conf",
-                        wireguard.generate_https_tunnel_client_config(
-                            **peer_config,
-                            allowed_ips=allowed_ips,
-                            wstunnel_port=cfg.wg_https_tunnel_port,
-                            tls_server_name=cfg.server_cn,
-                        ),
+        try:
+            split_allowed_ips = wireguard.split_allowed_ips(
+                cfg.push_routes, cfg.wg_network
+            )
+            full_allowed_ips = "0.0.0.0/0, ::/0"
+
+            # Generate client configs
+            configs_to_write: list[tuple[str, str]] = []
+
+            for slot in range(1, slots + 1):
+                peer = wireguard.peer_id(client_name, slot)
+
+                # Each slot needs its own tunnel IP: two devices sharing one address
+                # would be indistinguishable to the server's routing table.
+                client_ip = wireguard.allocate_peer_ip(
+                    cfg.pki_dir, cfg.wg_network, peer
+                )
+                logger.info("Allocated WireGuard IP", peer=peer, ip=client_ip)
+
+                # Reuse the slot's keypair by default; mint only when it does not exist
+                # yet or rotate is requested. Regenerating it changes the server's
+                # accepted peer and silently breaks configs already issued to that slot.
+                if pubkeys:
+                    client_private = None
+                    client_public = pubkeys[slot - 1]
+                    (peers_dir / f"{peer}.pub").write_text(client_public + "\n")
+                    logger.info(
+                        "Using provided client public key (client-side key generation)",
+                        peer=peer,
                     )
-                )
+                else:
+                    client_private, _ = wireguard.load_or_generate_client_keys(
+                        cfg.pki_dir, peer, rotate=rotate
+                    )
 
-    # Write all config files
-    for filename, content in configs_to_write:
-        out_path = cfg.output_dir / filename
-        write_secret(out_path, content)
-        logger.info(f"Created WireGuard config: {out_path}")
+                # Everything the four variants share. Held in one place so a tunnel mode
+                # cannot silently drift from the others -- they differ only in the
+                # routes they claim, and the HTTPS pair in the port wstunnel listens on.
+                peer_config = {
+                    "client_private_key": client_private,
+                    "client_ip": client_ip,
+                    "server_public_key": server_public,
+                    "server_endpoint": cfg.client_endpoint,
+                    "server_port": cfg.wg_port,
+                    "dns_servers": cfg.dns_servers,
+                    "dns_domain": cfg.dns_domain,
+                    "mtu": cfg.wg_mtu,
+                    "persistent_keepalive": cfg.wg_persistent_keepalive,
+                }
 
-    # Regenerate the server config with the new peer, at the path the server
-    # itself uses, and push the peer list into the running interface. Written
-    # anywhere else it is a file nothing reads, and left unsynced the client
-    # cannot connect until the container restarts.
-    alloc_file = wg_dir / "allocations.json"
-    server_conf = wireguard.generate_server_config(
-        private_key=server_private,
-        network=cfg.wg_network,
-        listen_port=cfg.wg_port,
-        mtu=cfg.wg_mtu,
-        peers_dir=peers_dir,
-        alloc_file=alloc_file,
-        post_up=cfg.wg_post_up,
-        post_down=cfg.wg_post_down,
-    )
-    write_secret(cfg.wg_conf, server_conf)
-    logger.info("Regenerated WireGuard server config", path=str(cfg.wg_conf))
-    wireguard.sync_running_interface(cfg.wg_conf)
+                for mode, allowed_ips in (
+                    ("split", split_allowed_ips),
+                    ("full", full_allowed_ips),
+                ):
+                    configs_to_write.append(
+                        (
+                            wireguard.client_config_name(client_name, slot, mode),
+                            wireguard.generate_client_config(
+                                **peer_config, allowed_ips=allowed_ips
+                            ),
+                        )
+                    )
+
+                    # HTTPS-tunnelled variant (WireGuard inside WebSocket/TLS)
+                    if cfg.wg_https_tunnel_enabled:
+                        configs_to_write.append(
+                            (
+                                wireguard.client_config_name(
+                                    client_name, slot, mode, https=True
+                                ),
+                                wireguard.generate_https_tunnel_client_config(
+                                    **peer_config,
+                                    allowed_ips=allowed_ips,
+                                    wstunnel_port=cfg.wg_https_tunnel_port,
+                                    tls_server_name=cfg.server_cn,
+                                ),
+                            )
+                        )
+
+            # Write all config files
+            for filename, content in configs_to_write:
+                out_path = cfg.output_dir / filename
+                out_path.parent.mkdir(mode=0o700, exist_ok=True)
+                write_secret(out_path, content)
+                logger.info(f"Created WireGuard config: {out_path}")
+
+            # Regenerate the server config with the new peer, at the path the server
+            # itself uses, and push the peer list into the running interface. Written
+            # anywhere else it is a file nothing reads, and left unsynced the client
+            # cannot connect until the container restarts.
+            alloc_file = wg_dir / "allocations.json"
+            server_conf = wireguard.generate_server_config(
+                private_key=server_private,
+                network=cfg.wg_network,
+                listen_port=cfg.wg_port,
+                mtu=cfg.wg_mtu,
+                peers_dir=peers_dir,
+                alloc_file=alloc_file,
+                post_up=cfg.wg_post_up,
+                post_down=cfg.wg_post_down,
+            )
+            write_secret(cfg.wg_conf, server_conf)
+            logger.info("Regenerated WireGuard server config", path=str(cfg.wg_conf))
+            wireguard.sync_running_interface(cfg.wg_conf)
+        except BaseException:
+            restore_files(saved)
+            raise
 
 
 def _report_client_states(cfg: Config) -> bool:
@@ -662,13 +700,14 @@ OpenVPN output files (6 total - 3 listeners x 2 tunnel modes):
   {{name}}-https-split.ovpn - TCP {cfg.https_port} over TLS, split tunnel
   {{name}}-https-full.ovpn  - TCP {cfg.https_port} over TLS, full tunnel
 
-WireGuard output files, PER DEVICE SLOT (2-4 per slot):
-  {{name}}-wg-split.conf     - Split tunnel
-  {{name}}-wg-full.conf      - Full tunnel
-  {{name}}-wg-https-split.conf - Over HTTPS, split tunnel (if enabled)
-  {{name}}-wg-https-full.conf  - Over HTTPS, full tunnel (if enabled)
+WireGuard output files, PER DEVICE SLOT (2-4 per slot), in {{name}}/ because the
+file name is the tunnel's interface name (15 characters at most):
+  {{name}}/wg-split.conf       - Split tunnel
+  {{name}}/wg-full.conf        - Full tunnel
+  {{name}}/wg-https-split.conf - Over HTTPS, split tunnel (if enabled)
+  {{name}}/wg-https-full.conf  - Over HTTPS, full tunnel (if enabled)
 
-Slots 2+ carry the slot number ({{name}}-wg2-split.conf, ...). Each slot is an
+Slots 2+ carry the slot number ({{name}}/wg2-split.conf, ...). Each slot is an
 independent peer with its own key and tunnel IP, which is what lets one client
 identity hold {cfg.shared_client_slots} concurrent WireGuard connections.
 Set CULVERT_ALLOW_SHARED_CLIENTS=false for one exclusive connection per client.
@@ -813,6 +852,18 @@ Examples:
         )
         sys.exit(1)
 
+    if generate_wg:
+        from lib import wireguard
+
+        last_slot = len(args.pubkey) if args.pubkey else cfg.shared_client_slots
+        try:
+            wireguard.client_config_names(
+                client_name, last_slot, cfg.wg_https_tunnel_enabled
+            )
+        except ValueError as exc:
+            logger.error(f"{exc}. Issue fewer device slots.")
+            sys.exit(1)
+
     # An unset --days falls back to the configured cert lifetime, so a
     # deployment with a long CULVERT_CERT_EXPIRE_DAYS issues clients to match.
     cert_days = args.days if args.days is not None else cfg.cert_expire_days
@@ -841,19 +892,40 @@ Examples:
 
         # Handle certificate
         cert_path = cfg.pki_dir / "issued" / f"{client_name}.crt"
+        key_path = cfg.pki_dir / "private" / f"{client_name}.key"
         if args.config_only:
-            if not cert_path.exists():
+            if not cert_path.exists() or not key_path.exists():
                 logger.error(
-                    f"Config-only mode but certificate doesn't exist: {client_name}"
+                    f"Config-only mode needs {cert_path} and {key_path}:"
+                    f" {client_name} has no certificate and key to build configs from"
                 )
                 sys.exit(1)
             logger.info("Config-only mode: using existing certificate")
+            # An externally issued pair arrives without one.
+            if not client_tc_key_path(cfg.pki_dir, client_name).exists():
+                generate_tc_client_key(client_name, cfg.pki_dir)
+        elif cfg.pki_mode == "external":
+            logger.error(
+                "CULVERT_PKI_MODE=external: the CA key is not on this server, so"
+                f" generate-client cannot sign a certificate for {client_name}."
+                f" Issue it at your CA, place the certificate at {cert_path} and its"
+                f" key at {key_path}, then run generate-client --config-only"
+                f" --name {client_name}."
+            )
+            sys.exit(1)
         else:
             if cert_path.exists():
                 logger.warning(f"Client certificate already exists: {client_name}")
                 logger.error(
                     "Use revoke-client to revoke first, "
                     "or use --config-only to regenerate configs"
+                )
+                sys.exit(1)
+            # Easy-RSA in batch mode overwrites an existing key without asking.
+            if key_path.exists():
+                logger.error(
+                    f"{key_path} exists with no certificate beside it. Refusing"
+                    " to overwrite key material: remove it, or choose another --name."
                 )
                 sys.exit(1)
             generate_certificate(
@@ -908,12 +980,22 @@ Examples:
 
     # ---- WireGuard ----
     if generate_wg:
-        generate_wireguard_configs(
-            client_name=client_name,
-            cfg=cfg,
-            pubkeys=args.pubkey,
-            rotate=args.rotate,
-        )
+        from lib.wireguard import WireGuardSyncError
+
+        try:
+            generate_wireguard_configs(
+                client_name=client_name,
+                cfg=cfg,
+                pubkeys=args.pubkey,
+                rotate=args.rotate,
+            )
+        except WireGuardSyncError as exc:
+            logger.error(
+                f"WireGuard issue for {client_name} FAILED and was rolled back: {exc}."
+                " The running server still accepts the keys it had before, and the"
+                " files on disk match them."
+            )
+            sys.exit(1)
         _record_generated_protocol(cfg, client_name, "wireguard")
 
     # Copy vpn-client-setup.md to output directory
@@ -944,7 +1026,9 @@ Examples:
             logger.info("OpenVPN certificate files:")
             logger.info(f"  Certificate:  {cfg.pki_dir}/issued/{client_name}.crt")
             logger.info(f"  Private key:  {cfg.pki_dir}/private/{client_name}.key")
-            logger.info(f"  TLS key:      {cfg.pki_dir}/private/{client_name}-tc.key")
+            logger.info(
+                f"  TLS key:      {client_tc_key_path(cfg.pki_dir, client_name)}"
+            )
 
         logger.info("")
         logger.info("OpenVPN configuration files (6 total):")
@@ -976,16 +1060,10 @@ Examples:
         logger.info("")
         logger.info(f"WireGuard configuration files ({slots} device slot(s)):")
         for slot in range(1, slots + 1):
-            infix = wireguard.slot_infix(slot)
-            logger.info(f"    {cfg.output_dir}/{client_name}-wg{infix}-split.conf")
-            logger.info(f"    {cfg.output_dir}/{client_name}-wg{infix}-full.conf")
-            if cfg.wg_https_tunnel_enabled:
-                logger.info(
-                    f"    {cfg.output_dir}/{client_name}-wg{infix}-https-split.conf"
-                )
-                logger.info(
-                    f"    {cfg.output_dir}/{client_name}-wg{infix}-https-full.conf"
-                )
+            for name in wireguard.client_config_names(
+                client_name, slot, cfg.wg_https_tunnel_enabled
+            ):
+                logger.info(f"    {cfg.output_dir}/{name}")
         logger.info("")
         logger.info("WireGuard peer keys:")
         for peer in wireguard.peer_ids(client_name, slots):

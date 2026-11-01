@@ -41,6 +41,14 @@ from scalo.logger import logger
 from scalo.metrics import create_metrics
 from scalo.metrics.groups import AppMetrics
 
+# Each listener's status file, as its server template names it, with
+# `status-version 3` beside it.
+OPENVPN_STATUS_FILES = {
+    "/var/log/vpn/status.log": "udp",
+    "/var/log/vpn/status-https.log": "https",
+    "/var/log/vpn/status-tcp.log": "tcp",
+}
+
 # ---------------------------------------------------------------------------
 # Data types (used by parsers and tests)
 # ---------------------------------------------------------------------------
@@ -640,11 +648,7 @@ def _update_metrics_locked() -> None:
             if remaining is not None:
                 _gauge_set(_g_crl_expiry, remaining)
 
-        for status_file, listener_name in [
-            ("/var/log/vpn/status.log", "udp"),
-            ("/var/log/vpn/status-https.log", "https"),
-            ("/var/log/vpn/status-tcp.log", "tcp"),
-        ]:
+        for status_file, listener_name in OPENVPN_STATUS_FILES.items():
             status = collect_openvpn_status(status_file, listener_name)
             if status is not None:
                 total_clients += status.client_count

@@ -8,11 +8,15 @@
 
 """The files generate-client writes for one client in the clients directory.
 
+OpenVPN and stunnel configs sit in the clients directory as "<name>-<suffix>".
 A client name may contain "-", so one name can prefix another: "alice" and
 "alice-laptop". A "<name>-*" glob for alice also returns alice-laptop's configs,
 private keys included. Each file is matched instead on the exact suffix
 generate-client writes after "<name>-", so one client's files are never bundled
 with, or deleted alongside, another client's.
+
+WireGuard configs sit in a directory named for the client, because their file
+name is the interface name wg-quick creates, which cannot also carry the client.
 
 One filename is ambiguous by construction: "<name>-proxy-stunnel.conf" is also
 the direct stunnel config of a client named "<name>-proxy". generate-client
@@ -39,7 +43,7 @@ _OPENVPN_SUFFIX = re.compile(
 )
 
 # Slot 1 carries no number and later slots start at 2, as wireguard.slot_infix.
-_WIREGUARD_SUFFIX = re.compile(
+_WIREGUARD_CONFIG = re.compile(
     r"wg(?:[2-9]|[1-9][0-9]+)?(?:-https)?-(?:split|full)\.conf"
 )
 
@@ -72,18 +76,25 @@ def openvpn_files(output_dir: Path, client_name: str) -> list[Path]:
 
 
 def wireguard_files(output_dir: Path, client_name: str) -> list[Path]:
-    """Return the client's WireGuard configs in output_dir, for every slot.
+    """Return the client's WireGuard configs, for every slot.
 
     Args:
         output_dir: The directory generate-client writes client configs to.
         client_name: The client, already checked by validate_client_name.
 
     Returns:
-        The matching files, sorted. Empty when there are none or the
-        directory does not exist.
+        The matching files in the client's directory, sorted. Empty when there
+        are none or the directory does not exist.
 
     """
-    return _matching(output_dir, client_name, _WIREGUARD_SUFFIX)
+    client_dir = output_dir / client_name
+    if not client_dir.is_dir():
+        return []
+    return sorted(
+        path
+        for path in client_dir.iterdir()
+        if _WIREGUARD_CONFIG.fullmatch(path.name) and path.is_file()
+    )
 
 
 def client_files(output_dir: Path, client_name: str) -> list[Path]:

@@ -56,7 +56,7 @@ docker exec -it <container> generate-client --name laptop
 For OpenVPN this emits, among the set, `laptop-https-split.ovpn`,
 `laptop-https-full.ovpn`, and a matching `laptop-stunnel.conf`. For
 WireGuard (the profile runs both protocols) it also emits
-`laptop-wg-https-split.conf` and `laptop-wg-https-full.conf`.
+`laptop/wg-https-split.conf` and `laptop/wg-https-full.conf`.
 
 ## 4. Connect through the tunnel
 
@@ -73,12 +73,14 @@ sudo openvpn --config laptop-https-full.ovpn
 stunnel listens on `127.0.0.1:1195` and forwards to your server on
 `443`; the `.ovpn` connects to that local port.
 
-**WireGuard** - start the wstunnel client, then activate the `-wg-https-`
+**WireGuard** - start the wstunnel client, then activate a `wg-https-`
 config:
 
 ```bash
 wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
-# then activate laptop-wg-https-full.conf in your WireGuard client
+# a full tunnel needs the server routed outside it first (Linux shown)
+sudo ip route add <server address> via <your gateway>
+# then activate laptop/wg-https-full.conf in your WireGuard client
 ```
 
 Full platform detail (install steps, one-liners, wrapper scripts, the

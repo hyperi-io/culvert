@@ -362,6 +362,10 @@ class Config:
 
     crl_refresh_hours: int = 24
 
+    # Seconds between SIGTERM dropping readiness and the children being stopped,
+    # for load balancers to stop sending new clients. Ends early with none left.
+    drain_seconds: int = 10
+
     # Certificate lifetimes for local PKI, in days. Defaults keep the historical
     # 10-year CA / 2-year leaf. Raise them for a set-and-forget deployment that
     # has no rotation operator -- e.g. 7300 (20 years) so the server cert cannot
@@ -652,6 +656,7 @@ class Config:
             otel_protocol=s.get("otel_protocol", "grpc"),
             otel_insecure=_settings_bool(s, "otel_insecure", False),
             crl_refresh_hours=_settings_int(s, "crl_refresh_hours", 24),
+            drain_seconds=_settings_int(s, "drain_seconds", 10),
             # Certificate lifetimes (local PKI)
             ca_expire_days=_settings_int(s, "ca_expire_days", 3650),
             cert_expire_days=_settings_int(s, "cert_expire_days", 730),
@@ -909,6 +914,11 @@ class Config:
         # raised count shrinks how many clients the pool can hold. Only a count
         # above the shipped default warns: the default's cost is documented, and
         # a warning every stock deployment emits is one nobody reads.
+        if self.drain_seconds < 0:
+            errors.append(
+                f"CULVERT_DRAIN_SECONDS={self.drain_seconds} must be 0 or more"
+            )
+
         if self.shared_client_slots < 1:
             errors.append(
                 f"CULVERT_SHARED_CLIENT_SLOTS={self.shared_client_slots}"

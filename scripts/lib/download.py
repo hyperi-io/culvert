@@ -24,6 +24,7 @@ from pathlib import Path
 from scalo.logger import logger
 
 from lib.health import BaseHandler
+from lib.pki import validate_client_name
 
 # What generate-client writes for a client: OpenVPN (.ovpn), WireGuard and
 # stunnel (.conf) and the per-client bundle (.zip).
@@ -95,11 +96,20 @@ class ClientDownloadHandler(BaseHandler):
             )
             return
 
-        config_files = sorted(
+        config_files = [
             f
             for f in self.clients_dir.iterdir()
             if f.is_file() and f.suffix in SERVED_SUFFIXES
-        )
+        ]
+        # WireGuard configs sit in a directory per client.
+        for client_dir in self.clients_dir.iterdir():
+            if client_dir.is_dir() and validate_client_name(client_dir.name):
+                config_files.extend(
+                    f
+                    for f in client_dir.iterdir()
+                    if f.is_file() and f.suffix == ".conf"
+                )
+        config_files.sort()
 
         if not config_files:
             self.send_html(self._render_error("No client configs available"))
@@ -108,17 +118,19 @@ class ClientDownloadHandler(BaseHandler):
         self.send_html(self._render_file_list(config_files))
 
     def _download_client(self) -> None:
-        """Download a specific client config."""
-        filename = self.path.split("/")[-1]
+        """Download a client config, or a WireGuard config in a client's directory."""
+        filename = self.path.removeprefix("/clients/")
+        parts = filename.split("/")
 
-        # Security: prevent path traversal
-        if ".." in filename or "/" in filename:
+        # Security: prevent path traversal. Only a client name may be a directory.
+        nested_ok = len(parts) == 2 and validate_client_name(parts[0])
+        if ".." in filename or not all(parts) or (len(parts) > 1 and not nested_ok):
             self.send_error(400, "Invalid filename")
             return
 
-        file_path = self.clients_dir / filename
+        file_path = self.clients_dir.joinpath(*parts)
 
-        if not file_path.exists():
+        if not file_path.is_file():
             self.send_error(404, "Client config not found")
             return
 
@@ -137,7 +149,7 @@ class ClientDownloadHandler(BaseHandler):
             stat = f.stat()
             size_kb = stat.st_size / 1024
             mtime = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
-            name = html.escape(f.name)
+            name = html.escape(f.relative_to(self.clients_dir).as_posix())
             file_rows += f"""
             <tr>
                 <td><a href="/clients/{name}" class="download-link">{name}</a></td>

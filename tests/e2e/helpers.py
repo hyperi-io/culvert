@@ -8,6 +8,7 @@
 
 """Helper functions for E2E VPN connection tests."""
 
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -31,6 +32,10 @@ CLIENT_B_CONTAINER = "culvert-test-e2e-client-b"
 
 # The server as the client sees it, on the shared external network.
 SERVER_IP = "172.30.1.10"
+
+# The server's address on the internal network, which the client reaches only
+# through a gateway.
+SERVER_INTERNAL_IP = "172.30.0.10"
 
 # The plain VPN listeners, as (protocol, port). Blocking exactly these leaves
 # only the web ports (443 stunnel, 4443 wstunnel) reachable, which is the
@@ -226,11 +231,12 @@ def disconnect_wireguard(
     )
 
 
-def connect_wireguard_https_tunnel(config_name: str) -> None:
+def connect_wireguard_https_tunnel(config_name: str, server: str = "") -> None:
     """Start wstunnel client + WireGuard for WireGuard-over-HTTPS mode.
 
     The HTTPS-tunnel client config points Endpoint at 127.0.0.1:51820 (local wstunnel).
-    wstunnel client tunnels that UDP over WebSocket/TLS to the server.
+    wstunnel client tunnels that UDP over WebSocket/TLS to the server. A given
+    server address replaces the endpoint the config dials.
     """
     src = f"/etc/vpn/clients/{config_name}"
     # Copy config, strip DNS line
@@ -239,16 +245,19 @@ def connect_wireguard_https_tunnel(config_name: str) -> None:
         f"mkdir -p /etc/wireguard && sed '/^DNS/d' {src} > /etc/wireguard/wg0.conf",
     )
 
-    # Start wstunnel client (tunnels local UDP 51820 to server wstunnel on 4443)
-    # --tls-verify-certificate=false because server uses self-signed cert
-    # Use setsid to properly daemonise inside docker exec
-    # wstunnel 10.x: --tls-verify-certificate is opt-in; omit it to skip verification
+    # Run the wstunnel command the config itself documents. Certificate
+    # verification is dropped because the e2e server's certificate is
+    # self-signed. setsid daemonises it inside docker exec.
+    documented = docker_exec(
+        CLIENT_CONTAINER, f"sed -n 's/^#   \\(wstunnel client .*\\)$/\\1/p' {src}"
+    ).stdout.strip()
+    assert documented, f"{config_name} documents no wstunnel command"
+    command = documented.replace(" --tls-verify-certificate", "")
+    if server:
+        command = re.sub(r"wss://[^:]+:", f"wss://{server}:", command)
     docker_exec(
         CLIENT_CONTAINER,
-        "setsid wstunnel client"
-        " -L udp://127.0.0.1:51820:127.0.0.1:51820"
-        " wss://172.30.1.10:4443"
-        " </dev/null >/dev/null 2>&1 &",
+        f"setsid {command} </dev/null >/tmp/wstunnel.log 2>&1 &",
     )
     time.sleep(2)
 

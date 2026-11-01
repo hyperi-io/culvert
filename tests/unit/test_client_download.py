@@ -134,9 +134,13 @@ class TestClientDownloadHandler:
         (clients / "user2-udp.ovpn").write_text(
             "client\nremote vpn.example.com 1194 udp\n"
         )
-        (clients / "user1-wg-split.conf").write_text(
+        (clients / "user1").mkdir()
+        (clients / "user1" / "wg-split.conf").write_text(
             "[Interface]\nAddress = 10.9.0.2\n"
         )
+        # Not a client name, so nothing under it is served.
+        (clients / "not.a.client").mkdir()
+        (clients / "not.a.client" / "wg-split.conf").write_text("[Interface]\n")
         (clients / "user1.zip").write_bytes(b"PK\x03\x04zip")
         (clients / "vpn-client-setup.md").write_text("# not a client config\n")
         (clients / 'x"><b>.conf').write_text("[Interface]\n")
@@ -208,9 +212,10 @@ class TestClientDownloadHandler:
         body = conn.getresponse().read().decode()
         conn.close()
 
-        assert "user1-wg-split.conf" in body
+        assert "user1/wg-split.conf" in body
         assert "user1.zip" in body
         assert "vpn-client-setup.md" not in body
+        assert "not.a.client" not in body
 
     def test_listing_escapes_file_names(self, test_server):
         conn = http.client.HTTPConnection("127.0.0.1", test_server)
@@ -224,10 +229,13 @@ class TestClientDownloadHandler:
     @pytest.mark.parametrize(
         ("name", "status", "content"),
         [
-            ("user1-wg-split.conf", 200, b"[Interface]\nAddress = 10.9.0.2\n"),
+            ("user1/wg-split.conf", 200, b"[Interface]\nAddress = 10.9.0.2\n"),
             ("user1.zip", 200, b"PK\x03\x04zip"),
             ("vpn-client-setup.md", 404, None),
-            ("missing-wg-full.conf", 404, None),
+            ("missing/wg-full.conf", 404, None),
+            ("not.a.client/wg-split.conf", 400, None),
+            ("user1/extra/wg-split.conf", 400, None),
+            ("user1//wg-split.conf", 400, None),
         ],
     )
     def test_download_wireguard_conf_and_zip(self, test_server, name, status, content):
@@ -240,7 +248,8 @@ class TestClientDownloadHandler:
         assert response.status == status
         if content is not None:
             assert body == content
-            assert name in (response.getheader("Content-Disposition") or "")
+            disposition = response.getheader("Content-Disposition") or ""
+            assert name.rsplit("/", 1)[-1] in disposition
 
     def test_download_nonexistent_file(self, test_server):
         """GET /clients/nonexistent.ovpn returns 404."""

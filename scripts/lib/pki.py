@@ -19,7 +19,9 @@ import os
 import random
 import re
 import shlex
+import subprocess
 import sys
+import tempfile
 import time as _time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,27 +50,83 @@ def validate_client_name(name: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9_-]+$", name))
 
 
-# ---------------------------------------------------------------------------
-# PEM validation
-# ---------------------------------------------------------------------------
+def client_tc_key_path(pki_dir: Path, client_name: str) -> Path:
+    """Return where a client's tls-crypt-v2 key lives.
 
-
-def _validate_pem(data: bytes, name: str) -> bool:
-    """Check that data contains a PEM block.
-
-    Anywhere in the file, not only at the start: Easy-RSA and `openssl x509`
-    write a human-readable dump of the certificate above the BEGIN line, and
-    OpenVPN reads such a file quite happily. Requiring the header first rejected
-    the output of the CA culvert itself ships with.
-
-    Non-fragile: logs a warning on failure but never crashes.
+    Outside Easy-RSA's private/ directory, so it can never be another client's
+    private key: "<alice>-tc.key" there was also the key of a client "alice-tc".
     """
-    if b"-----BEGIN " in data:
-        return True
-    logger.error(
-        f"Fetched content for '{name}' is not valid PEM (starts with: {data[:40]!r})"
+    return Path(pki_dir) / "tls-crypt-v2" / f"{client_name}.key"
+
+
+# ---------------------------------------------------------------------------
+# PKI material validation
+# ---------------------------------------------------------------------------
+
+TC_SERVER_KEY_BEGIN = b"-----BEGIN OpenVPN tls-crypt-v2 server key-----"
+TC_SERVER_KEY_END = b"-----END OpenVPN tls-crypt-v2 server key-----"
+
+
+def _openssl(args: list[str], data: bytes) -> subprocess.CompletedProcess:
+    """Run openssl on data from stdin, so key material never touches a file."""
+    return subprocess.run(
+        ["openssl", *args], input=data, capture_output=True, check=False
     )
-    return False
+
+
+def crl_problem(crl: bytes, ca_file: Path) -> str | None:
+    """Return why crl cannot be used with the CA in ca_file, or None."""
+    # OpenSSL before 3.2 exits 0 on a bad signature and says so only on stderr.
+    checked = _openssl(["crl", "-noout", "-CAfile", str(ca_file)], crl)
+    if checked.returncode != 0 or b"verify OK" not in checked.stderr:
+        return "the CRL is not a CRL signed by the CA"
+    return None
+
+
+def pki_set_problems(
+    ca: bytes,
+    cert: bytes,
+    key: bytes,
+    crl: bytes | None = None,
+    tc_key: bytes | None = None,
+) -> list[str]:
+    """Return what stops this material serving as one server's PKI, empty if none.
+
+    Each file parsing is not enough: a key from another server, or a certificate
+    from another CA, passes that and fails every client handshake. The server
+    certificate is also checked for expiry, by the chain verification.
+    """
+    problems = []
+    if _openssl(["x509", "-noout"], ca).returncode != 0:
+        return ["the CA certificate is not an X.509 certificate"]
+
+    cert_public = _openssl(["x509", "-noout", "-pubkey"], cert)
+    key_public = _openssl(["pkey", "-pubout"], key)
+    if cert_public.returncode != 0:
+        problems.append("the server certificate is not an X.509 certificate")
+    if key_public.returncode != 0:
+        problems.append("the server private key is not a private key")
+    elif cert_public.returncode == 0 and cert_public.stdout != key_public.stdout:
+        problems.append("the server private key does not match the server certificate")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ca_file = Path(tmp) / "ca.crt"
+        ca_file.write_bytes(ca)
+        if cert_public.returncode == 0:
+            verify = _openssl(["verify", "-CAfile", str(ca_file)], cert)
+            if verify.returncode != 0:
+                detail = verify.stderr.decode("utf-8", "replace").strip()
+                problems.append(f"the server certificate does not verify: {detail}")
+        if crl is not None and (problem := crl_problem(crl, ca_file)):
+            problems.append(problem)
+
+    if tc_key is not None and not (
+        TC_SERVER_KEY_BEGIN in tc_key and TC_SERVER_KEY_END in tc_key
+    ):
+        problems.append(
+            "the tls-crypt-v2 key is not an OpenVPN tls-crypt-v2 server key"
+        )
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -117,32 +175,13 @@ def create_manager(cfg):
 # ---------------------------------------------------------------------------
 
 
-def _fetch_one(
-    manager,
-    provider_name: str,
-    secret_ref: str,
-    dest: Path,
-    perms: int,
-    name: str,
-) -> bool:
-    """Fetch a single secret and write to disk if valid PEM.
-
-    Returns True if the file was successfully written.
-    Does not overwrite existing local file if fetched content is invalid.
-    """
+def _fetch_one(manager, provider_name: str, secret_ref: str, name: str) -> bytes | None:
+    """Fetch one secret's bytes, or None when the provider cannot supply it."""
     try:
-        result = manager.get_sync(secret_ref, provider=provider_name)
-        data = result.data
-        if not _validate_pem(data, name):
-            logger.warning(f"Skipping {name} - invalid PEM from '{secret_ref}'")
-            return False
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        write_file_atomic(dest, data, perms)
-        logger.info(f"  {name}: written to {dest}")
-        return True
+        return manager.get_sync(secret_ref, provider=provider_name).data
     except Exception as e:
         logger.warning(f"Failed to fetch {name} from '{secret_ref}': {e}")
-        return False
+        return None
 
 
 def _health_check_with_retry(manager, provider_name: str, retries: int = 3) -> bool:
@@ -177,76 +216,80 @@ def fetch_external_pki(cfg) -> bool:
             logger.warning(f"Provider '{provider_name}' is unreachable")
             return False
 
-        # Fetch required certs
-        required_ok = all(
-            [
-                _fetch_one(
-                    manager,
-                    provider_name,
-                    cfg.secrets_ca_cert_path,
-                    cfg.pki_dir / "ca.crt",
-                    0o644,
-                    "CA certificate",
-                ),
-                _fetch_one(
-                    manager,
-                    provider_name,
-                    cfg.secrets_server_cert_path,
-                    cfg.pki_dir / "issued" / "server.crt",
-                    0o644,
-                    "server certificate",
-                ),
-                _fetch_one(
-                    manager,
-                    provider_name,
-                    cfg.secrets_server_key_path,
-                    cfg.pki_dir / "private" / "server.key",
-                    0o600,
-                    "server private key",
-                ),
-            ]
-        )
-
-        # CRL is optional
-        if cfg.secrets_crl_path:
-            _fetch_one(
-                manager,
-                provider_name,
-                cfg.secrets_crl_path,
-                cfg.pki_dir / "crl.pem",
+        wanted = {
+            "CA certificate": (cfg.secrets_ca_cert_path, "ca.crt", 0o644),
+            "server certificate": (
+                cfg.secrets_server_cert_path,
+                "issued/server.crt",
                 0o644,
-                "CRL",
-            )
+            ),
+            "server private key": (
+                cfg.secrets_server_key_path,
+                "private/server.key",
+                0o600,
+            ),
+        }
+        if cfg.secrets_crl_path:
+            wanted["CRL"] = (cfg.secrets_crl_path, "crl.pem", 0o644)
         else:
             logger.info("  CRL: not configured (optional)")
-
         # The tls-crypt-v2 server key. Optional, and minted locally when the
         # provider does not carry one - but then every server has a different
         # key, and a client config only works against the server that issued it.
         # Supply it here to run more than one server behind one address.
         if cfg.secrets_tc_key_path:
-            # Required once configured. Asking for a shared key and silently
-            # getting a locally minted one is worse than not asking: the install
-            # comes up healthy and rejects clients at random, which is the exact
-            # failure the setting exists to prevent.
-            if not _fetch_one(
-                manager,
-                provider_name,
+            wanted["tls-crypt-v2 server key"] = (
                 cfg.secrets_tc_key_path,
-                cfg.pki_dir / "tc.key",
+                "tc.key",
                 0o600,
-                "tls-crypt-v2 server key",
-            ):
-                logger.error(
-                    "CULVERT_SECRETS_TC_KEY_PATH is set but the key could not be"
-                    f" fetched from '{cfg.secrets_tc_key_path}'. Refusing to mint"
-                    " a local one - siblings would reject each other's clients."
-                )
-                required_ok = False
+            )
         else:
             logger.info("  tls-crypt-v2 key: not configured (minted locally)")
 
-        return required_ok
+        fetched = {
+            name: _fetch_one(manager, provider_name, ref, name)
+            for name, (ref, _, _) in wanted.items()
+        }
+        # Required once configured, the shared tls-crypt-v2 key included. Asking
+        # for a shared key and silently getting a locally minted one is worse
+        # than not asking: the install comes up healthy and rejects clients at
+        # random, which is the exact failure the setting exists to prevent.
+        missing = [
+            name for name, data in fetched.items() if data is None and name != "CRL"
+        ]
+        if missing:
+            logger.error(
+                f"Not writing any fetched PKI material: missing {', '.join(missing)}"
+            )
+            return False
+        if "CRL" in fetched and fetched["CRL"] is None:
+            logger.warning("CRL could not be fetched, keeping the one on disk")
+        material = {name: data for name, data in fetched.items() if data is not None}
+
+        problems = pki_set_problems(
+            material["CA certificate"],
+            material["server certificate"],
+            material["server private key"],
+            crl=material.get("CRL"),
+            tc_key=material.get("tls-crypt-v2 server key"),
+        )
+        if problems:
+            for problem in problems:
+                logger.error(f"Fetched PKI rejected: {problem}")
+            logger.error(
+                "Not writing any fetched PKI material, keeping what is on disk"
+            )
+            return False
+
+        # Only a set that passed together is written, so the files on disk are
+        # never one server's certificate beside another's key.
+        for name, data in material.items():
+            _, relative, perms = wanted[name]
+            dest = cfg.pki_dir / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            write_file_atomic(dest, data, perms)
+            logger.info(f"  {name}: written to {dest}")
+        return True
     finally:
         try:
             # close() is async - run the coroutine or aiohttp sessions leak
@@ -299,11 +342,19 @@ def init_pki(cfg) -> None:
             )
             sys.exit(1)
 
-        # Mint a tls-crypt-v2 key only if the provider did not supply one. A
-        # locally minted key is fine for a single server and wrong for several:
-        # a client's key derives from it, so siblings reject each other's clients.
+        # Mint a tls-crypt-v2 key only when none is configured. A locally minted
+        # key is fine for a single server and wrong for several: a client's key
+        # derives from it, so siblings reject each other's clients.
         tc_key = cfg.pki_dir / "tc.key"
         if not tc_key.exists():
+            if cfg.secrets_tc_key_path:
+                logger.error(
+                    "CULVERT_SECRETS_TC_KEY_PATH is set, but the shared"
+                    f" tls-crypt-v2 key could not be fetched from"
+                    f" '{cfg.secrets_tc_key_path}' and none is cached. Refusing to"
+                    " mint a local one - siblings would reject each other's clients."
+                )
+                sys.exit(1)
             generate_tc_key(cfg.pki_dir)
         return
 
@@ -444,6 +495,21 @@ def crl_seconds_until_expiry(pki_dir) -> float | None:
     return None
 
 
+def revoked_serials(pki_dir) -> frozenset[str]:
+    """Return the serial numbers the CRL revokes, empty with no readable CRL."""
+    crl_path = Path(pki_dir) / "crl.pem"
+    if not crl_path.exists():
+        return frozenset()
+    result = run(
+        ["openssl", "crl", "-in", str(crl_path), "-noout", "-text"],
+        check=False,
+        capture=True,
+    )
+    if result.returncode != 0:
+        return frozenset()
+    return frozenset(re.findall(r"Serial Number: ([0-9A-Fa-f]+)", result.stdout))
+
+
 def log_crl_expiry(cfg) -> float | None:
     """Log how much CRL life is left, at a severity that matches the margin."""
     remaining = crl_seconds_until_expiry(cfg.pki_dir)
@@ -512,14 +578,15 @@ def refetch_external_crl(cfg) -> bool:
                 " CRL already on disk"
             )
             return False
-        return _fetch_one(
-            manager,
-            cfg.secrets_provider,
-            cfg.secrets_crl_path,
-            cfg.pki_dir / "crl.pem",
-            0o644,
-            "CRL",
-        )
+        crl = _fetch_one(manager, cfg.secrets_provider, cfg.secrets_crl_path, "CRL")
+        if crl is None:
+            return False
+        # A CRL the running CA did not sign makes OpenVPN refuse every client.
+        if problem := crl_problem(crl, cfg.pki_dir / "ca.crt"):
+            logger.error(f"Fetched CRL rejected, keeping the one on disk: {problem}")
+            return False
+        write_file_atomic(cfg.pki_dir / "crl.pem", crl, 0o644)
+        return True
     finally:
         try:
             import asyncio
@@ -568,11 +635,15 @@ def start_crl_refresh(cfg, proc_manager, interval_hours: float = 24) -> None:
                 break
             logger.info("Refreshing CRL...")
             try:
+                before = revoked_serials(cfg.pki_dir)
                 if refresh(cfg):
                     logger.info("CRL refreshed successfully")
-                    # OpenVPN reads the CRL at startup, so a new file changes
-                    # nothing until the server re-reads it.
-                    proc_manager._reload_handler(None, None)
+                    # OpenVPN re-reads the CRL per handshake, so a reload only
+                    # ends a newly revoked session early, and drops all others.
+                    newly = revoked_serials(cfg.pki_dir) - before
+                    if newly:
+                        logger.info("CRL revokes new certificates", count=len(newly))
+                        proc_manager._reload_handler(None, None)
                 else:
                     logger.warning(
                         "CRL was not updated this cycle - the CRL on disk is"

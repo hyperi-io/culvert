@@ -14,12 +14,15 @@ stand-in, because neither Easy-RSA nor a WireGuard interface is on a CI runner.
 """
 
 import importlib.util
+import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from lib.pki import client_tc_key_path
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 SERVER_CN = "vpn.example.test"
@@ -81,7 +84,9 @@ def stack(tmp_path, issue_cert, easyrsa, clean_env, monkeypatch):
         client = issue_cert(name, issuer=ca)
         (pki / "issued" / f"{name}.crt").write_bytes(client.cert_pem)
         (pki / "private" / f"{name}.key").write_bytes(client.key_pem)
-        (pki / "private" / f"{name}-tc.key").write_text(TC_KEY, encoding="utf-8")
+        tc_key = client_tc_key_path(pki, name)
+        tc_key.parent.mkdir(exist_ok=True)
+        tc_key.write_text(TC_KEY, encoding="utf-8")
 
     def run(module, prog: str, *args: str) -> None:
         monkeypatch.setattr(sys, "argv", [prog, *args])
@@ -91,10 +96,15 @@ def stack(tmp_path, issue_cert, easyrsa, clean_env, monkeypatch):
         """Let generate-client issue a "-proxy" name, as it did before refusing it."""
         monkeypatch.setattr(generate, "collides_with_proxy_stunnel", lambda name: False)
 
+    monkeypatch.setattr(revoke, "PKI_DIR", pki)
+    monkeypatch.setattr(revoke, "OUTPUT_DIR", clients)
+
     return SimpleNamespace(
         pki=pki,
         clients=clients,
         wg_conf=wg_conf,
+        generate_module=generate,
+        revoke_module=revoke,
         issue=issue,
         predate_proxy_refusal=predate_proxy_refusal,
         generate=lambda *args: run(generate, "generate-client", *args),
@@ -131,11 +141,11 @@ class TestRevokeRemovesEverything:
 
         stack.revoke("--protocol", "wireguard", "alice")
 
-        assert not any(name.startswith("alice-wg") for name in _volume(stack))
+        assert "alice" not in _volume(stack)
         with zipfile.ZipFile(stack.clients / "alice.zip") as zf:
             names = zf.namelist()
         assert "alice-udp-split.ovpn" in names
-        assert not any(name.startswith("alice-wg") for name in names)
+        assert not any(name.startswith("wg") for name in names)
 
     def test_openvpn_revocation_rebuilds_the_zip_without_its_configs(self, stack):
         _issue_both_protocols(stack, "alice", ALICE_KEY)
@@ -146,8 +156,8 @@ class TestRevokeRemovesEverything:
         assert not any(name.endswith((".ovpn", "stunnel.conf")) for name in remaining)
         with zipfile.ZipFile(stack.clients / "alice.zip") as zf:
             assert sorted(zf.namelist()) == [
-                "alice-wg-full.conf",
-                "alice-wg-split.conf",
+                "wg-full.conf",
+                "wg-split.conf",
             ]
 
 
@@ -180,3 +190,168 @@ class TestSharedStunnelName:
 
         assert "alice-proxy-stunnel.conf" in _volume(stack)
         assert "alice-proxy.zip" not in _volume(stack)
+
+
+class TestTlsCryptKeyNames:
+    """A client's tls-crypt-v2 key never shares a path with another client's key.
+
+    The tls-crypt-v2 key of "alice" and the private key of "alice-tc" used to be
+    one file, so revoking one client deleted the other's key material.
+    """
+
+    def test_revoking_alice_tc_leaves_alice_able_to_reissue(self, stack):
+        stack.issue("alice")
+        stack.issue("alice-tc")
+        stack.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+        before = (stack.clients / "alice-udp-split.ovpn").read_text(encoding="utf-8")
+
+        stack.revoke("--protocol", "openvpn", "alice-tc")
+        stack.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+
+        after = (stack.clients / "alice-udp-split.ovpn").read_text(encoding="utf-8")
+        assert after.split("<tls-crypt-v2>")[1] == before.split("<tls-crypt-v2>")[1]
+        assert after.split("<key>")[1] == before.split("<key>")[1]
+
+    def test_a_stray_private_key_is_never_overwritten(self, stack):
+        """A key with no certificate is someone's material, not a free name."""
+        stray = stack.pki / "private" / "bob.key"
+        stray.write_text("not bob's to lose\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc:
+            stack.generate("--protocol", "openvpn", "--name", "bob")
+
+        assert exc.value.code == 1
+        assert stray.read_text(encoding="utf-8") == "not bob's to lose\n"
+
+
+class TestRevokeDuringReissue:
+    """A WireGuard revoke that lands while the same client is reissued stays revoked.
+
+    The reissue snapshots the peer into the server config it is about to write.
+    If the revoke can run to completion inside that window, the reissue then
+    writes the revoked key back into wg0.conf and the next start re-admits it.
+    """
+
+    def test_the_revoked_key_does_not_return_to_wg0(self, stack, monkeypatch):
+        import fcntl
+        import threading
+
+        from lib import wireguard
+
+        stack.generate(
+            "--protocol", "wireguard", "--name", "alice", "--pubkey", ALICE_KEY
+        )
+        assert ALICE_KEY in stack.wg_conf.read_text(encoding="utf-8")
+
+        # Records when the revoke has to wait for a lock rather than racing on.
+        revoke_waiting = threading.Event()
+        real_flock = fcntl.flock
+
+        def flock(fd, operation):
+            if operation == fcntl.LOCK_EX:
+                try:
+                    real_flock(fd, operation | fcntl.LOCK_NB)
+                    return
+                except BlockingIOError:
+                    revoke_waiting.set()
+            real_flock(fd, operation)
+
+        monkeypatch.setattr(fcntl, "flock", flock)
+
+        revoked = threading.Event()
+        errors: list[BaseException] = []
+
+        def revoke_alice() -> None:
+            try:
+                stack.revoke_module.revoke_wireguard_client("alice")
+            except BaseException as exc:  # surfaced on the main thread below
+                errors.append(exc)
+            finally:
+                revoked.set()
+
+        revoker = threading.Thread(target=revoke_alice)
+        real_server_config = wireguard.generate_server_config
+
+        def server_config_then_revoke(**kwargs):
+            conf = real_server_config(**kwargs)
+            if threading.current_thread() is threading.main_thread():
+                revoker.start()
+                # Polls to a 10 s backstop for whichever comes first.
+                for _ in range(1000):
+                    if revoked.wait(0.01) or revoke_waiting.is_set():
+                        break
+                assert revoked.is_set() or revoke_waiting.is_set(), (
+                    "the revoke neither finished nor waited on a lock"
+                )
+            return conf
+
+        monkeypatch.setattr(
+            wireguard, "generate_server_config", server_config_then_revoke
+        )
+
+        cfg = stack.generate_module.Config()
+        stack.generate_module.generate_wireguard_configs(
+            "alice", cfg, pubkeys=[ALICE_KEY]
+        )
+        revoker.join(timeout=30)
+
+        assert not revoker.is_alive(), "the revoke never completed"
+        assert not errors, errors
+        assert ALICE_KEY not in stack.wg_conf.read_text(encoding="utf-8")
+        assert not (stack.pki / "wireguard" / "peers" / "alice.pub").exists()
+
+
+@pytest.fixture
+def external(stack, monkeypatch):
+    """The stack on external PKI: the CA key is held upstream, not here."""
+    monkeypatch.setenv("CULVERT_PKI_MODE", "external")
+    monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "file")
+    for name in ("CA_CERT", "SERVER_CERT", "SERVER_KEY"):
+        monkeypatch.setenv(f"CULVERT_SECRETS_{name}_PATH", f"/mnt/pki/{name.lower()}")
+    return stack
+
+
+class TestExternalPki:
+    """Easy-RSA cannot sign or revoke without the CA key, which external PKI lacks."""
+
+    def test_issuing_a_certificate_is_refused_with_the_way_through(self, external):
+        with pytest.raises(SystemExit) as exc:
+            external.generate("--protocol", "openvpn", "--name", "alice")
+
+        assert exc.value.code == 1
+        assert not (external.pki / "issued" / "alice.crt").exists()
+        assert not (external.pki / "private" / "alice.key").exists()
+
+    @pytest.mark.skipif(shutil.which("openvpn") is None, reason="needs openvpn")
+    def test_an_externally_issued_certificate_gets_configs(self, external):
+        """The operator places the CA-signed pair, and generate-client does the rest."""
+        subprocess.run(
+            [
+                "openvpn",
+                "--genkey",
+                "tls-crypt-v2-server",
+                str(external.pki / "tc.key"),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        external.issue("alice")
+        client_tc_key_path(external.pki, "alice").unlink()
+
+        external.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+
+        config = (external.clients / "alice-udp-split.ovpn").read_text(encoding="utf-8")
+        assert "BEGIN OpenVPN tls-crypt-v2 client key" in config
+
+    def test_revoking_a_certificate_is_refused_and_changes_nothing(self, external):
+        external.issue("alice")
+        external.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+        before = _volume(external)
+
+        with pytest.raises(SystemExit) as exc:
+            external.revoke("alice")
+
+        assert exc.value.code == 1
+        assert (external.pki / "issued" / "alice.crt").exists()
+        assert (external.pki / "private" / "alice.key").exists()
+        assert _volume(external) == before
