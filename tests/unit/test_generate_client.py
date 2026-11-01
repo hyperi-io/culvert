@@ -540,6 +540,15 @@ class TestWireGuardClientSideKeys:
         assert "Endpoint = 127.0.0.1:51820" in tunnelled
         assert f"wss://{SERVER_CN}:4443" in tunnelled
 
+    def test_the_bundle_carries_the_full_tunnel_host_route(self, run, monkeypatch):
+        """The client's gateway is unknowable here, so the config names the command."""
+        monkeypatch.setenv("CULVERT_WG_HTTPS_TUNNEL_ENABLED", "true")
+        out = run("--protocol", "wireguard", "--name", CLIENT, "--pubkey", PUBKEY_1)
+        with zipfile.ZipFile(out / f"{CLIENT}.zip") as zf:
+            full = zf.read("wg-https-full.conf").decode()
+        route = f"sudo ip route add <address of {SERVER_CN}> via <gateway>"
+        assert f"#   Linux:   {route}\n" in full
+
 
 # Stand-ins for wg and wg-quick against a server whose interface is up. Keys are
 # real-shaped base64, and FAKE_WG_SYNC_FAIL makes the live sync refuse.
