@@ -587,6 +587,48 @@ class TestCrlRefresh:
         assert manager.reloaded.wait(timeout=30), "the refreshed CRL was not reloaded"
         assert (pki / "crl.pem").read_bytes() == (src / "crl.pem").read_bytes()
 
+    def test_a_refresh_that_revokes_nothing_new_does_not_reload(
+        self, crl_env, material, write_crl
+    ):
+        """A reload restarts every listener and drops every connected client.
+
+        OpenVPN re-reads the CRL on each handshake, so a CRL whose only change is
+        a later nextUpdate needs nothing from the running server.
+        """
+        from lib.pki import start_crl_refresh
+
+        cfg, pki, src = crl_env
+        next_update = datetime.now(UTC) + timedelta(days=30)
+        write_crl(pki / "crl.pem", next_update, issuer=material.ca, revoked=[4242])
+        later = next_update + timedelta(days=30)
+        write_crl(src / "crl.pem", later, issuer=material.ca, revoked=[4242])
+        refreshed = (src / "crl.pem").read_bytes()
+
+        class TwoChecks:
+            """Stands in for ProcessManager: stops the loop at its second check."""
+
+            def __init__(self):
+                self.checks = 0
+                self.second_check = threading.Event()
+                self.reloads = 0
+
+            @property
+            def shutdown_requested(self):
+                self.checks += 1
+                if self.checks >= 2:
+                    self.second_check.set()
+                return self.checks >= 2
+
+            def _reload_handler(self, signum, frame):
+                self.reloads += 1
+
+        manager = TwoChecks()
+        start_crl_refresh(cfg, manager, interval_hours=0.0003)
+
+        assert manager.second_check.wait(timeout=30), "the refresh loop never cycled"
+        assert (pki / "crl.pem").read_bytes() == refreshed
+        assert manager.reloads == 0
+
 
 class TestRegenerateLocalCrl:
     """Every regeneration carries the configured lifetime and stays readable.

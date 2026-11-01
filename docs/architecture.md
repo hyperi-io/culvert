@@ -81,7 +81,7 @@ unreachable, on cached certificates, with a warning.
 
 Three things here are not guessable from the code's shape:
 
-- **`easyrsa init-pki` is never called.** All it creates is three directories,
+- `easyrsa init-pki` is never called. All it creates is three directories,
   and it insists on removing the PKI directory first, unconditionally on 3.2.x
   with no opt-out. The directory is a volume mount, so the removal fails
   outright, and where it could succeed it would take the CA and every
@@ -90,16 +90,18 @@ Three things here are not guessable from the code's shape:
   Culvert creates the directories itself, and `build-ca` still refuses to
   overwrite an existing CA, so a half-built PKI fails loudly instead of being
   replaced.
-- **The `tls-crypt-v2` server key is minted locally only when no provider
-  supplies one.** A client's key derives from it, so two servers with
+- The `tls-crypt-v2` server key is minted locally only when no provider
+  supplies one. A client's key derives from it, so two servers with
   different keys reject each other's clients. Once
   `CULVERT_SECRETS_TC_KEY_PATH` is set, a failed fetch is fatal rather than a
   fall back to minting, because an install that comes up healthy and rejects
   clients at random is worse than one that refuses to start.
-- **CRL refresh differs by mode and cannot be shared.** Local PKI regenerates
+- CRL refresh differs by mode and cannot be shared. Local PKI regenerates
   from its own CA. External PKI has no CA key present, so the only way to pick
-  up a revocation is to re-fetch. OpenVPN reads the CRL at startup, so a new
-  file on disk changes nothing until the server is told to re-read it.
+  up a revocation is to re-fetch. OpenVPN re-reads the CRL on every handshake,
+  so a new file needs no reload. The server reloads only when the new CRL
+  revokes a certificate the old one did not, to end that session before it
+  renegotiates, and that reload drops every connected client.
 
 A CRL that reaches its `nextUpdate` makes OpenVPN refuse every client,
 including valid ones. The refresher therefore reports remaining life on every

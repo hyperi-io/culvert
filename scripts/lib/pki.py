@@ -493,6 +493,21 @@ def crl_seconds_until_expiry(pki_dir) -> float | None:
     return None
 
 
+def revoked_serials(pki_dir) -> frozenset[str]:
+    """Serial numbers the CRL revokes, empty when there is no readable CRL."""
+    crl_path = Path(pki_dir) / "crl.pem"
+    if not crl_path.exists():
+        return frozenset()
+    result = run(
+        ["openssl", "crl", "-in", str(crl_path), "-noout", "-text"],
+        check=False,
+        capture=True,
+    )
+    if result.returncode != 0:
+        return frozenset()
+    return frozenset(re.findall(r"Serial Number: ([0-9A-Fa-f]+)", result.stdout))
+
+
 def log_crl_expiry(cfg) -> float | None:
     """Log how much CRL life is left, at a severity that matches the margin."""
     remaining = crl_seconds_until_expiry(cfg.pki_dir)
@@ -618,11 +633,15 @@ def start_crl_refresh(cfg, proc_manager, interval_hours: float = 24) -> None:
                 break
             logger.info("Refreshing CRL...")
             try:
+                before = revoked_serials(cfg.pki_dir)
                 if refresh(cfg):
                     logger.info("CRL refreshed successfully")
-                    # OpenVPN reads the CRL at startup, so a new file changes
-                    # nothing until the server re-reads it.
-                    proc_manager._reload_handler(None, None)
+                    # OpenVPN re-reads the CRL per handshake, so a reload only
+                    # ends a newly revoked session early, and drops all others.
+                    newly = revoked_serials(cfg.pki_dir) - before
+                    if newly:
+                        logger.info("CRL revokes new certificates", count=len(newly))
+                        proc_manager._reload_handler(None, None)
                 else:
                     logger.warning(
                         "CRL was not updated this cycle - the CRL on disk is"
