@@ -418,6 +418,23 @@ Examples:
         )
         sys.exit(1)
 
+    cert_path = PKI_DIR / "issued" / f"{args.client_name}.crt"
+    if (
+        vpn_cfg.pki_mode == "external"
+        and args.protocol in ("openvpn", "all")
+        and cert_path.exists()
+    ):
+        # Refused before anything is touched: ending the session first would only
+        # let the client straight back in on a CRL that does not revoke it yet.
+        logger.error(
+            "CULVERT_PKI_MODE=external: the CA key is not on this server, so"
+            f" revoke-client cannot revoke {args.client_name}'s certificate. Revoke it"
+            " at your CA: the CRL refresh from CULVERT_SECRETS_CRL_PATH picks it up"
+            " and ends the session. Use --protocol wireguard to remove only the"
+            " WireGuard peer."
+        )
+        sys.exit(1)
+
     try:
         if args.protocol == "all":
             ovpn_revoked = revoke_client(

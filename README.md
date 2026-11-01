@@ -212,6 +212,12 @@ culvert supports three external PKI backends via
 Local PKI mode (self-generated Easy-RSA CA) is the default for quick
 starts and dev environments.
 
+External PKI keeps the CA key at your CA, so culvert neither signs nor revokes
+OpenVPN client certificates. Issue one there, place it at `pki/issued/<name>.crt`
+and `pki/private/<name>.key`, and run `generate-client --config-only --name
+<name>`. Revoke at the CA too: the refresh from `CULVERT_SECRETS_CRL_PATH` ends
+the session. WireGuard peers work as in local mode.
+
 ## Cryptography and CNSA 2.0
 
 The OpenVPN path ships the CNSA 2.0 *classical* suite by default, aligned

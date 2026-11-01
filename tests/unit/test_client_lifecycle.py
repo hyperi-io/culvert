@@ -14,6 +14,8 @@ stand-in, because neither Easy-RSA nor a WireGuard interface is on a CI runner.
 """
 
 import importlib.util
+import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -297,3 +299,59 @@ class TestRevokeDuringReissue:
         assert not errors, errors
         assert ALICE_KEY not in stack.wg_conf.read_text(encoding="utf-8")
         assert not (stack.pki / "wireguard" / "peers" / "alice.pub").exists()
+
+
+@pytest.fixture
+def external(stack, monkeypatch):
+    """The stack on external PKI: the CA key is held upstream, not here."""
+    monkeypatch.setenv("CULVERT_PKI_MODE", "external")
+    monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "file")
+    for name in ("CA_CERT", "SERVER_CERT", "SERVER_KEY"):
+        monkeypatch.setenv(f"CULVERT_SECRETS_{name}_PATH", f"/mnt/pki/{name.lower()}")
+    return stack
+
+
+class TestExternalPki:
+    """Easy-RSA cannot sign or revoke without the CA key, which external PKI lacks."""
+
+    def test_issuing_a_certificate_is_refused_with_the_way_through(self, external):
+        with pytest.raises(SystemExit) as exc:
+            external.generate("--protocol", "openvpn", "--name", "alice")
+
+        assert exc.value.code == 1
+        assert not (external.pki / "issued" / "alice.crt").exists()
+        assert not (external.pki / "private" / "alice.key").exists()
+
+    @pytest.mark.skipif(shutil.which("openvpn") is None, reason="needs openvpn")
+    def test_an_externally_issued_certificate_gets_configs(self, external):
+        """The operator places the CA-signed pair, and generate-client does the rest."""
+        subprocess.run(
+            [
+                "openvpn",
+                "--genkey",
+                "tls-crypt-v2-server",
+                str(external.pki / "tc.key"),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        external.issue("alice")
+        client_tc_key_path(external.pki, "alice").unlink()
+
+        external.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+
+        config = (external.clients / "alice-udp-split.ovpn").read_text(encoding="utf-8")
+        assert "BEGIN OpenVPN tls-crypt-v2 client key" in config
+
+    def test_revoking_a_certificate_is_refused_and_changes_nothing(self, external):
+        external.issue("alice")
+        external.generate("--protocol", "openvpn", "--config-only", "--name", "alice")
+        before = _volume(external)
+
+        with pytest.raises(SystemExit) as exc:
+            external.revoke("alice")
+
+        assert exc.value.code == 1
+        assert (external.pki / "issued" / "alice.crt").exists()
+        assert (external.pki / "private" / "alice.key").exists()
+        assert _volume(external) == before

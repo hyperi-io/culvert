@@ -75,6 +75,7 @@ class Config:
         vpn = VpnConfig.from_settings()
         self._vpn = vpn
         self.pki_dir = vpn.pki_dir
+        self.pki_mode = vpn.pki_mode
         self.output_dir = Path(os.environ.get("OUTPUT_DIR", "/etc/vpn/clients"))
         self.server_cn = vpn.server_cn
         self.client_endpoint = vpn.client_endpoint
@@ -877,13 +878,27 @@ Examples:
 
         # Handle certificate
         cert_path = cfg.pki_dir / "issued" / f"{client_name}.crt"
+        key_path = cfg.pki_dir / "private" / f"{client_name}.key"
         if args.config_only:
-            if not cert_path.exists():
+            if not cert_path.exists() or not key_path.exists():
                 logger.error(
-                    f"Config-only mode but certificate doesn't exist: {client_name}"
+                    f"Config-only mode needs {cert_path} and {key_path}:"
+                    f" {client_name} has no certificate and key to build configs from"
                 )
                 sys.exit(1)
             logger.info("Config-only mode: using existing certificate")
+            # An externally issued pair arrives without one.
+            if not client_tc_key_path(cfg.pki_dir, client_name).exists():
+                generate_tc_client_key(client_name, cfg.pki_dir)
+        elif cfg.pki_mode == "external":
+            logger.error(
+                "CULVERT_PKI_MODE=external: the CA key is not on this server, so"
+                f" generate-client cannot sign a certificate for {client_name}."
+                f" Issue it at your CA, place the certificate at {cert_path} and its"
+                f" key at {key_path}, then run generate-client --config-only"
+                f" --name {client_name}."
+            )
+            sys.exit(1)
         else:
             if cert_path.exists():
                 logger.warning(f"Client certificate already exists: {client_name}")
@@ -893,10 +908,9 @@ Examples:
                 )
                 sys.exit(1)
             # Easy-RSA in batch mode overwrites an existing key without asking.
-            stray_key = cfg.pki_dir / "private" / f"{client_name}.key"
-            if stray_key.exists():
+            if key_path.exists():
                 logger.error(
-                    f"{stray_key} exists with no certificate beside it. Refusing"
+                    f"{key_path} exists with no certificate beside it. Refusing"
                     " to overwrite key material: remove it, or choose another --name."
                 )
                 sys.exit(1)
