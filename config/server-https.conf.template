@@ -149,6 +149,7 @@ reneg-sec ${OPENVPN_RENEG_SEC}
 # Logging
 #===============================================================================
 status /var/log/vpn/status-https.log 10
+status-version 3
 log-append /var/log/vpn/openvpn-https.log
 verb ${OPENVPN_VERB}
 mute ${OPENVPN_MUTE}

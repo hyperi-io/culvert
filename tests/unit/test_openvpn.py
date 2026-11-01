@@ -65,6 +65,24 @@ class TestShippedServerTemplates:
         ]
         assert not active, f"{name} enables external scripts: {active}"
 
+    @pytest.mark.parametrize("name", SERVER_TEMPLATES)
+    def test_status_file_is_the_format_metrics_reads(self, name):
+        """The metrics collector reads tab-separated status-version 3 only.
+
+        OpenVPN writes version 1 unless told otherwise, and the collector then
+        counts no client on any listener.
+        """
+        from lib.metrics import OPENVPN_STATUS_FILES
+
+        lines = (REPO_ROOT / "config" / name).read_text(encoding="utf-8").splitlines()
+        directives = {
+            line.split()[0]: line.split()[1:]
+            for line in (raw.strip() for raw in lines)
+            if line and not line.startswith("#")
+        }
+        assert directives.get("status-version") == ["3"], name
+        assert directives["status"][0] in OPENVPN_STATUS_FILES, name
+
     def test_https_listener_binds_loopback_only(self):
         """The stunnel-fronted listener must not be reachable directly.
 
