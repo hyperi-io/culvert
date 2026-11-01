@@ -19,6 +19,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -191,16 +192,21 @@ def start_log_rotation(
     conf_path: Path,
     state_path: Path,
     interval: float = LOG_ROTATION_INTERVAL_SECONDS,
-) -> None:
-    """Run logrotate on a schedule in a daemon thread, since no cron runs here."""
-    import threading
+) -> threading.Event:
+    """Run logrotate on a schedule in a daemon thread, since no cron runs here.
+
+    Returns:
+        An event that stops the schedule once set.
+    """
+    stop = threading.Event()
 
     def rotate_loop() -> None:
-        while True:
+        rotate_logs(conf_path, state_path)
+        while not stop.wait(interval):
             rotate_logs(conf_path, state_path)
-            time.sleep(interval)
 
     threading.Thread(target=rotate_loop, daemon=True, name="logrotate").start()
+    return stop
 
 
 def setup_scripts(cfg) -> None:

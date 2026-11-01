@@ -178,11 +178,13 @@ class TestLogRotation:
         conf, state = setup_log_rotation(cfg, conf_path=tmp_path / "logrotate.conf")
         (tmp_path / "openvpn.log").write_text("line\n")
 
-        start_log_rotation(conf, state, interval=0.05)
-
-        deadline = time.monotonic() + 10
-        while not state.exists() and time.monotonic() < deadline:
-            time.sleep(0.05)
+        stop = start_log_rotation(conf, state, interval=0.05)
+        try:
+            deadline = time.monotonic() + 10
+            while not state.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+        finally:
+            stop.set()
         assert state.exists(), "logrotate never ran, so no state file was written"
 
 
