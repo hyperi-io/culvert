@@ -335,3 +335,83 @@ class TestShutdown:
         else:
             with pytest.raises(subprocess.TimeoutExpired):
                 proc.wait(timeout=1)
+
+
+class TestDrain:
+    """SIGTERM drops readiness, gives load balancers time, then stops the children.
+
+    Stopping at once lets a load balancer that has not yet seen readiness drop
+    send a client to a server that is already gone.
+    """
+
+    @staticmethod
+    def _draining(manager, drain_seconds, connected):
+        """Record, at each count, whether the child is up and the pod is ready."""
+        from lib.health import health
+
+        manager.config = SimpleNamespace(
+            drain_seconds=drain_seconds, protocol="openvpn"
+        )
+        child = manager.start("openvpn-udp", ["sleep", "30"])
+        seen = []
+
+        def count():
+            seen.append((child.poll() is None, health.is_ready()))
+            return connected
+
+        health.set_ready(True)
+        return child, seen, count
+
+    def test_children_serve_through_the_drain_while_clients_are_connected(
+        self, manager
+    ):
+        child, seen, count = self._draining(manager, drain_seconds=2, connected=3)
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager._signal_handler(signal.SIGTERM, None, count_connected=count)
+
+        assert time.monotonic() - started >= 2
+        assert seen and all(alive and not ready for alive, ready in seen)
+        assert child.poll() is not None
+
+    def test_the_drain_ends_once_no_client_is_connected(self, manager):
+        _, seen, count = self._draining(manager, drain_seconds=30, connected=0)
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager._signal_handler(signal.SIGTERM, None, count_connected=count)
+
+        assert time.monotonic() - started < 10
+        assert len(seen) == 1
+
+    def test_a_second_signal_stops_without_finishing_the_drain(self, manager):
+        child, _, count = self._draining(manager, drain_seconds=30, connected=3)
+
+        def second_signal():
+            count()
+            manager._signal_handler(signal.SIGTERM, None)
+            return 3
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager._signal_handler(signal.SIGTERM, None, count_connected=second_signal)
+
+        assert time.monotonic() - started < 10
+        assert child.poll() is not None
+
+    def test_children_share_one_stop_deadline(self, manager):
+        """Sequential per-child timeouts outlast a 30 second grace period."""
+        manager.stop_timeout = 1
+        for name in ("openvpn-udp", "openvpn-tcp", "stunnel"):
+            manager.start(name, ["sh", "-c", "trap '' TERM; sleep 30"])
+        time.sleep(0.2)
+
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            manager.shutdown()
+
+        assert time.monotonic() - started < 3
+        assert all(
+            proc.poll() == -signal.SIGKILL for proc in manager.processes.values()
+        )

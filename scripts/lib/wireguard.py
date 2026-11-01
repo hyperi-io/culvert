@@ -734,6 +734,11 @@ class EndpointFlapDetector:
                 del state[peer]
 
 
+# A peer with no handshake for this long is disconnected. WireGuard rekeys every
+# 2 minutes while traffic flows.
+PEER_ACTIVE_SECONDS = 180
+
+
 def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
     """Start background thread that polls WireGuard for connection events.
 
@@ -749,8 +754,6 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
         parse_wg_transfer,
         record_endpoint_flap,
     )
-
-    stale_threshold = 180  # 3 minutes without handshake = disconnected
 
     def _poll_loop():
         pubkey_names = _build_pubkey_to_name(cfg.pki_dir)
@@ -827,7 +830,7 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
                     age = now - hs.timestamp
                     name = pubkey_names.get(pubkey, pubkey[:8])
 
-                    if age <= stale_threshold:
+                    if age <= PEER_ACTIVE_SECONDS:
                         current_connected.add(pubkey)
 
                         if pubkey not in connected_peers:

@@ -19,11 +19,17 @@ import stat
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import BinaryIO
 
 from scalo.logger import logger
+
+# Inside the deployment contract's 30 s termination grace period: the drain
+# (CULVERT_DRAIN_SECONDS, 10 by default) and then this long for children to exit.
+CHILD_STOP_SECONDS = 15
+DRAIN_POLL_SECONDS = 1.0
 
 # Children with a SIGHUP reload. Any other child (wstunnel) dies of the signal.
 RELOADS_ON_SIGHUP_PREFIX = "openvpn-"
@@ -216,6 +222,36 @@ def setup_scripts(cfg) -> None:
             logger.info(f"Made hook script executable: {script}")
 
 
+def connected_clients() -> int:
+    """Count OpenVPN sessions in the status files and recently active WireGuard peers."""
+    from lib.metrics import (
+        OPENVPN_STATUS_FILES,
+        collect_openvpn_status,
+        parse_wg_handshakes,
+    )
+    from lib.wireguard import PEER_ACTIVE_SECONDS
+
+    total = 0
+    for path, listener in OPENVPN_STATUS_FILES.items():
+        status = collect_openvpn_status(path, listener)
+        if status is not None:
+            total += status.client_count
+    try:
+        shown = run(
+            ["wg", "show", "wg0", "latest-handshakes"], check=False, capture=True
+        )
+    except FileNotFoundError:
+        return total
+    if shown.returncode == 0:
+        now = time.time()
+        total += sum(
+            1
+            for handshake in parse_wg_handshakes(shown.stdout).values()
+            if handshake.timestamp and now - handshake.timestamp <= PEER_ACTIVE_SECONDS
+        )
+    return total
+
+
 class ProcessManager:
     """Manages VPN child processes with proper signal handling."""
 
@@ -225,6 +261,7 @@ class ProcessManager:
         self.shutdown_requested = False
         self.failed_starts: dict[str, str] = {}
         self.config = None
+        self.stop_timeout = CHILD_STOP_SECONDS
         self._daemon_logs: dict[str, BinaryIO] = {}
         self._setup_signal_handlers()
 
@@ -234,15 +271,41 @@ class ProcessManager:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGHUP, self._reload_handler)
 
-    def _signal_handler(self, signum: int, frame) -> None:  # noqa: V107 - signal.signal passes the frame
-        """Handle shutdown signals."""
+    def _signal_handler(  # noqa: V107 - signal.signal passes the frame
+        self,
+        signum: int,
+        frame,
+        count_connected: Callable[[], int] | None = None,
+    ) -> None:
+        """Drain, then shut down. A second signal skips what is left of the drain."""
         sig_name = signal.Signals(signum).name
-        logger.info(
-            f"Received {sig_name}, initiating graceful shutdown...",
-            signal=sig_name,
-        )
+        if self.shutdown_requested:
+            logger.info(f"Received {sig_name} again, stopping now", signal=sig_name)
+            self.shutdown()
+        logger.info(f"Received {sig_name}, draining before shutdown", signal=sig_name)
         self.shutdown_requested = True
+        self.drain(count_connected or connected_clients)
         self.shutdown()
+
+    def drain(self, count_connected: Callable[[], int]) -> None:
+        """Drop readiness, then serve connected clients for drain_seconds.
+
+        The wait is for load balancers to see readiness drop and send new
+        clients elsewhere. It ends early once no client is connected.
+        """
+        from lib.health import health
+
+        health.set_ready(False)
+        seconds = getattr(self.config, "drain_seconds", 0)
+        deadline = time.monotonic() + seconds
+        while (remaining := deadline - time.monotonic()) > 0:
+            connected = count_connected()
+            if connected == 0:
+                logger.info("No clients connected, drain finished")
+                return
+            logger.info("Draining", clients=connected, seconds_left=round(remaining))
+            time.sleep(min(DRAIN_POLL_SECONDS, remaining))
+        logger.info("Drain period over")
 
     def _reload_handler(self, signum: int, frame) -> None:  # noqa: V107 - signal.signal passes the frame
         """Handle SIGHUP for config reload."""
@@ -328,10 +391,12 @@ class ProcessManager:
                 logger.info(f"Sending SIGTERM to {name}", pid=proc.pid)
                 proc.terminate()
 
-        # Wait for processes to exit (with timeout)
+        # One deadline for all of them: per-child timeouts add up past the
+        # orchestrator's termination grace period.
+        deadline = time.monotonic() + self.stop_timeout
         for name, proc in self.processes.items():
             try:
-                proc.wait(timeout=10)
+                proc.wait(timeout=max(0.0, deadline - time.monotonic()))
                 logger.info(
                     f"{name} stopped",
                     pid=proc.pid,

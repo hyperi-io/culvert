@@ -259,8 +259,11 @@ External PKI section of [.env.example](../.env.example).
 - **Metrics:** the pod carries `prometheus.io/scrape`, `prometheus.io/port` and
   `prometheus.io/path` annotations. `/metrics` serves when
   `CULVERT_METRICS_ENABLED=true`.
-- **Drain:** the container handles SIGTERM to drain connections on a rollout,
-  inside a 30 second termination grace period.
+- **Drain:** on SIGTERM readiness drops at once, and connected clients keep
+  their tunnels for `CULVERT_DRAIN_SECONDS` (10 by default) while load balancers
+  stop sending new ones. The drain ends early once no client is connected.
+  OpenVPN is then stopped, which tells UDP clients to reconnect, and every child
+  gets 15 seconds to exit, all inside a 30 second termination grace period.
 
 ## See also
 

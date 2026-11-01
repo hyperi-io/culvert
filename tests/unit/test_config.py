@@ -9,6 +9,7 @@
 """Unit tests for Config.from_settings() using CULVERT_* env prefix."""
 
 import re
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -192,6 +193,29 @@ class TestConfigEnvOverride:
         """Unset means each server mints its own - fine for a single server."""
         cfg = Config.from_settings()
         assert cfg.secrets_tc_key_path == ""
+
+
+class TestDrainSeconds:
+    """The SIGTERM drain fits the 30 s grace period with the children's stop."""
+
+    @pytest.mark.parametrize(
+        ("value", "want", "valid"),
+        [
+            pytest.param(None, 10, True, id="default"),
+            pytest.param("0", 0, True, id="no_drain"),
+            pytest.param("25", 25, True, id="longer"),
+            pytest.param("-1", -1, False, id="negative"),
+        ],
+    )
+    def test_drain_seconds(self, clean_env, monkeypatch, value, want, valid):
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_HTTPS_ENABLED", "false")
+        if value is not None:
+            monkeypatch.setenv("CULVERT_DRAIN_SECONDS", value)
+        cfg = Config.from_settings()
+        assert cfg.drain_seconds == want
+        with nullcontext() if valid else pytest.raises(SystemExit):
+            cfg.validate()
 
 
 class TestConfigNetworkProfiles:

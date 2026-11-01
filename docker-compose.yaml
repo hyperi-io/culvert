@@ -41,6 +41,9 @@ services:
     #   dockerfile: Dockerfile
     container_name: ${CONTAINER_NAME:-culvert}
     restart: unless-stopped
+    # The SIGTERM drain and the children's stop take up to 25 s. Docker's
+    # default of 10 s would kill the server part way through.
+    stop_grace_period: 30s
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
