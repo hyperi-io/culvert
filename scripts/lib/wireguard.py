@@ -466,6 +466,11 @@ def generate_client_config(
     return "\n".join(lines)
 
 
+# wg-quick's fwmark for a full tunnel, which it routes outside wg0. It takes the
+# next free table number when 51820 is in use, which a client host rarely has.
+WG_QUICK_FWMARK = 51820
+
+
 def generate_https_tunnel_client_config(
     client_private_key: str | None,
     client_ip: str,
@@ -496,6 +501,12 @@ def generate_https_tunnel_client_config(
     if tls_server_name and tls_server_name != server_endpoint:
         tls_flags += f" --tls-sni-override {tls_server_name}"
 
+    # A full tunnel would carry wstunnel's own connection to the server inside
+    # the tunnel it carries, so the full variant marks it to bypass wg0.
+    full_tunnel = "0.0.0.0/0" in allowed_ips
+    if full_tunnel:
+        tls_flags += f" --socket-so-mark {WG_QUICK_FWMARK}"
+
     header = [
         "# WireGuard over HTTPS (wstunnel required)",
         "#",
@@ -508,8 +519,15 @@ def generate_https_tunnel_client_config(
         "# The WireGuard Endpoint below connects to the local wstunnel listener.",
         "# wstunnel carries the UDP tunnel inside WebSocket/TLS, so it travels",
         "# as ordinary HTTPS on a web port.",
-        "",
     ]
+    if full_tunnel:
+        header += [
+            "#",
+            "# --socket-so-mark keeps wstunnel's connection out of this tunnel. It",
+            "# is Linux only and needs root. Elsewhere, drop it and route",
+            f"# {server_endpoint} through your normal gateway instead.",
+        ]
+    header.append("")
 
     body = [
         "[Interface]",

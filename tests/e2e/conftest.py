@@ -217,6 +217,7 @@ def compose_stack():
         f"{CLIENT_NAME}/wg-split.conf",
         f"{CLIENT_NAME}/wg-full.conf",
         f"{CLIENT_NAME}/wg-https-split.conf",
+        f"{CLIENT_NAME}/wg-https-full.conf",
         # The second WireGuard device slot, asserted here so a generator that
         # stopped issuing slots fails rather than skipping the concurrency tests.
         f"{CLIENT_NAME}/wg2-split.conf",
@@ -377,6 +378,22 @@ def wireguard_https_tunnel_connection():
     )
 
     config_name = f"{CLIENT_NAME}/wg-https-split.conf"
+    connect_wireguard_https_tunnel(config_name)
+    try:
+        yield
+    finally:
+        disconnect_wireguard_https_tunnel(config_name)
+
+
+@pytest.fixture
+def wireguard_https_full_connection():
+    """Connect WireGuard over HTTPS in FULL-tunnel mode, yield, then disconnect."""
+    from helpers import (
+        connect_wireguard_https_tunnel,
+        disconnect_wireguard_https_tunnel,
+    )
+
+    config_name = f"{CLIENT_NAME}/wg-https-full.conf"
     connect_wireguard_https_tunnel(config_name)
     try:
         yield

@@ -233,6 +233,36 @@ class TestWstunnelTlsVerification:
         assert "--tls-sni-override" not in config
 
 
+class TestWstunnelFullTunnel:
+    """A full tunnel routes everything into wg0, wstunnel's own connection too.
+
+    That connection is what carries wg0, so unmarked it loops into itself.
+    wg-quick sends traffic carrying its fwmark out the normal route.
+    """
+
+    @pytest.mark.parametrize(
+        ("allowed_ips", "marked"),
+        [
+            pytest.param("0.0.0.0/0, ::/0", True, id="full"),
+            pytest.param("10.8.3.0/24", False, id="split"),
+        ],
+    )
+    def test_only_the_full_tunnel_marks_wstunnels_socket(self, allowed_ips, marked):
+        config = generate_https_tunnel_client_config(
+            client_private_key=FAKE_CLIENT_PRIV,
+            client_ip="10.8.0.2",
+            server_public_key=FAKE_SERVER_PUB,
+            server_endpoint="vpn.example.com",
+            server_port=51820,
+            dns_servers=["1.1.1.1"],
+            allowed_ips=allowed_ips,
+        )
+        command = next(
+            line for line in config.splitlines() if line.startswith("#   wstunnel")
+        )
+        assert ("--socket-so-mark 51820" in command) is marked
+
+
 class TestGenerateClientConfig:
     """Tests for generate_client_config."""
 

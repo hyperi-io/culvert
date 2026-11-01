@@ -24,6 +24,7 @@ from conftest import CLIENT_NAME
 from helpers import (
     CLIENT_CONTAINER,
     TARGET_RESPONSE,
+    assert_tunnel_mode,
     block_plain_vpn_ports,
     connect_openvpn,
     connect_openvpn_https,
@@ -168,3 +169,16 @@ class TestWireGuardOverHTTPS:
             )
         finally:
             disconnect_wireguard_https_tunnel(config_name)
+
+    def test_full_tunnel_reaches_target_without_routing_into_itself(
+        self, plain_ports_blocked, wireguard_https_full_connection
+    ):
+        """wstunnel's own connection must stay off the wg0 default route it carries."""
+        wait_for_tunnel("wg0", timeout=15)
+        assert_tunnel_mode("wg0", "full")
+
+        body = curl_target()
+        assert body == TARGET_RESPONSE, (
+            f"Expected '{TARGET_RESPONSE}', got '{body}': the full tunnel over"
+            " HTTPS did not carry traffic"
+        )

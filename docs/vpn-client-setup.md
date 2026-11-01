@@ -186,7 +186,13 @@ For networks that block WireGuard, use the HTTPS-tunnel configs (`wg-https-*.con
    wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
    ```
 
-   (Replace `vpn.example.com` with your VPN server hostname)
+   (Replace `vpn.example.com` with your VPN server hostname. The first lines of
+   each `wg-https-*.conf` carry the exact command for that config.)
+
+   A full tunnel would route wstunnel's own connection into the tunnel it
+   carries. On Linux, start wstunnel with `sudo` and add `--socket-so-mark 51820`,
+   which wg-quick sends outside the tunnel. Elsewhere, route the server's address
+   through your normal gateway before you activate `wg-https-full.conf`.
 
 2. Then import and activate the `wg-https-*.conf` config in your WireGuard client
 

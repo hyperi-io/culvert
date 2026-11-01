@@ -239,16 +239,18 @@ def connect_wireguard_https_tunnel(config_name: str) -> None:
         f"mkdir -p /etc/wireguard && sed '/^DNS/d' {src} > /etc/wireguard/wg0.conf",
     )
 
-    # Start wstunnel client (tunnels local UDP 51820 to server wstunnel on 4443)
-    # --tls-verify-certificate=false because server uses self-signed cert
-    # Use setsid to properly daemonise inside docker exec
-    # wstunnel 10.x: --tls-verify-certificate is opt-in; omit it to skip verification
+    # Run the wstunnel command the config itself documents, so a full tunnel
+    # proves that command keeps wstunnel's connection out of wg0. Certificate
+    # verification is dropped because the e2e server's certificate is
+    # self-signed. setsid daemonises it inside docker exec.
+    documented = docker_exec(
+        CLIENT_CONTAINER, f"sed -n 's/^#   \\(wstunnel client .*\\)$/\\1/p' {src}"
+    ).stdout.strip()
+    assert documented, f"{config_name} documents no wstunnel command"
+    command = documented.replace(" --tls-verify-certificate", "")
     docker_exec(
         CLIENT_CONTAINER,
-        "setsid wstunnel client"
-        " -L udp://127.0.0.1:51820:127.0.0.1:51820"
-        " wss://172.30.1.10:4443"
-        " </dev/null >/dev/null 2>&1 &",
+        f"setsid {command} </dev/null >/tmp/wstunnel.log 2>&1 &",
     )
     time.sleep(2)
 
