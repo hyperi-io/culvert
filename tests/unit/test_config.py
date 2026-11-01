@@ -8,7 +8,11 @@
 
 """Unit tests for Config.from_settings() using CULVERT_* env prefix."""
 
+import re
+from pathlib import Path
+
 import pytest
+import yaml
 from lib.config import Config, endpoint_inside_zone
 
 
@@ -483,6 +487,81 @@ class TestShippedProfiles:
         assert cfg.allowed_destinations == "10.20.0.0/16"
         assert cfg.downstream_admin_cidrs == "10.10.0.0/16"
         assert cfg.log_mode == "stdout"
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_COMPOSE_DEFAULTED = re.compile(r"^\$\{(?P<name>\w+):-(?P<default>.*)\}$")
+_ENV_FILE_LINE = re.compile(r'^(?P<name>[A-Z0-9_]+)="(?P<value>.*)"$')
+# Compose owns these: every deployment names its own server, and the TLS pair
+# lives on the volume only docker-compose.yaml mounts.
+_COMPOSE_OWNED = {"server_cn", "stunnel_cert", "stunnel_key"}
+
+
+def _env_example() -> dict[str, str]:
+    """The settings `cp .env.example .env` hands docker compose."""
+    text = (_PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
+    matches = (_ENV_FILE_LINE.match(line) for line in text.splitlines())
+    return {m["name"]: m["value"] for m in matches if m}
+
+
+def _compose_environment(env_file: dict[str, str]) -> dict[str, str]:
+    """The CULVERT_* environment docker-compose.yaml gives the server container.
+
+    Resolved as compose does: a bare entry passes through only when set, and
+    `${VAR:-default}` falls back to the default when VAR is unset or empty.
+    """
+    compose = yaml.safe_load(
+        (_PROJECT_ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+    )
+    resolved: dict[str, str] = {}
+    for entry in compose["services"]["openvpn"]["environment"]:
+        name, sep, value = entry.partition("=")
+        if not name.startswith("CULVERT_") or name == "CULVERT_PROFILE":
+            continue
+        if not sep:
+            if name in env_file:
+                resolved[name] = env_file[name]
+            continue
+        if defaulted := _COMPOSE_DEFAULTED.match(value):
+            value = env_file.get(defaulted["name"]) or defaulted["default"]
+        resolved[name] = value
+    return resolved
+
+
+class TestComposeDefersToProfiles:
+    """docker-compose.yaml and .env.example must not override a profile.
+
+    A setting the operator never chose that reaches the container as an env
+    var beats the profile, so `CULVERT_PROFILE=corporate` would run with OIDC
+    off and `edge-fleet` without routing control.
+    """
+
+    @pytest.mark.parametrize("env_file", ["none", ".env.example"])
+    @pytest.mark.parametrize(
+        "profile", sorted(p.stem for p in (_PROJECT_ROOT / "profiles").glob("*.yaml"))
+    )
+    def test_every_profile_setting_survives_compose(
+        self, clean_env, monkeypatch, profile, env_file
+    ):
+        path = _PROJECT_ROOT / "profiles" / f"{profile}.yaml"
+        keys = set(yaml.safe_load(path.read_text(encoding="utf-8"))) - _COMPOSE_OWNED
+        monkeypatch.setenv("CULVERT_PROFILE", str(path))
+        expected = Config.from_settings()
+
+        dotenv = _env_example() if env_file == ".env.example" else {}
+        for name, value in _compose_environment(dotenv).items():
+            monkeypatch.setenv(name, value)
+        actual = Config.from_settings()
+
+        overridden = {
+            key: (getattr(expected, key), getattr(actual, key))
+            for key in sorted(keys)
+            if getattr(expected, key) != getattr(actual, key)
+        }
+        assert not overridden, (
+            f"compose overrides profiles/{profile}.yaml (profile, container): "
+            f"{overridden}"
+        )
 
 
 class TestStunnelValidation:
