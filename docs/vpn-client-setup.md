@@ -573,9 +573,7 @@ config works unchanged on a normal host.
 ### Split vs Full Tunnel
 
 - **Split tunnel:** Only routes to your site's internal networks go through the VPN
-- **Full tunnel:** All traffic goes through VPN (including internet)
-
-Use split tunnel for normal work; use full tunnel for maximum security.
+- **Full tunnel:** All traffic, internet included. OpenVPN refuses IPv6 while it is up, as the tunnel carries IPv4 only.
 
 ---
 

@@ -173,6 +173,14 @@ class TestApplyCommonOptions:
         cfg = self.FakeCfg(full_tunnel=True)
         content = _apply_common_options("", cfg)
         assert 'push "redirect-gateway def1 bypass-dhcp"' in content
+        assert 'push "route-ipv6 2000::/3"' in content
+        assert 'push "block-ipv6"' in content
+        assert "ifconfig-ipv6" not in content
+
+    def test_split_tunnel_leaves_ipv6_alone(self):
+        content = _apply_common_options("", self.FakeCfg(full_tunnel=False))
+        assert "redirect-gateway" not in content
+        assert "block-ipv6" not in content
 
     def test_all_options_combined(self):
         """All options work together."""
@@ -372,6 +380,7 @@ class TestShippedListenerRender:
         assert 'push "dhcp-option DOMAIN corp.example.test"' in rendered
         assert 'push "route 10.20.0.0 255.255.0.0"' in rendered
         assert 'push "redirect-gateway def1 bypass-dhcp"' in rendered
+        assert 'push "block-ipv6"' in rendered
 
     @pytest.mark.parametrize("listener", sorted(LISTENERS))
     def test_disabled_listener_writes_nothing(self, server_dir, listener):

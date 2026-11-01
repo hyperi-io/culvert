@@ -67,6 +67,14 @@ class TestOpenVPNUDP:
         assert ip.startswith("10.8.0."), f"Expected IP in 10.8.0.0/24, got {ip}"
         assert_tunnel_mode("tun0", "full")
 
+        # The tunnel carries IPv4 only, so IPv6 must be routed into it (where
+        # block-ipv6 refuses it) rather than leave by the client's own uplink.
+        v6 = docker_exec(CLIENT_CONTAINER, "ip -6 route get 2001:db8::1", check=False)
+        assert "dev tun0" in v6.stdout, (
+            "full tunnel leaves IPv6 outside the tunnel:\n"
+            f"{v6.stdout}{v6.stderr}\nOpenVPN log:\n{get_openvpn_log()}"
+        )
+
         body = curl_target()
         assert body == TARGET_RESPONSE, (
             f"Expected '{TARGET_RESPONSE}', got '{body}'. "

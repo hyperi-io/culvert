@@ -339,6 +339,11 @@ checkHost = {cfg.server_cn}
 #===============================================================================
 redirect-gateway def1 bypass-dhcp
 
+# The tunnel carries IPv4 only. IPv6 is routed into it and refused there, so a
+# dual-stack network cannot carry it around the VPN.
+route-ipv6 2000::/3
+block-ipv6
+
 # WINDOWS ONLY: stops applications querying a DNS server outside the tunnel.
 # Uncomment on Windows. Leave it commented everywhere else - OpenVPN 2.7 on
 # Linux and macOS does not know the option and refuses to start.

@@ -67,6 +67,9 @@ services:
     # chart uses a privileged init container for it.
     sysctls:
       net.ipv4.conf.all.src_valid_mark: "1"
+      # A dual-stack client, so the full-tunnel test can see where IPv6 goes.
+      net.ipv6.conf.all.disable_ipv6: "0"
+      net.ipv6.conf.default.disable_ipv6: "0"
     volumes:
       - clients:/etc/vpn/clients:ro
     depends_on:

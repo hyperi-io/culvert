@@ -131,7 +131,12 @@ def _apply_common_options(content: str, cfg, listener: str = "") -> str:
             logger.info(f"{prefix}Pushing route: {route}")
 
     if cfg.full_tunnel:
+        # The tunnels carry IPv4 only, so route IPv6 in and refuse it there.
+        # redirect-gateway ipv6 adds no route without ifconfig-ipv6, which kills
+        # a client with IPv6 disabled.
         content += 'push "redirect-gateway def1 bypass-dhcp"\n'
+        content += 'push "route-ipv6 2000::/3"\n'
+        content += 'push "block-ipv6"\n'
         if listener:
             logger.info(f"{prefix}Full tunnel mode enabled")
 

@@ -180,7 +180,14 @@ class TestOpenVpnConfigs:
         assert "route 10.1.0.0/16\n" in split
         assert "route 192.168.5.0/24\n" in split
         assert "redirect-gateway" not in split
-        assert "redirect-gateway def1 bypass-dhcp" in full
+        assert "block-ipv6" not in split
+        # The tunnel carries IPv4 only, so a full tunnel routes IPv6 in and drops
+        # it there rather than letting a dual-stack client send it outside.
+        assert "redirect-gateway def1 bypass-dhcp\n" in full
+        assert "\nroute-ipv6 2000::/3\n" in full
+        assert "\nblock-ipv6\n" in full
+        # ifconfig-ipv6 would make a client with IPv6 disabled exit at connect.
+        assert "ifconfig-ipv6" not in full
         assert "route 10.1.0.0/16" not in full
 
     def test_https_listener_gets_a_tls_1_3_stunnel_config(self, run):
