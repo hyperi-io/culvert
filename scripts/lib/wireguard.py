@@ -104,6 +104,7 @@ def client_config_name(
     Raises:
         ValueError: The file name would not be a valid interface name, which
             happens over HTTPS from slot 10.
+
     """
     tunnel = "-https" if https else ""
     stem = f"wg{slot_infix(slot)}{tunnel}-{mode}"
@@ -606,6 +607,7 @@ def sync_running_interface(conf_path: Path) -> bool:
     Raises:
         WireGuardSyncError: The interface is up and did not take the new peers,
             so it still accepts whatever keys it held before.
+
     """
     try:
         shown = subprocess.run(["wg", "show", "wg0"], capture_output=True)

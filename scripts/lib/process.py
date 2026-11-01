@@ -194,7 +194,6 @@ def start_log_rotation(
 ) -> None:
     """Run logrotate on a schedule in a daemon thread, since no cron runs here."""
     import threading
-    import time
 
     def rotate_loop() -> None:
         while True:
@@ -271,10 +270,10 @@ class ProcessManager:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGHUP, self._reload_handler)
 
-    def _signal_handler(  # noqa: V107 - signal.signal passes the frame
+    def _signal_handler(
         self,
         signum: int,
-        frame,
+        frame,  # noqa: V107 - signal.signal passes the frame
         count_connected: Callable[[], int] | None = None,
     ) -> None:
         """Drain, then shut down. A second signal skips what is left of the drain."""

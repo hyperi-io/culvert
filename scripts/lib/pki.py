@@ -255,21 +255,21 @@ def fetch_external_pki(cfg) -> bool:
         missing = [
             name for name, data in fetched.items() if data is None and name != "CRL"
         ]
-        if fetched.get("CRL", b"") is None:
-            logger.warning("CRL could not be fetched, keeping the one on disk")
-            del fetched["CRL"]
         if missing:
             logger.error(
                 f"Not writing any fetched PKI material: missing {', '.join(missing)}"
             )
             return False
+        if "CRL" in fetched and fetched["CRL"] is None:
+            logger.warning("CRL could not be fetched, keeping the one on disk")
+        material = {name: data for name, data in fetched.items() if data is not None}
 
         problems = pki_set_problems(
-            fetched["CA certificate"],
-            fetched["server certificate"],
-            fetched["server private key"],
-            crl=fetched.get("CRL"),
-            tc_key=fetched.get("tls-crypt-v2 server key"),
+            material["CA certificate"],
+            material["server certificate"],
+            material["server private key"],
+            crl=material.get("CRL"),
+            tc_key=material.get("tls-crypt-v2 server key"),
         )
         if problems:
             for problem in problems:
@@ -281,7 +281,7 @@ def fetch_external_pki(cfg) -> bool:
 
         # Only a set that passed together is written, so the files on disk are
         # never one server's certificate beside another's key.
-        for name, data in fetched.items():
+        for name, data in material.items():
             _, relative, perms = wanted[name]
             dest = cfg.pki_dir / relative
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -494,7 +494,7 @@ def crl_seconds_until_expiry(pki_dir) -> float | None:
 
 
 def revoked_serials(pki_dir) -> frozenset[str]:
-    """Serial numbers the CRL revokes, empty when there is no readable CRL."""
+    """Return the serial numbers the CRL revokes, empty with no readable CRL."""
     crl_path = Path(pki_dir) / "crl.pem"
     if not crl_path.exists():
         return frozenset()
