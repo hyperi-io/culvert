@@ -197,6 +197,7 @@ def start_log_rotation(
 
     Returns:
         An event that stops the schedule once set.
+
     """
     stop = threading.Event()
 
