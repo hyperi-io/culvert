@@ -89,6 +89,24 @@ def slot_infix(slot: int) -> str:
     return "" if slot == 1 else str(slot)
 
 
+def client_config_name(
+    client_name: str, slot: int, mode: str, https: bool = False
+) -> str:
+    """Filename of one slot's split or full config, plain or over HTTPS."""
+    tunnel = "-https" if https else ""
+    return f"{client_name}-wg{slot_infix(slot)}{tunnel}-{mode}.conf"
+
+
+def client_config_names(client_name: str, slot: int, https: bool) -> list[str]:
+    """Filenames of every config one slot is issued."""
+    variants = (False, True) if https else (False,)
+    return [
+        client_config_name(client_name, slot, mode, https=tunnelled)
+        for tunnelled in variants
+        for mode in ("split", "full")
+    ]
+
+
 def existing_peer_ids(pki_dir: Path, client_name: str) -> list[str]:
     """Every peer identity currently on disk for a client, slot order.
 
@@ -534,6 +552,10 @@ def setup_wireguard(cfg) -> None:
     logger.info(f"WireGuard config written to {cfg.wg_conf}")
 
 
+class WireGuardSyncError(RuntimeError):
+    """The running wg0 interface refused the new peer list and kept the old one."""
+
+
 def sync_running_interface(conf_path: Path) -> bool:
     """Apply a changed wg0.conf to the live interface.
 
@@ -544,6 +566,10 @@ def sync_running_interface(conf_path: Path) -> bool:
     Returns False when there is no interface to sync, which is the normal case
     for issuing a config before the server has started. A missing `wg` binary
     is the same case: there is no WireGuard here to sync.
+
+    Raises:
+        WireGuardSyncError: The interface is up and did not take the new peers,
+            so it still accepts whatever keys it held before.
     """
     try:
         shown = subprocess.run(["wg", "show", "wg0"], capture_output=True)
@@ -562,8 +588,9 @@ def sync_running_interface(conf_path: Path) -> bool:
         errors="replace",
     )
     if stripped.returncode != 0:
-        logger.warning(f"Could not read {conf_path}: {stripped.stderr.strip()}")
-        return False
+        raise WireGuardSyncError(
+            f"could not read {conf_path}: {stripped.stderr.strip()}"
+        )
 
     # syncconf takes a path, and the stripped form still carries the server
     # private key, so it goes to a 0600 file beside the config and is removed.
@@ -581,8 +608,9 @@ def sync_running_interface(conf_path: Path) -> bool:
         tmp_path.unlink(missing_ok=True)
 
     if result.returncode != 0:
-        logger.warning(f"Could not apply peers to wg0: {result.stderr.strip()}")
-        return False
+        raise WireGuardSyncError(
+            f"wg0 refused the new peer list: {result.stderr.strip()}"
+        )
     logger.info("Applied peer list to the running wg0 interface")
     return True
 

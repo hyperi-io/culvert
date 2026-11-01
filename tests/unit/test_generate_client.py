@@ -14,6 +14,7 @@ on a CI runner, and the part that differs between clients is the config text.
 """
 
 import importlib.util
+import os
 import stat
 import sys
 import zipfile
@@ -514,3 +515,80 @@ class TestWireGuardClientSideKeys:
         tunnelled = (out / f"{CLIENT}-wg-https-split.conf").read_text(encoding="utf-8")
         assert "Endpoint = 127.0.0.1:51820" in tunnelled
         assert f"wss://{SERVER_CN}:4443" in tunnelled
+
+
+# Stand-ins for wg and wg-quick against a server whose interface is up. Keys are
+# real-shaped base64, and FAKE_WG_SYNC_FAIL makes the live sync refuse.
+FAKE_WG = """
+import base64
+import hashlib
+import os
+import sys
+
+command = sys.argv[1]
+if command == "genkey":
+    print(base64.b64encode(os.urandom(32)).decode())
+elif command == "pubkey":
+    print(base64.b64encode(hashlib.sha256(sys.stdin.read().encode()).digest()).decode())
+elif command == "syncconf" and os.environ.get("FAKE_WG_SYNC_FAIL"):
+    sys.exit("Unable to modify interface: Operation not permitted")
+"""
+FAKE_WG_QUICK = """
+import sys
+from pathlib import Path
+
+print(Path(sys.argv[2]).read_text(), end="")
+"""
+
+
+@pytest.fixture
+def wg_tools(tmp_path, monkeypatch):
+    """Put wg and wg-quick stand-ins first on PATH, for a server that is running."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in (("wg", FAKE_WG), ("wg-quick", FAKE_WG_QUICK)):
+        script = bin_dir / name
+        script.write_text(f"#!{sys.executable}\n{body}", encoding="utf-8")
+        script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.delenv("FAKE_WG_SYNC_FAIL", raising=False)
+
+
+def _wireguard_state(pki, out: Path, wg_conf: Path) -> dict[str, bytes]:
+    """Every file an issue can change, by path."""
+    paths = [*(pki.dir / "wireguard").rglob("*"), *out.glob("*"), wg_conf]
+    return {str(p): p.read_bytes() for p in paths if p.is_file()}
+
+
+class TestWireGuardLiveSyncFailure:
+    """A peer list the running interface refused is not an issued client.
+
+    Reporting success would leave the kernel on the old key after a --rotate,
+    so the retired key keeps working while the operator believes it is gone.
+    """
+
+    def test_a_refused_rotate_fails_and_keeps_the_live_key(
+        self, run, pki, wg_tools, monkeypatch
+    ):
+        run("--protocol", "wireguard", "--name", CLIENT)
+        before = _wireguard_state(pki, run.out, run.wg_conf)
+
+        monkeypatch.setenv("FAKE_WG_SYNC_FAIL", "1")
+        with pytest.raises(SystemExit) as exc:
+            run("--protocol", "wireguard", "--name", CLIENT, "--rotate")
+
+        assert exc.value.code == 1
+        assert _wireguard_state(pki, run.out, run.wg_conf) == before
+
+    def test_a_refused_new_client_leaves_nothing_issued(
+        self, run, pki, wg_tools, monkeypatch
+    ):
+        run("--protocol", "wireguard", "--name", CLIENT)
+        before = _wireguard_state(pki, run.out, run.wg_conf)
+
+        monkeypatch.setenv("FAKE_WG_SYNC_FAIL", "1")
+        with pytest.raises(SystemExit) as exc:
+            run("--protocol", "wireguard", "--name", SIBLING)
+
+        assert exc.value.code == 1
+        assert _wireguard_state(pki, run.out, run.wg_conf) == before

@@ -15,9 +15,11 @@ log rotation setup functions.
 
 import os
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 from typing import BinaryIO
 
@@ -84,6 +86,26 @@ def write_file_atomic(path: Path, data: bytes, mode: int) -> None:
         os.fsync(dir_fd)
     finally:
         os.close(dir_fd)
+
+
+def snapshot_files(paths: Iterable[Path]) -> dict[Path, tuple[bytes, int] | None]:
+    """Record each file's content and mode, or None where it does not exist."""
+    saved: dict[Path, tuple[bytes, int] | None] = {}
+    for path in paths:
+        try:
+            saved[path] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+        except FileNotFoundError:
+            saved[path] = None
+    return saved
+
+
+def restore_files(saved: dict[Path, tuple[bytes, int] | None]) -> None:
+    """Put back every file snapshot_files recorded, and remove those it did not find."""
+    for path, before in saved.items():
+        if before is None:
+            path.unlink(missing_ok=True)
+        else:
+            write_file_atomic(path, *before)
 
 
 def setup_directories(cfg) -> None:
