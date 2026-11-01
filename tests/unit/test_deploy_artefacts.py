@@ -355,6 +355,14 @@ class TestComposeFragment:
         )
         assert "1194:1194/udp" in text
 
+    def test_the_image_tag_is_required_not_latest(self):
+        """A `:-latest` fallback runs whatever latest is on the day of the pull."""
+        text = (REPO_ROOT / "deploy" / "compose" / "culvert.yaml").read_text(
+            encoding="utf-8"
+        )
+        assert "latest" not in text
+        assert "${CULVERT_VERSION:?" in text
+
     def test_gated_wireguard_port_is_not_published(self):
         """A default server opens no WireGuard port, so the fragment has none."""
         text = (REPO_ROOT / "deploy" / "compose" / "culvert.yaml").read_text(

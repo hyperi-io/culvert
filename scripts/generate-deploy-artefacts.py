@@ -94,6 +94,16 @@ def _write_compose(contract, path: Path) -> None:
         raise SystemExit(f"compose fragment has no {udp_port.strip()} line to fix up")
     fragment = fragment.replace(udp_port, udp_port.rstrip("\n")[:-1] + '/udp"\n')
 
+    # The generator falls back to `latest`, which runs whatever the registry
+    # holds on the day. Compose refuses to start until the release is named.
+    floating = "${CULVERT_VERSION:-latest}"
+    if floating not in fragment:
+        raise SystemExit(f"compose fragment has no {floating} tag to pin")
+    fragment = fragment.replace(
+        floating,
+        "${CULVERT_VERSION:?set CULVERT_VERSION to the culvert release to run}",
+    )
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         header + fragment,
