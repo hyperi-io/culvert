@@ -76,7 +76,9 @@ def _openssl(args: list[str], data: bytes) -> subprocess.CompletedProcess:
 
 def crl_problem(crl: bytes, ca_file: Path) -> str | None:
     """Return why crl cannot be used with the CA in ca_file, or None."""
-    if _openssl(["crl", "-noout", "-CAfile", str(ca_file)], crl).returncode != 0:
+    # OpenSSL before 3.2 exits 0 on a bad signature and says so only on stderr.
+    checked = _openssl(["crl", "-noout", "-CAfile", str(ca_file)], crl)
+    if checked.returncode != 0 or b"verify OK" not in checked.stderr:
         return "the CRL is not a CRL signed by the CA"
     return None
 
