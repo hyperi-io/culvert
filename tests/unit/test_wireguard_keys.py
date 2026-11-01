@@ -223,6 +223,44 @@ class TestAllocatePeerIp:
         data = json.loads(alloc_file.read_text())
         assert data["alice"] == "10.8.0.2"
 
+    @pytest.mark.parametrize(
+        "change",
+        [
+            pytest.param(
+                lambda pki: allocate_peer_ip(pki, "10.8.0.0/24", "bob"), id="allocate"
+            ),
+            pytest.param(lambda pki: deallocate_peer_ip(pki, "alice"), id="deallocate"),
+        ],
+    )
+    def test_a_failed_write_keeps_the_previous_allocations(
+        self, pki_dir: Path, monkeypatch, change
+    ) -> None:
+        """A write that dies part way must not leave a truncated allocations.json.
+
+        Every later issue, revoke and server start parses it, so a half-written
+        file stops WireGuard for every client.
+        """
+        import os
+
+        wg_dir = pki_dir / "wireguard"
+        wg_dir.mkdir(parents=True)
+        allocate_peer_ip(pki_dir, "10.8.0.0/24", "alice")
+        alloc_file = wg_dir / "allocations.json"
+        before = alloc_file.read_text()
+
+        def disk_full(fd):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(os, "fsync", disk_full)
+        with pytest.raises(OSError, match="No space left"):
+            change(pki_dir)
+
+        assert alloc_file.read_text() == before
+        assert sorted(p.name for p in wg_dir.iterdir()) == [
+            "allocations.json",
+            "allocations.lock",
+        ]
+
     def test_concurrent_allocations_do_not_collide(self, pki_dir: Path) -> None:
         """Parallel allocations get unique IPs and leave valid JSON (flock)."""
         import threading

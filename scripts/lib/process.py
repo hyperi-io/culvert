@@ -63,7 +63,9 @@ def write_file_atomic(path: Path, data: bytes, mode: int) -> None:
     The content goes to a private temp file beside path and is renamed over it, so
     a reader never sees a partial file, a private key is never wider than 0600
     while it is written, and two writers sharing the directory never share a temp
-    file. The final mode is applied before the rename.
+    file. The final mode is applied before the rename. The file is flushed before
+    the rename and the directory after it, so a crash leaves the old file or the
+    new one, never an empty one.
     """
     fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     tmp = Path(name)
@@ -71,10 +73,17 @@ def write_file_atomic(path: Path, data: bytes, mode: int) -> None:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
             os.fchmod(f.fileno(), mode)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def setup_directories(cfg) -> None:

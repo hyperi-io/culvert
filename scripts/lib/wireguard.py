@@ -24,7 +24,7 @@ from pathlib import Path
 
 from scalo.logger import logger
 
-from lib.process import write_secret
+from lib.process import write_file_atomic, write_secret
 
 
 @contextmanager
@@ -201,6 +201,12 @@ def load_or_generate_client_keys(
 # ---------------------------------------------------------------------------
 
 
+def _write_allocations(alloc_file: Path, allocations: dict[str, str]) -> None:
+    """Replace allocations.json whole, so a failed write leaves the old one."""
+    data = (json.dumps(allocations, indent=2) + "\n").encode()
+    write_file_atomic(alloc_file, data, 0o644)
+
+
 def allocate_peer_ip(pki_dir: Path, network: str, client_name: str) -> str:
     """Allocate next available IP for a WireGuard peer."""
     alloc_file = pki_dir / "wireguard" / "allocations.json"
@@ -222,7 +228,7 @@ def allocate_peer_ip(pki_dir: Path, network: str, client_name: str) -> str:
             ip_str = str(host)
             if ip_str not in used_ips:
                 allocations[client_name] = ip_str
-                alloc_file.write_text(json.dumps(allocations, indent=2) + "\n")
+                _write_allocations(alloc_file, allocations)
                 return ip_str
 
     raise RuntimeError(f"No available IPs in {network}")
@@ -238,7 +244,7 @@ def deallocate_peer_ip(pki_dir: Path, client_name: str) -> str | None:
         allocations: dict[str, str] = json.loads(alloc_file.read_text())
         ip = allocations.pop(client_name, None)
         if ip:
-            alloc_file.write_text(json.dumps(allocations, indent=2) + "\n")
+            _write_allocations(alloc_file, allocations)
     return ip
 
 

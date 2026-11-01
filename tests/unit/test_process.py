@@ -40,6 +40,22 @@ class TestWriteFileAtomic:
 
         assert other.read_bytes() == b"half written by another container"
 
+    def test_flushes_the_file_and_then_the_directory(self, tmp_path, monkeypatch):
+        """Without both, a power cut can leave the name pointing at an empty file."""
+        import os
+
+        synced = []
+        real_fsync = os.fsync
+
+        def recording_fsync(fd):
+            synced.append(stat.S_ISDIR(os.fstat(fd).st_mode))
+            real_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", recording_fsync)
+        write_file_atomic(tmp_path / "allocations.json", b"{}", 0o644)
+
+        assert synced == [False, True]
+
 
 class TestWriteSecret:
     """write_secret's defining property: 0600 with no wider-perms window."""
