@@ -272,67 +272,68 @@ def revoke_wireguard_client(client_name: str) -> bool:
     wg_dir = PKI_DIR / "wireguard"
     peers_dir = wg_dir / "peers"
 
-    peers = wireguard.existing_peer_ids(PKI_DIR, client_name)
-    if not peers:
-        logger.warning(
-            f"WireGuard peer key not found: {client_name}",
-            path=str(peers_dir / f"{client_name}.pub"),
-        )
-        return False
+    with wireguard.peer_lifecycle_lock(PKI_DIR):
+        peers = wireguard.existing_peer_ids(PKI_DIR, client_name)
+        if not peers:
+            logger.warning(
+                f"WireGuard peer key not found: {client_name}",
+                path=str(peers_dir / f"{client_name}.pub"),
+            )
+            return False
 
-    if len(peers) > 1:
-        logger.info(
-            "Revoking every device slot for client",
-            client=client_name,
-            slots=len(peers),
-        )
+        if len(peers) > 1:
+            logger.info(
+                "Revoking every device slot for client",
+                client=client_name,
+                slots=len(peers),
+            )
 
-    for peer in peers:
-        _revoke_wireguard_peer(peer, peers_dir)
+        for peer in peers:
+            _revoke_wireguard_peer(peer, peers_dir)
 
-    # Exact filenames only: "<name>-wg*" also matches a client named "<name>-wg-x".
-    removed = 0
-    for wg_conf in wireguard_files(OUTPUT_DIR, client_name):
-        wg_conf.unlink()
-        removed += 1
-        logger.info(f"  Removed: {wg_conf}")
-    _rebundle_zip(client_name)
+        # Exact filenames only: "<name>-wg*" also matches a client named "<name>-wg-x".
+        removed = 0
+        for wg_conf in wireguard_files(OUTPUT_DIR, client_name):
+            wg_conf.unlink()
+            removed += 1
+            logger.info(f"  Removed: {wg_conf}")
+        _rebundle_zip(client_name)
 
-    # Regenerate the server config without the removed peer, at the path the
-    # server actually reads. Writing it under the PKI directory instead left the
-    # revoked peer in the file the server loads, so a container restart brought
-    # the peer back - a revocation that silently expired. The PostUp/PostDown
-    # hooks go back in too, or the next wg-quick up drops the operator's rules.
-    priv_path = wg_dir / "server_private.key"
-    if priv_path.exists():
-        from lib.config import Config as VpnConfig
+        # Regenerate the server config without the removed peer, at the path the
+        # server actually reads. Writing it under the PKI directory instead left the
+        # revoked peer in the file the server loads, so a container restart brought
+        # the peer back - a revocation that silently expired. The PostUp/PostDown
+        # hooks go back in too, or the next wg-quick up drops the operator's rules.
+        priv_path = wg_dir / "server_private.key"
+        if priv_path.exists():
+            from lib.config import Config as VpnConfig
 
-        vcfg = VpnConfig.from_settings()
-        alloc_file = wg_dir / "allocations.json"
+            vcfg = VpnConfig.from_settings()
+            alloc_file = wg_dir / "allocations.json"
 
-        server_private = priv_path.read_text().strip()
-        server_conf = wireguard.generate_server_config(
-            private_key=server_private,
-            network=vcfg.wg_network,
-            listen_port=vcfg.wg_port,
-            mtu=vcfg.wg_mtu,
-            peers_dir=peers_dir,
-            alloc_file=alloc_file,
-            post_up=vcfg.wg_post_up,
-            post_down=vcfg.wg_post_down,
-        )
-        write_secret(vcfg.wg_conf, server_conf)
-        logger.info(
-            "Regenerated WireGuard server config without revoked peer",
-            path=str(vcfg.wg_conf),
-        )
-    else:
-        logger.warning(
-            "No WireGuard server private key found, so the server config was not"
-            " regenerated - the peer is removed from the live interface but"
-            " would return if the server config were rebuilt from these files",
-            path=str(priv_path),
-        )
+            server_private = priv_path.read_text().strip()
+            server_conf = wireguard.generate_server_config(
+                private_key=server_private,
+                network=vcfg.wg_network,
+                listen_port=vcfg.wg_port,
+                mtu=vcfg.wg_mtu,
+                peers_dir=peers_dir,
+                alloc_file=alloc_file,
+                post_up=vcfg.wg_post_up,
+                post_down=vcfg.wg_post_down,
+            )
+            write_secret(vcfg.wg_conf, server_conf)
+            logger.info(
+                "Regenerated WireGuard server config without revoked peer",
+                path=str(vcfg.wg_conf),
+            )
+        else:
+            logger.warning(
+                "No WireGuard server private key found, so the server config was not"
+                " regenerated - the peer is removed from the live interface but"
+                " would return if the server config were rebuilt from these files",
+                path=str(priv_path),
+            )
 
     logger.info(
         f"WireGuard client {client_name} has been revoked",

@@ -28,20 +28,34 @@ from lib.process import write_secret
 
 
 @contextmanager
+def _exclusive(lock_path: Path):
+    """Hold an exclusive flock on lock_path, across processes."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w", encoding="utf-8") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
+
+
 def _alloc_lock(wg_dir: Path):
     """Serialise read-modify-write of allocations.json across processes.
 
     Concurrent generate-client / revoke-client runs would otherwise race and
     double-allocate an IP or clobber the peer list.
     """
-    wg_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = wg_dir / "allocations.lock"
-    with open(lock_path, "w") as lf:
-        fcntl.flock(lf, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lf, fcntl.LOCK_UN)
+    return _exclusive(wg_dir / "allocations.lock")
+
+
+def peer_lifecycle_lock(pki_dir: Path):
+    """Serialise a whole issue, revoke or server-config rebuild across processes.
+
+    Hold it from the first read of peers and allocations to the live sync. An
+    issuer that read a peer just before a revoke would otherwise write the
+    revoked key back into wg0.conf and the running interface.
+    """
+    return _exclusive(pki_dir / "wireguard" / "lifecycle.lock")
 
 
 # ---------------------------------------------------------------------------
@@ -491,25 +505,26 @@ def setup_wireguard(cfg) -> None:
         )
         sys.exit(1)
 
-    server_priv, server_pub = generate_server_keys(cfg.pki_dir)
-    logger.info(f"WireGuard server public key: {server_pub}")
-
     peers_dir = cfg.pki_dir / "wireguard" / "peers"
     alloc_file = cfg.pki_dir / "wireguard" / "allocations.json"
 
-    config_content = generate_server_config(
-        private_key=server_priv,
-        network=cfg.wg_network,
-        listen_port=cfg.wg_port,
-        mtu=cfg.wg_mtu,
-        peers_dir=peers_dir,
-        alloc_file=alloc_file,
-        post_up=cfg.wg_post_up,
-        post_down=cfg.wg_post_down,
-    )
+    with peer_lifecycle_lock(cfg.pki_dir):
+        server_priv, server_pub = generate_server_keys(cfg.pki_dir)
+        logger.info(f"WireGuard server public key: {server_pub}")
 
-    # wg0.conf embeds the server private key - 0600 from creation.
-    write_secret(cfg.wg_conf, config_content)
+        config_content = generate_server_config(
+            private_key=server_priv,
+            network=cfg.wg_network,
+            listen_port=cfg.wg_port,
+            mtu=cfg.wg_mtu,
+            peers_dir=peers_dir,
+            alloc_file=alloc_file,
+            post_up=cfg.wg_post_up,
+            post_down=cfg.wg_post_down,
+        )
+
+        # wg0.conf embeds the server private key - 0600 from creation.
+        write_secret(cfg.wg_conf, config_content)
     logger.info(f"WireGuard config written to {cfg.wg_conf}")
 
 

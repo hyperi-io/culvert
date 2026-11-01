@@ -91,10 +91,15 @@ def stack(tmp_path, issue_cert, easyrsa, clean_env, monkeypatch):
         """Let generate-client issue a "-proxy" name, as it did before refusing it."""
         monkeypatch.setattr(generate, "collides_with_proxy_stunnel", lambda name: False)
 
+    monkeypatch.setattr(revoke, "PKI_DIR", pki)
+    monkeypatch.setattr(revoke, "OUTPUT_DIR", clients)
+
     return SimpleNamespace(
         pki=pki,
         clients=clients,
         wg_conf=wg_conf,
+        generate_module=generate,
+        revoke_module=revoke,
         issue=issue,
         predate_proxy_refusal=predate_proxy_refusal,
         generate=lambda *args: run(generate, "generate-client", *args),
@@ -180,3 +185,80 @@ class TestSharedStunnelName:
 
         assert "alice-proxy-stunnel.conf" in _volume(stack)
         assert "alice-proxy.zip" not in _volume(stack)
+
+
+class TestRevokeDuringReissue:
+    """A WireGuard revoke that lands while the same client is reissued stays revoked.
+
+    The reissue snapshots the peer into the server config it is about to write.
+    If the revoke can run to completion inside that window, the reissue then
+    writes the revoked key back into wg0.conf and the next start re-admits it.
+    """
+
+    def test_the_revoked_key_does_not_return_to_wg0(self, stack, monkeypatch):
+        import fcntl
+        import threading
+
+        from lib import wireguard
+
+        stack.generate(
+            "--protocol", "wireguard", "--name", "alice", "--pubkey", ALICE_KEY
+        )
+        assert ALICE_KEY in stack.wg_conf.read_text(encoding="utf-8")
+
+        # Records when the revoke has to wait for a lock rather than racing on.
+        revoke_waiting = threading.Event()
+        real_flock = fcntl.flock
+
+        def flock(fd, operation):
+            if operation == fcntl.LOCK_EX:
+                try:
+                    real_flock(fd, operation | fcntl.LOCK_NB)
+                    return
+                except BlockingIOError:
+                    revoke_waiting.set()
+            real_flock(fd, operation)
+
+        monkeypatch.setattr(fcntl, "flock", flock)
+
+        revoked = threading.Event()
+        errors: list[BaseException] = []
+
+        def revoke_alice() -> None:
+            try:
+                stack.revoke_module.revoke_wireguard_client("alice")
+            except BaseException as exc:  # surfaced on the main thread below
+                errors.append(exc)
+            finally:
+                revoked.set()
+
+        revoker = threading.Thread(target=revoke_alice)
+        real_server_config = wireguard.generate_server_config
+
+        def server_config_then_revoke(**kwargs):
+            conf = real_server_config(**kwargs)
+            if threading.current_thread() is threading.main_thread():
+                revoker.start()
+                # Polls to a 10 s backstop for whichever comes first.
+                for _ in range(1000):
+                    if revoked.wait(0.01) or revoke_waiting.is_set():
+                        break
+                assert revoked.is_set() or revoke_waiting.is_set(), (
+                    "the revoke neither finished nor waited on a lock"
+                )
+            return conf
+
+        monkeypatch.setattr(
+            wireguard, "generate_server_config", server_config_then_revoke
+        )
+
+        cfg = stack.generate_module.Config()
+        stack.generate_module.generate_wireguard_configs(
+            "alice", cfg, pubkeys=[ALICE_KEY]
+        )
+        revoker.join(timeout=30)
+
+        assert not revoker.is_alive(), "the revoke never completed"
+        assert not errors, errors
+        assert ALICE_KEY not in stack.wg_conf.read_text(encoding="utf-8")
+        assert not (stack.pki / "wireguard" / "peers" / "alice.pub").exists()
