@@ -75,7 +75,8 @@ def write_crl():
     to `openssl crl`, so anything less would not exercise the parse.
     """
 
-    def _write(path, next_update):
+    def _write(path, next_update, *, issuer=None, revoked=()):
+        """Sign with issuer (an issue_cert CA) or a throwaway key, revoking serials."""
         from datetime import timedelta
 
         from cryptography import x509
@@ -83,17 +84,29 @@ def write_crl():
         from cryptography.hazmat.primitives.asymmetric import ec
         from cryptography.x509.oid import NameOID
 
-        key = ec.generate_private_key(ec.SECP256R1())
-        issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "culvert-test-ca")])
+        if issuer is None:
+            key = ec.generate_private_key(ec.SECP256R1())
+            name = x509.Name(
+                [x509.NameAttribute(NameOID.COMMON_NAME, "culvert-test-ca")]
+            )
+        else:
+            key, name = issuer.key, issuer.cert.subject
         # Issued before it expires, whether next_update is past or future.
         last_update = min(datetime.now(UTC), next_update) - timedelta(days=1)
-        crl = (
+        builder = (
             x509.CertificateRevocationListBuilder()
-            .issuer_name(issuer)
+            .issuer_name(name)
             .last_update(last_update)
             .next_update(next_update)
-            .sign(private_key=key, algorithm=hashes.SHA256())
         )
+        for serial in revoked:
+            builder = builder.add_revoked_certificate(
+                x509.RevokedCertificateBuilder()
+                .serial_number(serial)
+                .revocation_date(last_update)
+                .build()
+            )
+        crl = builder.sign(private_key=key, algorithm=hashes.SHA256())
         path.write_bytes(crl.public_bytes(serialization.Encoding.PEM))
 
     return _write

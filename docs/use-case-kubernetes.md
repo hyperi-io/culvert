@@ -195,11 +195,11 @@ extraEnv:
 Production clusters generally do not want a self-generated CA. Set
 `CULVERT_PKI_MODE=external` and point at one of:
 
-- **File** - certs mounted from a Kubernetes Secret (or cert-manager) volume.
+- File: certs mounted from a Kubernetes Secret (or cert-manager) volume.
   `CULVERT_SECRETS_*_PATH` are file paths. The values below do this.
-- **OpenBao** - Kubernetes auth exchanges the pod ServiceAccount token for a
+- OpenBao: Kubernetes auth exchanges the pod ServiceAccount token for a
   short-lived token, with no static secret in env.
-- **AWS Secrets Manager** - use IRSA on EKS, with no static AWS keys.
+- AWS Secrets Manager: use IRSA on EKS, with no static AWS keys.
 
 For the file provider, create the Secret, then add this to `values.yaml`:
 
@@ -241,6 +241,12 @@ extraVolumeMounts:
 optional, so drop their paths if the Secret does not carry them. With no
 `tc.key` the server mints its own tls-crypt-v2 key, and a client config only
 works against the server that issued it.
+
+The fetched files are checked as one set before any is written: the server
+certificate must verify against `ca.crt` and be in date, `server.key` must be its
+key, `crl.pem` must be signed by `ca.crt`, and `tc.key` must be a tls-crypt-v2
+server key. If any check fails, nothing is written and the server starts on the
+files already in its PKI volume.
 
 Detail is in [External PKI in the README](../README.md#external-pki) and the
 External PKI section of [.env.example](../.env.example).

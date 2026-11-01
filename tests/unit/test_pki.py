@@ -16,51 +16,94 @@ from types import SimpleNamespace
 import pytest
 
 # ---------------------------------------------------------------------------
-# PEM validation
+# PKI material validation
 # ---------------------------------------------------------------------------
 
+TC_SERVER_KEY = (
+    b"-----BEGIN OpenVPN tls-crypt-v2 server key-----\n"
+    b"dGxzLWNyeXB0LXYyIHNlcnZlciBrZXk=\n"
+    b"-----END OpenVPN tls-crypt-v2 server key-----\n"
+)
 
-class TestValidatePem:
-    """Tests for PEM content validation."""
 
-    def test_valid_pem_cert(self):
-        from lib.pki import _validate_pem
+@pytest.fixture
+def material(issue_cert, write_crl, tmp_path):
+    """A CA, a server certificate it signed, and a CRL it signed, as real PEM."""
+    ca = issue_cert("culvert-test-ca", is_ca=True)
+    server = issue_cert("vpn.example.test", issuer=ca)
+    crl = tmp_path / "material-crl.pem"
+    write_crl(crl, datetime.now(UTC) + timedelta(days=30), issuer=ca)
+    return SimpleNamespace(ca=ca, server=server, crl=crl.read_bytes())
 
-        data = b"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n"
-        assert _validate_pem(data, "test") is True
 
-    def test_valid_pem_key(self):
-        from lib.pki import _validate_pem
+class TestPkiSetProblems:
+    """Fetched material is accepted only as one coherent server PKI."""
 
-        data = b"-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
-        assert _validate_pem(data, "test") is True
+    @staticmethod
+    def _problems(material, issue_cert, write_crl, tmp_path, case):
+        from lib.pki import pki_set_problems
 
-    def test_invalid_pem(self):
-        from lib.pki import _validate_pem
-
-        assert _validate_pem(b"not a certificate", "test") is False
-
-    def test_empty_data(self):
-        from lib.pki import _validate_pem
-
-        assert _validate_pem(b"", "test") is False
-
-    def test_pem_with_leading_whitespace(self):
-        from lib.pki import _validate_pem
-
-        data = b"  \n-----BEGIN CERTIFICATE-----\ndata\n"
-        assert _validate_pem(data, "test") is True
-
-    def test_pem_after_a_certificate_text_dump(self):
-        """Easy-RSA's own issued/server.crt looks exactly like this."""
-        from lib.pki import _validate_pem
-
-        data = (
-            b"Certificate:\n    Data:\n        Version: 3 (0x2)\n"
-            b"        Serial Number: 1 (0x1)\n"
-            b"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n"
+        files = {
+            "ca": material.ca.cert_pem,
+            "cert": material.server.cert_pem,
+            "key": material.server.key_pem,
+            "crl": material.crl,
+            "tc_key": TC_SERVER_KEY,
+        }
+        if case == "key_of_another_server":
+            files["key"] = issue_cert("other", issuer=material.ca).key_pem
+        elif case == "cert_from_another_ca":
+            other_ca = issue_cert("other-ca", is_ca=True)
+            other = issue_cert("vpn.example.test", issuer=other_ca)
+            files["cert"], files["key"] = other.cert_pem, other.key_pem
+        elif case == "expired_cert":
+            expired = issue_cert("vpn.example.test", issuer=material.ca, valid_days=-1)
+            files["cert"], files["key"] = expired.cert_pem, expired.key_pem
+        elif case == "pem_shaped_garbage":
+            files["cert"] = (
+                b"-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"
+            )
+        elif case == "crl_from_another_ca":
+            write_crl(tmp_path / "other.pem", datetime.now(UTC) + timedelta(days=30))
+            files["crl"] = (tmp_path / "other.pem").read_bytes()
+        elif case == "client_tc_key":
+            files["tc_key"] = TC_SERVER_KEY.replace(b"server", b"client")
+        return pki_set_problems(
+            files["ca"], files["cert"], files["key"], files["crl"], files["tc_key"]
         )
-        assert _validate_pem(data, "server certificate") is True
+
+    @pytest.mark.parametrize(
+        ("case", "want"),
+        [
+            pytest.param("valid", None, id="valid"),
+            pytest.param("key_of_another_server", "does not match", id="foreign_key"),
+            pytest.param("cert_from_another_ca", "does not verify", id="foreign_ca"),
+            pytest.param("expired_cert", "does not verify", id="expired"),
+            pytest.param("pem_shaped_garbage", "not an X.509", id="garbage"),
+            pytest.param("crl_from_another_ca", "CRL", id="foreign_crl"),
+            pytest.param("client_tc_key", "tls-crypt-v2", id="client_tc_key"),
+        ],
+    )
+    def test_material(self, material, issue_cert, write_crl, tmp_path, case, want):
+        problems = self._problems(material, issue_cert, write_crl, tmp_path, case)
+        if want is None:
+            assert problems == []
+        else:
+            assert any(want in problem for problem in problems), problems
+
+    def test_a_certificate_text_dump_is_accepted(self, material):
+        """Easy-RSA writes a readable dump above the PEM block of what it issues."""
+        from lib.pki import pki_set_problems
+
+        dump = b"Certificate:\n    Data:\n        Version: 3 (0x2)\n"
+        assert (
+            pki_set_problems(
+                dump + material.ca.cert_pem,
+                dump + material.server.cert_pem,
+                material.server.key_pem,
+            )
+            == []
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -171,17 +214,17 @@ class TestFetchExternalPki:
     """Tests for external PKI fetch with resilience."""
 
     @pytest.fixture
-    def pki_env(self, tmp_path, clean_env, monkeypatch):
+    def pki_env(self, tmp_path, clean_env, monkeypatch, material):
         """Set up temp PKI dir and source cert files for FileProvider."""
         from lib.config import Config
 
         # Source certs (what FileProvider reads)
         src = tmp_path / "source"
         src.mkdir()
-        (src / "ca.crt").write_text(FAKE_CA)
-        (src / "server.crt").write_text(FAKE_CERT)
-        (src / "server.key").write_text(FAKE_KEY)
-        (src / "crl.pem").write_text(FAKE_CRL)
+        (src / "ca.crt").write_bytes(material.ca.cert_pem)
+        (src / "server.crt").write_bytes(material.server.cert_pem)
+        (src / "server.key").write_bytes(material.server.key_pem)
+        (src / "crl.pem").write_bytes(material.crl)
 
         # PKI dest dir
         pki = tmp_path / "pki"
@@ -323,6 +366,32 @@ class TestFetchExternalPki:
         # Good local file preserved
         assert "FAKE_CA" in (pki / "ca.crt").read_text()
 
+    @pytest.mark.parametrize("source_key", ["another_server", "missing"])
+    def test_a_bad_set_writes_none_of_it(self, pki_env, issue_cert, source_key):
+        """The CA and certificate are not written ahead of a key that fails."""
+        from lib.pki import fetch_external_pki
+
+        cfg, pki, src = pki_env
+        if source_key == "missing":
+            cfg.secrets_server_key_path = str(src / "absent.key")
+        else:
+            other = issue_cert("another-server")
+            (src / "server.key").write_bytes(other.key_pem)
+
+        assert fetch_external_pki(cfg) is False
+        assert not (pki / "ca.crt").exists()
+        assert not (pki / "issued" / "server.crt").exists()
+        assert not (pki / "private" / "server.key").exists()
+
+    def test_a_crl_the_ca_did_not_sign_is_refused(self, pki_env, write_crl):
+        from lib.pki import fetch_external_pki
+
+        cfg, pki, src = pki_env
+        write_crl(src / "crl.pem", datetime.now(UTC) + timedelta(days=30))
+
+        assert fetch_external_pki(cfg) is False
+        assert not (pki / "crl.pem").exists()
+
 
 class TestCrlRefresh:
     """The CRL has to keep moving, in BOTH PKI modes.
@@ -334,21 +403,23 @@ class TestCrlRefresh:
     """
 
     @pytest.fixture
-    def crl_env(self, tmp_path, clean_env, monkeypatch):
+    def crl_env(self, tmp_path, clean_env, monkeypatch, material):
         """External-PKI config backed by real files, as the fetch tests use."""
         from lib.config import Config
 
         src = tmp_path / "source"
         src.mkdir()
-        (src / "ca.crt").write_text(FAKE_CA)
-        (src / "server.crt").write_text(FAKE_CERT)
-        (src / "server.key").write_text(FAKE_KEY)
-        (src / "crl.pem").write_text(FAKE_CRL)
+        (src / "ca.crt").write_bytes(material.ca.cert_pem)
+        (src / "server.crt").write_bytes(material.server.cert_pem)
+        (src / "server.key").write_bytes(material.server.key_pem)
+        (src / "crl.pem").write_bytes(material.crl)
 
         pki = tmp_path / "pki"
         pki.mkdir()
         (pki / "issued").mkdir()
         (pki / "private").mkdir()
+        # The CA the server runs on, which a fetched CRL must be signed by.
+        (pki / "ca.crt").write_bytes(material.ca.cert_pem)
 
         monkeypatch.setenv("CULVERT_PKI_MODE", "external")
         monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "file")
@@ -388,18 +459,30 @@ class TestCrlRefresh:
         cfg.secrets_crl_path = ""
         assert crl_refresher(cfg) is None
 
-    def test_refetch_picks_up_an_upstream_change(self, crl_env):
+    def test_refetch_picks_up_an_upstream_change(self, crl_env, material, write_crl):
         """A CRL updated at the provider reaches disk without a restart."""
         from lib.pki import refetch_external_crl
 
         cfg, pki, src = crl_env
-        (pki / "crl.pem").write_text(FAKE_CRL)
-
-        updated = FAKE_CRL.replace("FAKE_CRL", "FAKE_CRL_REVOKED_ALICE")
-        (src / "crl.pem").write_text(updated)
+        (pki / "crl.pem").write_bytes(material.crl)
+        next_update = datetime.now(UTC) + timedelta(days=30)
+        write_crl(src / "crl.pem", next_update, issuer=material.ca, revoked=[4242])
 
         assert refetch_external_crl(cfg) is True
-        assert "FAKE_CRL_REVOKED_ALICE" in (pki / "crl.pem").read_text()
+        assert (pki / "crl.pem").read_bytes() == (src / "crl.pem").read_bytes()
+
+    def test_refetch_refuses_a_crl_another_ca_signed(
+        self, crl_env, material, write_crl
+    ):
+        """OpenVPN refuses every client against a CRL its CA did not sign."""
+        from lib.pki import refetch_external_crl
+
+        cfg, pki, src = crl_env
+        (pki / "crl.pem").write_bytes(material.crl)
+        write_crl(src / "crl.pem", datetime.now(UTC) + timedelta(days=30))
+
+        assert refetch_external_crl(cfg) is False
+        assert (pki / "crl.pem").read_bytes() == material.crl
 
     def test_refetch_keeps_the_existing_crl_when_unreachable(self, crl_env):
         """A provider that cannot be read must not blank the CRL on disk.
@@ -450,12 +533,15 @@ class TestCrlRefresh:
         start_crl_refresh(cfg, SimpleNamespace(shutdown_requested=True))
         assert any("CRL has expired" in e for e in errors), errors
 
-    def test_a_refreshed_crl_makes_openvpn_reread_it(self, crl_env):
+    def test_a_refreshed_crl_makes_openvpn_reread_it(
+        self, crl_env, material, write_crl
+    ):
         """OpenVPN reads the CRL at startup, so a new file needs a reload."""
         from lib.pki import start_crl_refresh
 
         cfg, pki, src = crl_env
-        (src / "crl.pem").write_text(FAKE_CRL.replace("FAKE_CRL", "REVOKED_BOB"))
+        next_update = datetime.now(UTC) + timedelta(days=30)
+        write_crl(src / "crl.pem", next_update, issuer=material.ca, revoked=[4242])
 
         class OneCycle:
             """Stands in for ProcessManager: stops the loop after its first reload."""
@@ -474,7 +560,7 @@ class TestCrlRefresh:
         start_crl_refresh(cfg, manager, interval_hours=0.0003)
 
         assert manager.reloaded.wait(timeout=30), "the refreshed CRL was not reloaded"
-        assert "REVOKED_BOB" in (pki / "crl.pem").read_text()
+        assert (pki / "crl.pem").read_bytes() == (src / "crl.pem").read_bytes()
 
 
 class TestRegenerateLocalCrl:
