@@ -13,6 +13,10 @@ classification: oss
 
 quality:
   enabled: true
+  dep_licenses:
+    # This wheel ships no licence file. The text is upstream's, taken at the same version.
+    overrides:
+      - {name: loguru, version: "0.7.3", licence: MIT, reason: "Q118 A: upstream LICENSE at tag 0.7.3", licence_file: third_party/loguru-0.7.3-LICENSE}
   ignore:
     - tool: semgrep
       ids:
