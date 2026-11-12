@@ -42,6 +42,14 @@ covers what it changes.
   compliance default, ChaCha20 offered), what the tuning profiles change, and
   the host-side throughput levers (DCO, sysctl).
 
+## For developers
+
+- [supply-chain.md](supply-chain.md) - where every third-party binary comes
+  from, what the build verifies, and what it does not.
+- [ci-environment.md](ci-environment.md) - the secrets and variables CI needs.
+- [scalo-reference.md](scalo-reference.md) - the scalo calls culvert makes.
+  The [scalo repo](https://github.com/hyperi-io/scalo-py) is the API source of
+  truth.
 
 ## Conventions
 
