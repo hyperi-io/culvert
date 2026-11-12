@@ -142,7 +142,8 @@ Pin the addresses clients dial with `publicService.loadBalancerIP` (TCP) and
 a Gateway API `UDPRoute` (or TLS passthrough for the HTTPS listeners) in front
 of the ClusterIP Service.
 
-OpenVPN over UDP (`1194/UDP`) is always on. Every other listener is two edits
+OpenVPN over UDP is on by default and its port (`1194/UDP`) is always
+published. Every other listener is two edits
 that must agree: the `CULVERT_*` switch in `extraEnv`, and its `extraPorts`
 entry so the port reaches the Service.
 

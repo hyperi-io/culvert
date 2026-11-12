@@ -27,8 +27,8 @@ dropped.
 ## Difference 2: CGNAT addressing
 
 Because the operator controls BOTH ends (the appliances and the
-receiver), the tunnels use `100.64.0.0/10` (RFC 6598, the carrier-grade
-NAT range) instead of the default `10.8.0.0/22`. The appliances' own LANs
+receiver), the tunnel is `100.64.0.0/24`, inside the `100.64.0.0/10` (RFC 6598,
+carrier-grade NAT) range, instead of the default `10.8.0.0/22`. The appliances' own LANs
 and the destination network do not sit in `100.64/10`, so tunnel
 addresses never collide with either end and no NAT gateway is needed just
 to dodge overlap.

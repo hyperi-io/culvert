@@ -8,14 +8,17 @@ Docs are grouped by what you are trying to do, not by feature.
 ## Connect a client
 
 - [vpn-client-setup.md](vpn-client-setup.md) - installing and connecting on
-  macOS, Linux, Windows, iOS and Android, for both protocols and for the
+  macOS, Linux and Windows, plus the WireGuard mobile apps, for both protocols and for the
   HTTPS-tunnelled variants. This one also ships inside the image at
   `/etc/vpn/docs/`, so it is available on the server itself.
 
 ## Deploy a shape
 
-Each of these is a full walkthrough - deploy, issue a client, operate it -
-for one of the opinionated `CULVERT_PROFILE=` presets.
+Each of these is a full walkthrough - deploy, issue a client, operate it.
+Home, corporate, travel and edge-fleet each match a `CULVERT_PROFILE=` preset,
+and kubernetes is a deploy shape, not a profile. The `mobile` preset
+(`profiles/mobile.yaml`) has no walkthrough: [performance.md](performance.md)
+covers what it changes.
 
 - [use-case-home.md](use-case-home.md) - home LAN or a lab VM. OpenVPN UDP,
   split tunnel, local PKI.
@@ -39,14 +42,6 @@ for one of the opinionated `CULVERT_PROFILE=` presets.
   compliance default, ChaCha20 offered), what the tuning profiles change, and
   the host-side throughput levers (DCO, sysctl).
 
-## Look something up
-
-- [supply-chain.md](supply-chain.md) - where every third-party binary comes
-  from, what the build verifies, and what it does not.
-- [ci-environment.md](ci-environment.md) - the secrets and variables CI needs.
-- [scalo-reference.md](scalo-reference.md) - the scalo calls culvert actually
-  makes. The [scalo repo](https://github.com/hyperi-io/scalo-py) is the API
-  source of truth.
 
 ## Conventions
 
