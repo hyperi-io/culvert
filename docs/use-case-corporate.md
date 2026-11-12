@@ -40,8 +40,7 @@ secret store, or the External Secrets Operator, not into git. See the
 Secrets Management section of [.env.example](../.env.example) for
 identity-based ESO wiring on AWS / Azure / GCP / OpenBao.
 
-OIDC works with any OIDC-compliant provider via discovery. Tested with
-Microsoft Entra ID, Google Workspace, Okta, Keycloak, and Auth0. Issuer
+OIDC works with any OIDC-compliant provider that supports discovery. Issuer
 URL examples are in [.env.example](../.env.example); provider setup
 snippets are in [vpn-client-setup.md](vpn-client-setup.md).
 

@@ -178,7 +178,7 @@ together. No chart is committed to this repository.
   rather than forced, because the package already owns those as real
   directories and the link landed inside one, which silently defeated PKI
   persistence.
-- A replica holds no state beyond its volumes, which is what makes horizontal
-  scaling possible and what makes a shared `tls-crypt-v2` key mandatory for it.
+- Culvert runs as one replica. WireGuard mints its server key in the pod and
+  the PKI volume is ReadWriteOnce, so the chart renders a singleton.
 - Defaults are generic, never site-specific. Anything site-shaped belongs in a
   profile or the deployment values.
