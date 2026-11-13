@@ -41,6 +41,8 @@ covers what it changes.
 - [performance.md](performance.md) - the cipher stance (AES-256-GCM the
   compliance default, ChaCha20 offered), what the tuning profiles change, and
   the host-side throughput levers (DCO, sysctl).
+- [cryptography.md](cryptography.md) - the CNSA 2.0 classical suite the
+  OpenVPN path ships, and what is not there yet (ML-KEM, ML-DSA).
 
 ## For developers
 
