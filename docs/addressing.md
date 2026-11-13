@@ -99,7 +99,7 @@ agree. WireGuard takes a single CIDR.
 Keep the listeners in distinct subnets so they do not collide. Or bake
 the values into a profile - the `edge-fleet` profile does exactly this
 for the CGNAT case (`udp_network: "100.64.0.0"`). See the
-[deployment profiles](../README.md#deployment-profiles) section of the
+[deployment profiles](../README.md#configuration) section of the
 README.
 
 ## See also

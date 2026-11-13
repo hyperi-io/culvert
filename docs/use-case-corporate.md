@@ -93,7 +93,7 @@ The profile starts on a local CA. When the company CA must sign the
 server certificate, switch to external PKI: set
 `CULVERT_PKI_MODE=external` and the `CULVERT_SECRETS_*` variables
 (file mounts, OpenBao, or AWS Secrets Manager). See
-[External PKI in the README](../README.md#external-pki) and the PKI Mode
+[External PKI in the README](../README.md#configuration) and the PKI Mode
 section of [.env.example](../.env.example).
 
 ## See also

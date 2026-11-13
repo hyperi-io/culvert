@@ -120,4 +120,4 @@ too, with no `docker cp`.
 - [use-case-corporate.md](use-case-corporate.md) - when you outgrow one
   shared config and want per-user certs plus SSO
 - [README quick start](../README.md#quick-start) and the
-  [profiles table](../README.md#deployment-profiles)
+  [profiles table](../README.md#configuration)
