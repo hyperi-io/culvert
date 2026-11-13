@@ -1,17 +1,17 @@
 # scalo Reference for culvert
 
-How culvert actually uses [scalo](https://pypi.org/project/scalo/) (v2.29+),
+How culvert actually uses [scalo](https://pypi.org/project/scalo/),
 the Apache-2.0 Python runtime it depends on. This documents the calls that
 exist in `scripts/lib/`, not the full library surface; the
 [scalo repo](https://github.com/hyperi-io/scalo-py) is the API SSoT.
 
 ## Installation
 
-In `pyproject.toml` (granular extras - one per backend culvert actually
-uses, not the blanket `[secrets]`):
+In `pyproject.toml`, which carries the version range (granular extras - one
+per backend culvert actually uses, not the blanket `[secrets]`):
 
 ```toml
-dependencies = ["scalo[metrics,secrets-vault,secrets-aws]>=2.31.15,<3"]
+dependencies = ["scalo[metrics,secrets-vault,secrets-aws]..."]
 ```
 
 The container installs the full runtime tree (scalo + those extras +

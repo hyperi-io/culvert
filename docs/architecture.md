@@ -19,7 +19,7 @@ control it was asked for did not install.
 
 ## What is in the image
 
-The base is `ubuntu:26.04`, pinned by digest. Every third-party binary comes
+The base is the Ubuntu image `BASE_IMAGE` pins by tag and digest in the `Dockerfile`. Every third-party binary comes
 from upstream directly, and each arrives with its own verification:
 
 | Component | Source | How it is verified |
