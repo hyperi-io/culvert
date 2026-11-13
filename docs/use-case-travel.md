@@ -118,7 +118,7 @@ attention to you specifically.
 
 - [vpn-client-setup.md](vpn-client-setup.md#running-the-vpn-over-https)
   - installing stunnel / wstunnel and connecting on each platform
-- [Cryptography and CNSA 2.0 in the README](../README.md#cryptography-and-cnsa-20)
+- [Cryptography and CNSA 2.0](cryptography.md)
   - what the crypto does and does not give you
 - [use-case-corporate.md](use-case-corporate.md) - the same HTTPS listener
   as a managed corporate fallback with SSO
