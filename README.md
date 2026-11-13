@@ -61,9 +61,9 @@ Everything else is an opt-in with its own port:
 
 ## Configuration
 
-Everything is a `CULVERT_*` environment variable, read through [scalo](https://pypi.org/project/scalo/)'s cascade (CLI, env, `.env`, `settings.{env}.yaml`, `settings.yaml`, `defaults.yaml`, built-in). [.env.example](.env.example) lists every variable with its default. `CULVERT_ORG_NAME=Acme` names the self-generated CA `Acme VPN CA`.
+Everything is a `CULVERT_*` environment variable, read through [scalo](https://pypi.org/project/scalo/)'s cascade (CLI, env, `.env`, `settings.{env}.yaml`, `settings.yaml`, `defaults.yaml`, built-in). [.env.example](.env.example) documents the common variables with example values. `CULVERT_ORG_NAME=Acme` names the self-generated CA `Acme VPN CA`.
 
-A profile is a YAML of site defaults under `profiles/`, loaded with `CULVERT_PROFILE=<name>` (the shipped ones live at `/etc/vpn/profiles/` in the image, so the bare name works), and an explicit env var always wins over it. Each shipped profile has a walkthrough:
+A profile is a YAML of site defaults under `profiles/`, loaded with `CULVERT_PROFILE=<name>` (the shipped ones live at `/etc/vpn/profiles/` in the image, so the bare name works), and an explicit env var always wins over it. Four shipped profiles have a walkthrough, and `example` is a placeholder template to copy:
 
 | Profile | Shape | Walkthrough |
 |---------|-------|-------------|
