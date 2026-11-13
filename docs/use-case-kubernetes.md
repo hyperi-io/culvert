@@ -249,7 +249,7 @@ key, `crl.pem` must be signed by `ca.crt`, and `tc.key` must be a tls-crypt-v2
 server key. If any check fails, nothing is written and the server starts on the
 files already in its PKI volume.
 
-Detail is in [External PKI in the README](../README.md#external-pki) and the
+Detail is in [External PKI in the README](../README.md#configuration) and the
 External PKI section of [.env.example](../.env.example).
 
 ## 7. Observe
@@ -272,6 +272,6 @@ External PKI section of [.env.example](../.env.example).
   shape that runs on this chart
 - [use-case-corporate.md](use-case-corporate.md) - OIDC SSO and per-user
   certs, the config side of a corporate cluster deploy
-- [Deployment in the README](../README.md#deployment) and
-  [Observability](../README.md#observability)
+- [Configuration in the README](../README.md#configuration) and
+  [Operating it](../README.md#operating-it)
 - [addressing.md](addressing.md) - tunnel subnet defaults and overrides
