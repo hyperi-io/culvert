@@ -252,11 +252,11 @@ fails without Docker rather than skipping.
 
 | Don't | Do | Why |
 |---|---|---|
-| Write the skip-CI marker literally in a commit message | Describe it | GitHub scans the whole message, body included. PRs #35 and #36 got zero CI runs that way and were abandoned for #37 |
+| Write the skip-CI marker literally in a commit message | Describe it | GitHub scans the whole message, body included, so a literal marker anywhere in it gives the PR no CI run at all |
 | Hand-edit `deploy/deployment-contract.json` or `deploy/compose/culvert.yaml` | Re-run `scripts/generate-deploy-artefacts.py` | Both render from the scalo deployment contract in `scripts/lib/deployment.py`, and a unit test compares the committed output against a fresh render |
 | Call `easyrsa init-pki` | Create the directories directly, as `lib/pki.py` does | On 3.2.x it removes the PKI directory unconditionally. That is a volume mount, so it fails outright, and where it succeeds it takes the CA ([issue #11](https://github.com/hyperi-io/culvert/issues/11)) |
 | Check a renamed doc's links on macOS | Let `tests/unit/test_docs_links.py` do it | It compares against `git ls-files`, so case matters. A new doc also has to be linked from `docs/README.md` |
-| Read a green PR as proof the image runs | Confirm the Container job built | The Ubuntu 26.04 bump and a broken `--proxy` config each passed every check and died at startup |
+| Read a green PR as proof the image runs | Confirm the Container job built | Only the Container job starts the image, so a base-image bump or a broken config can pass every other check and die at startup |
 
 ### Where this sits
 
