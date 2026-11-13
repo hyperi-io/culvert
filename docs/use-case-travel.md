@@ -100,7 +100,7 @@ Be straight about the threat model:
   analysis (timing, volume, connection duration), is playing a different
   game. This buys you "indistinguishable from HTTPS at a glance", not
   invisibility.
-- **A full tunnel routes your traffic; it does not by itself settle DNS.**
+- **A full tunnel routes your traffic, but it does not by itself settle DNS.**
   The server pushes its DNS servers, and whether your client uses them to
   the exclusion of the network's own resolver is up to the client. On
   **Windows** you must uncomment `block-outside-dns` in the `.ovpn` -
@@ -118,7 +118,7 @@ attention to you specifically.
 
 - [vpn-client-setup.md](vpn-client-setup.md#running-the-vpn-over-https)
   - installing stunnel / wstunnel and connecting on each platform
-- [Cryptography and CNSA 2.0 in the README](../README.md#cryptography-and-cnsa-20)
+- [Cryptography and CNSA 2.0](cryptography.md)
   - what the crypto does and does not give you
 - [use-case-corporate.md](use-case-corporate.md) - the same HTTPS listener
   as a managed corporate fallback with SSO

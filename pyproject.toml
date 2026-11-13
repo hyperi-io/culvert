@@ -9,7 +9,7 @@
 [project]
 name = "culvert"
 version = "0.0.0"
-description = "Culvert - OpenVPN + WireGuard, optionally tunnelled over HTTPS, with OIDC SSO and external PKI"
+description = "OpenVPN and WireGuard in one container, with OpenVPN reachable over HTTPS and OIDC sign-in."
 requires-python = ">=3.14"
 license = "Apache-2.0"
 

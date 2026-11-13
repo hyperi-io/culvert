@@ -1,61 +1,30 @@
 # <img src="assets/brand/product-culvert/tertiary/product-culvert_square.svg" alt="Culvert icon" width="40"> Culvert
 
-The VPN server that installs as a container: OpenVPN and WireGuard in one image, each optionally tunnelled over HTTPS. `docker run` it standalone or drop it into Kubernetes. In a DFE deployment it is the edge-fleet VPN, the door an appliance dials before it posts to dfe-receiver.
+OpenVPN and WireGuard in one container, with OpenVPN reachable over HTTPS and OIDC sign-in.
 
-## What it gives you
+## What it does
 
+- The VPN server that installs as a container: `docker run` it on one host, or install the Helm chart. In a DFE deployment it is the edge-fleet VPN, the door an appliance dials before it posts to dfe-receiver.
 - OpenVPN on UDP or TCP and WireGuard, on their own or both at once.
-- Either protocol wrapped in TLS on a web port, stunnel for OpenVPN on TCP 443 and wstunnel for WireGuard on TCP 4443 by default. A network that lets out HTTPS on 443 alone passes the OpenVPN tunnel, and the WireGuard one once its port is moved or opened.
-- OIDC sign-in on OpenVPN with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 or any other OIDC provider. WireGuard uses keys.
+- Either protocol wrapped in TLS on a web port: stunnel for OpenVPN on TCP 443, wstunnel for WireGuard on TCP 4443. A network that lets out HTTPS alone passes the tunnel.
+- OIDC sign-in on OpenVPN with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 or any other OIDC provider, through [openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2). WireGuard uses keys.
 - PKI from file mounts, OpenBao or Vault, or AWS Secrets Manager, with a self-generated Easy-RSA CA when you bring none.
-- TLS 1.3 only, AES-256-GCM, SHA-384 and P-384 on the OpenVPN path, the CNSA 2.0 classical suite ([details](#cryptography-and-cnsa-20)).
-- Prometheus `/metrics` and OpenTelemetry OTLP export, `/livez` and `/readyz` probes, a drain on SIGTERM and cgroup-aware resource detection.
+- TLS 1.3 only, AES-256-GCM, SHA-384 and P-384 on the OpenVPN path, the CNSA 2.0 classical suite ([docs/cryptography.md](docs/cryptography.md)).
+- Prometheus `/metrics` and OTLP export, `/livez` and `/readyz`, a drain on SIGTERM and cgroup-aware resource detection. Images for `linux/amd64` and `linux/arm64`.
 
-## Coming from another VPN server?
-
-Culvert is one image with no management-plane stack and no per-user
-fees. If you already run one of these, here is what you gain by
-switching - and what you give up:
+Culvert is a classic hub VPN server you run yourself, one image with no management plane and no per-user fees. Coming from something else?
 
 | If you use | What you gain with Culvert |
 |------------|----------------------------|
-| [AWS Client VPN](https://aws.amazon.com/vpn/) | Flat cost of a node instead of per-subnet-association plus per-connection charges. Adds WireGuard, any-IdP OIDC, and the HTTPS-tunnelled listeners; AWS Client VPN is OpenVPN-only with a 50 Mbps per-connection baseline. You lose the managed control plane. |
-| [kylemanna/docker-openvpn](https://github.com/kylemanna/docker-openvpn) | Appears unmaintained since 2020 and its published image ships OpenVPN 2.4. Culvert a maintained alt: OpenVPN 2.7 with DCO, plus everything above. |
-| [angristan/openvpn-install](https://github.com/angristan/openvpn-install) | Same result (plus the extras) without a host-mutating bash script - the server is an image, config is env vars, upgrades are a `docker pull`. |
+| [AWS Client VPN](https://aws.amazon.com/vpn/) | Flat cost of a node instead of per-subnet-association plus per-connection charges. Adds WireGuard, any-IdP OIDC, and the HTTPS-tunnelled listeners. You lose the managed control plane. |
+| [kylemanna/docker-openvpn](https://github.com/kylemanna/docker-openvpn) | Appears unmaintained since 2020 and its image ships OpenVPN 2.4. Culvert is a maintained alternative: OpenVPN 2.7 with DCO, plus everything above. |
+| [angristan/openvpn-install](https://github.com/angristan/openvpn-install) | Same result without a host-mutating bash script: the server is an image, config is env vars, upgrades are a `docker pull`. |
 | [OpenVPN Access Server](https://openvpn.net/access-server/) | No per-connection licensing. Culvert adds WireGuard and provider-neutral OIDC. |
-| [wg-easy](https://github.com/wg-easy/wg-easy) | Keep the WireGuard simplicity, add OpenVPN for the clients that need it, external PKI, and the option to run either protocol over HTTPS. wg-easy's OAuth (15.4+) signs users into its web UI; culvert's OIDC gates the VPN session itself. |
-
-Culvert is a classic hub VPN server you run yourself, for the
-cases that need OpenVPN client compatibility, certificate-based
-compliance, or a VPN that travels over HTTPS.
-
-## Architecture
-
-```mermaid
-graph TD
-    ENV[Environment Variables] --> EP[entrypoint.py]
-    EP --> PROTO{CULVERT_PROTOCOL}
-    PROTO -->|openvpn| OV[OpenVPN Setup]
-    PROTO -->|wireguard| WG[WireGuard Setup]
-    PROTO -->|both| OV
-    PROTO -->|both| WG
-
-    OV --> OVP[OpenVPN Processes<br/>UDP/TCP/HTTPS listeners]
-    OV --> STUNNEL[stunnel<br/>OpenVPN over HTTPS :443]
-    OV --> OAUTH[openvpn-auth-oauth2<br/>OIDC SSO]
-
-    WG --> WGP[WireGuard Interface<br/>wg0 via wg-quick]
-    WG --> WST[wstunnel server<br/>WireGuard over HTTPS :4443]
-
-    EP --> OBS[Observability :9090<br/>/livez + /readyz<br/>/metrics when enabled<br/>OTel push :4317/4318]
-```
-
-**Platforms:** `linux/amd64`, `linux/arm64`
+| [wg-easy](https://github.com/wg-easy/wg-easy) | Keep the WireGuard simplicity, add OpenVPN for the clients that need it, external PKI, and either protocol over HTTPS. wg-easy's OAuth signs users into its web UI, and Culvert's OIDC gates the VPN session itself. |
 
 ## Quick start
 
-The default is the simplest working server: OpenVPN over UDP, local PKI,
-nothing else. Everything else is opt-in.
+The default is the simplest working server: OpenVPN over UDP, local PKI, nothing else.
 
 ```bash
 docker run -d \
@@ -69,318 +38,65 @@ docker run -d \
   ghcr.io/hyperi-io/culvert:latest
 ```
 
-Opt-ins, each with its own port publish:
+Then mint a client and hand it the file it writes into the `culvert-clients` volume, over a channel you trust, because the `.ovpn` embeds the private key:
+
+```bash
+docker exec -it <container> generate-client --name zaphod
+docker exec -it <container> generate-client --status   # CURRENT, STALE or UNKNOWN per client
+docker exec -it <container> revoke-client zaphod        # access ends here, not when the file goes
+```
+
+The `culvert-pki` volume holds the CA that signs every client. Back it up and keep it private. One identity covers Zaphod's devices at once: OpenVPN shares the certificate across sessions, and WireGuard gets one peer per device slot (`CULVERT_SHARED_CLIENT_SLOTS`). The client side, provider by provider, is [docs/vpn-client-setup.md](docs/vpn-client-setup.md).
+
+Everything else is an opt-in with its own port:
 
 | Capability | Enable with | Port |
 |------------|-------------|------|
 | WireGuard (alongside or instead) | `CULVERT_PROTOCOL=both` (or `wireguard`) | `51820/udp` |
 | TCP fallback listener | `CULVERT_TCP_ENABLED=true` | `1194/tcp` |
-| OpenVPN over HTTPS (TLS on a web port) | `CULVERT_HTTPS_ENABLED=true` + stunnel certs | `443/tcp` |
-| WireGuard over HTTPS (WebSocket/TLS) | `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true` | `4443/tcp` |
+| OpenVPN over HTTPS | `CULVERT_HTTPS_ENABLED=true` + stunnel certs | `443/tcp` |
+| WireGuard over HTTPS | `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true` | `4443/tcp` |
 | OIDC SSO | `CULVERT_OAUTH2_ENABLED=true` + IdP config | `9000-9002/tcp` |
-| Prometheus metrics | `CULVERT_METRICS_ENABLED=true` | served on `9090/tcp` (already published) |
-
-Then generate a client config:
-
-```bash
-docker exec -it <container> generate-client --name zahpod
-```
-
-That mints a real credential, so treat the output accordingly:
-
-- The `.ovpn` it writes into the `culvert-clients` volume EMBEDS Zaphod's
-  private key. Whoever holds that file can connect as Zaphod - move it to
-  the client over a channel you trust.
-- Access ends when you revoke it, not when you delete the file:
-  `docker exec -it <container> revoke-client zaphod`.
-- A client name cannot end in `-proxy`. `generate-client --proxy` writes `<name>-proxy-stunnel.conf`, the file a client of that name would overwrite.
-- A config is a snapshot of the server's settings. `docker exec -it <container> generate-client --status` lists every issued client as CURRENT, STALE with the settings that moved, or UNKNOWN when it predates the record. STALE and UNKNOWN exit non-zero, so monitoring can run it.
-- The `culvert-pki` volume holds the CA that signs every client. Back it up
-  and keep it private; losing it invalidates every issued config, and
-  leaking it lets someone else issue their own.
-
-One identity covers Zaphod's devices concurrently, laptop and phone both
-connected. OpenVPN shares the certificate across sessions; WireGuard cannot
-share a key, so Zaphod gets one peer per device slot (`zaphod/wg-split.conf`,
-`zaphod/wg2-split.conf`) - `CULVERT_SHARED_CLIENT_SLOTS` sets how many. Set
-`CULVERT_ALLOW_SHARED_CLIENTS=false` where a credential must identify a single
-device.
-
-See [docs/vpn-client-setup.md](docs/vpn-client-setup.md) for the full
-client connection guide.
-
-## Use cases
-
-The quick start above is the quickstart path. From there, culvert
-ships opinionated profiles for the deploy types we actually run IRL with - each
-usable as-is with one `CULVERT_PROFILE=` switch, or as a base to tweak.
-Each has a full walkthrough (deploy, client, ops) under [docs/](docs/):
-
-- **Home / lab** ([docs/use-case-home.md](docs/use-case-home.md)) -
-  reach your home LAN or a throwaway VM. OpenVPN UDP, split tunnel,
-  local PKI. `CULVERT_PROFILE=home`.
-- **Corporate** ([docs/use-case-corporate.md](docs/use-case-corporate.md))
-  \- per-user certs plus OIDC SSO, group gating, TCP fallback, clean
-  offboarding. `CULVERT_PROFILE=corporate`.
-- **Restricted networks** ([docs/use-case-travel.md](docs/use-case-travel.md))
-  \- run the VPN over HTTPS so it works where only web traffic gets out:
-  hotel and conference wifi, captive portals, tight corporate egress, or a
-  network that blocks VPN protocols outright. `CULVERT_PROFILE=travel`.
-- **Kubernetes**
-  ([docs/use-case-kubernetes.md](docs/use-case-kubernetes.md)) - the
-  published Helm chart, one replica: install values, the PKI volume,
-  external PKI, probes, metrics.
-- **Edge fleet -> receiver**
-  ([docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md)) - an
-  appliance fleet streaming into a central receiver, with reverse
-  admin back down the tunnels and CGNAT addressing.
-  `CULVERT_PROFILE=edge-fleet`.
-
-Addressing (why the tunnels default to `10.8.0.0/22`, when to use the
-CGNAT range) is its own note: [docs/addressing.md](docs/addressing.md).
+| Prometheus metrics | `CULVERT_METRICS_ENABLED=true` | on `9090/tcp` |
 
 ## Configuration
 
-All runtime configuration is via `CULVERT_*` environment variables,
-read through [scalo](https://pypi.org/project/scalo/)'s 7-layer cascade
-(CLI -> env -> `.env` -> `settings.{env}.yaml` -> `settings.yaml` ->
-`defaults.yaml` -> hard-coded), with opt-in profile YAML loaded as an
-additional config source.
+Everything is a `CULVERT_*` environment variable, read through [scalo](https://pypi.org/project/scalo/)'s cascade (CLI, env, `.env`, `settings.{env}.yaml`, `settings.yaml`, `defaults.yaml`, built-in). [.env.example](.env.example) documents the common variables with example values. `CULVERT_ORG_NAME=Acme` names the self-generated CA `Acme VPN CA`.
 
-See [.env.example](.env.example) for the full list of variables and
-their defaults.
-
-### Deployment profiles
-
-Site-specific defaults ship as YAML files under `profiles/` and load
-opt-in via `CULVERT_PROFILE`. Explicit env vars always override
-profile values.
-
-Culvert ships opinionated presets for the common deploy types. Each is
-usable as-is once you set `CULVERT_SERVER_CN` (and the secrets a
-preset needs), or as a starting point to copy and tweak:
+A profile is a YAML of site defaults under `profiles/`, loaded with `CULVERT_PROFILE=<name>` (the shipped ones live at `/etc/vpn/profiles/` in the image, so the bare name works), and an explicit env var always wins over it. Four shipped profiles have a walkthrough, and `example` is a placeholder template to copy:
 
 | Profile | Shape | Walkthrough |
 |---------|-------|-------------|
-| `home` | OpenVPN UDP, split tunnel, local PKI - reach your home LAN or a lab VM | [docs/use-case-home.md](docs/use-case-home.md) |
-| `corporate` | Per-user certs + OIDC SSO + group gating + TCP fallback | [docs/use-case-corporate.md](docs/use-case-corporate.md) |
-| `travel` | OpenVPN + WireGuard over HTTPS, for networks that only pass web traffic | [docs/use-case-travel.md](docs/use-case-travel.md) |
-| `edge-fleet` | Appliance fleet -> central receiver, reverse admin, CGNAT addressing | [docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md) |
-| `example` | Reference template with placeholder site defaults | - |
+| `home` | OpenVPN UDP, split tunnel, local PKI: reach your home LAN or a lab VM | [docs/use-case-home.md](docs/use-case-home.md) |
+| `corporate` | Per-user certs, OIDC SSO, group gating, TCP fallback, clean offboarding | [docs/use-case-corporate.md](docs/use-case-corporate.md) |
+| `travel` | OpenVPN and WireGuard over HTTPS, for networks that only pass web traffic | [docs/use-case-travel.md](docs/use-case-travel.md) |
+| `edge-fleet` | An appliance fleet streaming to a central receiver, reverse admin down the tunnels, CGNAT addressing | [docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md) |
 
-Load a shipped profile (they live at `/etc/vpn/profiles/` in the
-image, so the bare name works):
+Kubernetes has no profile and its own walkthrough: [docs/use-case-kubernetes.md](docs/use-case-kubernetes.md), the chart at `oci://ghcr.io/hyperi-io/charts/culvert`, one replica, assembled from [deploy/deployment-contract.json](deploy/deployment-contract.json) on the scalo-service library chart.
 
-```bash
-CULVERT_PROFILE=home
-```
+External PKI keeps the CA key at your CA, so Culvert neither signs nor revokes OpenVPN client certificates. Issue one there, place it at `pki/issued/<name>.crt` and `pki/private/<name>.key`, and run `generate-client --config-only --name <name>`. Revoke at the CA too: the refresh from `CULVERT_SECRETS_CRL_PATH` ends the session.
 
-A profile sets the CULVERT_* configuration; the deployment side
-(published ports, Helm values) is documented in each walkthrough. Or
-write your own YAML and point `CULVERT_PROFILE` at its path. Explicit
-env vars always override profile values.
+## Operating it
 
-### Site identity (`CULVERT_ORG_NAME`)
+One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) carries `/livez`, `/readyz` and, with `CULVERT_METRICS_ENABLED=true`, `/metrics`. OTLP push to `:4317` or `:4318` comes on with `CULVERT_OTEL_*`. Point a `startupProbe` at `/livez`: Kubernetes suspends liveness until it passes, so one path covers a generous boot and a tight liveness period.
 
-Set `CULVERT_ORG_NAME=Acme` and the self-generated CA becomes
-`Acme VPN CA` without any other configuration. Defaults to `VPN CA`.
+Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it moves only when the refresh has been failing, which is also logged at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns.
 
-## OIDC providers
+## Documentation
 
-culvert speaks generic OIDC via
-[openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2).
-Tested with:
+- [docs/architecture.md](docs/architecture.md): what is in the image, the entrypoint sequence, the two PKI modes, the iptables chains and the invariants.
+- [docs/addressing.md](docs/addressing.md): why the tunnels default to `10.8.0.0/22`, and when to use the CGNAT range.
+- [docs/cryptography.md](docs/cryptography.md): the CNSA 2.0 classical suite, and what is not there yet.
+- [docs/performance.md](docs/performance.md): throughput, DCO and the cipher choice.
+- [docs/supply-chain.md](docs/supply-chain.md): how the image is built and pinned.
+- [CHANGELOG.md](CHANGELOG.md): releases follow SemVer, published to GHCR as multi-arch images.
 
-- Microsoft Entra ID (Azure AD)
-- Google Workspace
-- Okta
-- Keycloak
-- Auth0
+## Help and contributing
 
-See [docs/vpn-client-setup.md](docs/vpn-client-setup.md) for
-provider-specific setup snippets.
-
-## External PKI
-
-culvert supports three external PKI backends via
-[scalo](https://pypi.org/project/scalo/) secrets:
-
-- **File** - certs mounted from K8s Secret volumes or local paths
-- **OpenBao** - HashiCorp Vault-compatible secrets engine
-- **AWS Secrets Manager**
-
-Local PKI mode (self-generated Easy-RSA CA) is the default for quick
-starts and dev environments.
-
-External PKI keeps the CA key at your CA, so culvert neither signs nor revokes
-OpenVPN client certificates. Issue one there, place it at `pki/issued/<name>.crt`
-and `pki/private/<name>.key`, and run `generate-client --config-only --name
-<name>`. Revoke at the CA too: the refresh from `CULVERT_SECRETS_CRL_PATH` ends
-the session. WireGuard peers work as in local mode.
-
-## Cryptography and CNSA 2.0
-
-The OpenVPN path ships the CNSA 2.0 *classical* suite by default, aligned
-to technical deployment reality vs policy here - no OSS VPN stack you can
-commonly deploy today is fully CNSA 2.0 (DT hot tip: the gap everywhere is ML-DSA).
-
-What the defaults give you (OpenVPN, both the plain and the
-HTTPS-tunnelled listeners):
-
-- TLS 1.3 only (`tls-version-min 1.3`), no downgrade
-- Data channel AES-256-GCM, SHA-384 control-channel auth. DCO requires an
-  AEAD cipher rather than this one specifically - ChaCha20-Poly1305 also
-  qualifies. DCO itself needs the kernel module on the HOST (Linux 6.16+, or
-  ovpn-backports); without it OpenVPN encrypts in userspace and says so at
-  startup
-- Key exchange P-384 (`secp384r1`) first, X25519 as a compatibility
-  fallback
-- PKI defaults to EC P-384 certificates (`CULVERT_KEY_TYPE=ec`,
-  `secp384r1`); RSA-4096 available
-- `tls-crypt-v2` wraps the TLS handshake in a pre-shared symmetric
-  layer (metadata protection and DoS mitigation)
-
-The limits, for those cryptanalysis inclined:
-
-- **ChaCha20-Poly1305 and X25519 are accepted as secondary options**
-  for client compatibility. Strict deployments can pin
-  `data-ciphers AES-256-GCM` and `tls-groups secp384r1` via a custom
-  server config.
-- **WireGuard is outside CNSA by design.** Its suite is fixed
-  (Curve25519, ChaCha20-Poly1305, BLAKE2s) and not configurable -
-  that is a WireGuard protocol property, not a Culvert choice. Use the
-  OpenVPN path where more stringent CNSA alignment matters.
-- **No post-quantum key exchange yet.** OpenVPN takes its TLS groups from
-  the crypto library, and the OpenSSL 3.0.13 in our Ubuntu 24.04 base has
-  no ML-KEM - so CNSA 2.0's headline items (ML-KEM-1024, ML-DSA-87) are
-  unavailable. The blocker is the base image, not OpenVPN: hybrid PQ groups
-  light up once we build against OpenSSL 3.5+, and that base bump is the
-  work. Meanwhile the `tls-crypt-v2` pre-shared wrap blunts
-  harvest-now-decrypt-later collection of handshake metadata, but session
-  keys are still classical ECDH.
-- **On "fully CNSA 2.0"**: ML-KEM is starting to appear elsewhere -
-  strongSwan 6.0+ ships `mlkem1024` for IKEv2, for instance. What no
-  commonly deployable stack has yet is ML-DSA for authentication.
-
-## Deployment
-
-Culvert has two deliberate deployment targets - the same image serves
-both:
-
-- **Docker deploy** - a single host, `docker run` or the
-  `docker-compose.yaml` in the repo (set `CULVERT_IMAGE`). Local Easy-RSA PKI, env-var
-  config, client configs on a volume. The five-minute path.
-- **Enterprise Kubernetes** - Helm/ArgoCD-shaped: startup/liveness/
-  readiness probes, SIGTERM connection drain, cgroup-aware capacity,
-  external PKI (OpenBao or AWS), OIDC SSO, Prometheus + OTel. Expose
-  the listeners via Gateway API TLS/UDP passthrough or a LoadBalancer.
-  Each release publishes a Helm chart at
-  `oci://ghcr.io/hyperi-io/charts/culvert`, assembled from
-  [`deploy/deployment-contract.json`](deploy/deployment-contract.json) on
-  the scalo-service library chart. It runs one replica and defaults to the
-  simplest working server - OpenVPN UDP, NET_ADMIN - with every other
-  listener an opt-in. Its WireGuard port opens only where `config.protocol`
-  is `wireguard` or `both`. The values for the tun device, `ip_forward`,
-  the config file and the opt-in listeners are in
-  [docs/use-case-kubernetes.md](docs/use-case-kubernetes.md).
-
-## Observability
-
-One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) carries the
-operator surface, separate from VPN traffic:
-
-- **Health:** `/livez`, `/readyz` - always served. These are the only two;
-  point a `startupProbe` at `/livez` (Kubernetes suspends liveness until the
-  startup probe passes, so one path covers both a generous boot budget and a
-  tight liveness period)
-- **Prometheus:** `/metrics` on the same port when `CULVERT_METRICS_ENABLED=true`
-- **OpenTelemetry:** OTLP push to gRPC `:4317` / HTTP `:4318` collectors
-  (when enabled via `CULVERT_OTEL_*`)
-
-Worth an alert: `vpn_crl_seconds_until_expiry` goes negative once the CRL
-expires, and OpenVPN then refuses every client - including valid ones, with
-`certificate expired`. The CRL auto-refresh keeps it topped up, so this only
-moves if the refresh has been failing, which it also logs at error.
-
-Also worth one: `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's
-endpoint returning to an address it left within 10 minutes. A roaming phone
-moves once and stays. A WireGuard key loaded on two devices makes them take
-turns, and culvert logs a warning naming the peer and both addresses.
-
-## Versioning
-
-Releases follow [SemVer](https://semver.org/) and are published to
-GHCR as multi-arch images. Site-generic defaults can be overridden per
-deployment via the profile system. See [CHANGELOG.md](CHANGELOG.md).
-
-## Issues
+How to work in this repo, the commands that prove a change and what tends to bite are in [CONTRIBUTING.md](CONTRIBUTING.md). Security issues go to the [security policy](https://github.com/hyperi-io/culvert/security/policy), and community expectations are the [code of conduct](https://github.com/hyperi-io/.github/blob/main/.github/CODE_OF_CONDUCT.md).
 
 Open bugs: [this repo](https://github.com/hyperi-io/culvert/issues?q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor) | [whole DFE suite](https://github.com/search?type=issues&q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor+repo%3Ahyperi-io%2Fdfe-infra+repo%3Ahyperi-io%2Fdfe-docker+repo%3Ahyperi-io%2Fdfe-deploy+repo%3Ahyperi-io%2Fdfe-engine+repo%3Ahyperi-io%2Fdfe-loader+repo%3Ahyperi-io%2Fdfe-receiver+repo%3Ahyperi-io%2Fdfe-fetcher+repo%3Ahyperi-io%2Fdfe-archiver+repo%3Ahyperi-io%2Fdfe-transform-vrl+repo%3Ahyperi-io%2Fdfe-transform-vector+repo%3Ahyperi-io%2Fdfe-transform-elastic+repo%3Ahyperi-io%2Fdfe-ui+repo%3Ahyperi-io%2Fdfe-hyperdx+repo%3Ahyperi-io%2Fscalo-rs+repo%3Ahyperi-io%2Fscalo-py+repo%3Ahyperi-io%2Flogreducer+repo%3Ahyperi-io%2Fdfe-schemas+repo%3Ahyperi-io%2Fvector-vrl+repo%3Ahyperi-io%2Fculvert+repo%3Ahyperi-io%2Fdfe-clickhouse-rs+repo%3Ahyperi-io%2Ffactbook-rs)
 
 ## License
 
-[Apache-2.0](LICENSE). Third-party components bundled in the container
-image are listed in [NOTICE](NOTICE) with their own licences.
-
-## Contributing
-
-Pull requests welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
-workflow, commit-message convention, and config conventions. Security
-issues: see the [security policy](https://github.com/hyperi-io/culvert/security/policy).
-Community expectations: the
-[code of conduct](https://github.com/hyperi-io/.github/blob/main/.github/CODE_OF_CONDUCT.md).
-
-## Context
-
-### What this is
-
-A VPN server shipped as one container image. Python inside, but not a Python
-package -- the PyPI publish is opted out and a wheel is built only for pipeline
-parity. Anyone deploys it, so defaults are generic and anything site-shaped
-belongs in a profile or the deployment values. It replaced dfe-vpn, now
-retired, so older references to that repo are stale.
-
-### Where things live
-
-| Path | What it holds |
-|---|---|
-| `scripts/entrypoint.py` | Thin orchestrator. Owns the startup ORDER |
-| `scripts/lib/` | One module per concern -- config, network, pki, openvpn, wireguard, stunnel, wstunnel, oauth2, health, metrics, process, download |
-| `config/*.template` | `${VAR}` templates rendered at runtime |
-| `profiles/` | Opt-in site presets loaded by `CULVERT_PROFILE` |
-| `deploy/` | Deployment contract and compose fragment, GENERATED by `scripts/generate-deploy-artefacts.py`. The Helm chart is assembled from the contract at release and committed nowhere |
-| `docs/architecture.md` | Startup order, the two iptables chains, the PKI invariants |
-
-### Commands that prove a change
-
-`hyperi-ci check` locally, `tests/run-all.sh` for the tiers.
-
-Green in CI is the UNIT tier alone, with coverage of `scripts/` held to hyperi-ci's default 80% floor. `.hyperi-ci.yaml` disables integration, e2e and k8s and leaves `ty` non-blocking. Run the rest yourself:
-
-```bash
-pytest tests/e2e/ -m e2e -v     # needs Docker and TUN
-pytest tests/k8s/ -m k8s -v     # needs a kubeconfig and CULVERT_K8S_*
-```
-
-`addopts` carries no `-m "not e2e"`, so a bare `pytest` tries the e2e tier and
-fails without Docker rather than skipping.
-
-### What tends to bite
-
-| Don't | Do | Why |
-|---|---|---|
-| Write the skip-CI marker literally in a commit message | Describe it | GitHub scans the whole message, body included. PRs #35 and #36 got zero CI runs that way and were abandoned for #37 |
-| Hand-edit `deploy/deployment-contract.json` or `deploy/compose/culvert.yaml` | Re-run `scripts/generate-deploy-artefacts.py` | Both render from the scalo deployment contract in `scripts/lib/deployment.py`, and a unit test compares the committed output against a fresh render |
-| Call `easyrsa init-pki` | Create the directories directly, as `lib/pki.py` does | On 3.2.x it removes the PKI directory unconditionally. That is a volume mount, so it fails outright, and where it succeeds it takes the CA ([issue #11](https://github.com/hyperi-io/culvert/issues/11)) |
-| Check a renamed doc's links on macOS | Let `tests/unit/test_docs_links.py` do it | It compares against `git ls-files`, so case matters. A new doc also has to be linked from `docs/README.md` |
-| Read a green PR as proof the image runs | Confirm the Container job built | The Ubuntu 26.04 bump and a broken `--proxy` config each passed every check and died at startup |
-
-### Where this sits
-
-Inbound: **hyperi-io/scalo-py**, the only suite edge. `pyproject.toml` declares
-`scalo[metrics,secrets-vault,secrets-aws]` bounded below 3 at runtime, plus a
-dev-only `scalo[deployment]` range the artefact generators need and the runtime
-never imports. Granular extras on purpose.
-
-Outbound: nothing in the suite graph consumes culvert, and it is an optional
-member. It reaches consumers as a public container image on GHCR.
+[Apache-2.0](LICENSE). Third-party components bundled in the container image are listed in [NOTICE](NOTICE) with their own licences.
