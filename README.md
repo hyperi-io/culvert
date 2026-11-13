@@ -91,6 +91,8 @@ Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the
 - [docs/supply-chain.md](docs/supply-chain.md): how the image is built and pinned.
 - [CHANGELOG.md](CHANGELOG.md): releases follow SemVer, published to GHCR as multi-arch images.
 
+The suite's published docs are at <https://dfe.docs.hyperi.io>, and this repository's pages at <https://dfe.docs.hyperi.io/culvert/>.
+
 ## Help and contributing
 
 How to work in this repo, the commands that prove a change and what tends to bite are in [CONTRIBUTING.md](CONTRIBUTING.md). Security issues go to the [security policy](https://github.com/hyperi-io/culvert/security/policy), and community expectations are the [code of conduct](https://github.com/hyperi-io/.github/blob/main/.github/CODE_OF_CONDUCT.md).
