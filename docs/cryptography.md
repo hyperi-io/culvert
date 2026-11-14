@@ -1,8 +1,8 @@
 # Cryptography and CNSA 2.0
 
 The OpenVPN path ships the CNSA 2.0 *classical* suite by default, aligned
-to technical deployment reality vs policy here - no OSS VPN stack you can
-commonly deploy today is fully CNSA 2.0 (DT hot tip: the gap everywhere is ML-DSA).
+to technical deployment reality vs policy here - no OSS VPN stack you could
+commonly deploy as of 2026-11 is fully CNSA 2.0 (DT hot tip: the gap everywhere is ML-DSA).
 
 What the defaults give you (OpenVPN, both the plain and the
 HTTPS-tunnelled listeners):
@@ -30,12 +30,10 @@ The limits, for those cryptanalysis inclined:
   (Curve25519, ChaCha20-Poly1305, BLAKE2s) and not configurable -
   that is a WireGuard protocol property, not a Culvert choice. Use the
   OpenVPN path where more stringent CNSA alignment matters.
-- **No post-quantum key exchange yet.** OpenVPN takes its TLS groups from
-  the crypto library, and the OpenSSL 3.0.13 in our Ubuntu 24.04 base has
-  no ML-KEM - so CNSA 2.0's headline items (ML-KEM-1024, ML-DSA-87) are
-  unavailable. The blocker is the base image, not OpenVPN: hybrid PQ groups
-  light up once we build against OpenSSL 3.5+, and that base bump is the
-  work. Meanwhile the `tls-crypt-v2` pre-shared wrap blunts
+- **No post-quantum key exchange.** OpenVPN takes its TLS groups from
+  the crypto library, and the server templates set `tls-groups
+  secp384r1:X25519`, so CNSA 2.0's headline items (ML-KEM-1024, ML-DSA-87)
+  are not offered. Meanwhile the `tls-crypt-v2` pre-shared wrap blunts
   harvest-now-decrypt-later collection of handshake metadata, but session
   keys are still classical ECDH.
 - **On "fully CNSA 2.0"**: ML-KEM is starting to appear elsewhere -

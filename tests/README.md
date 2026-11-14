@@ -27,7 +27,6 @@ Fast, isolated tests for Python modules. Run locally without Docker.
 - **Framework:** pytest
 - **Purpose:** Test config parsing, validation, template generation, metrics parsing
 - **Dependencies:** `uv sync --dev`
-- **Run time:** < 15 seconds
 
 ```bash
 # Run all unit tests
@@ -47,7 +46,6 @@ Test container functionality in Docker environment.
 - **Framework:** BATS + Docker
 - **Purpose:** Test container startup, PKI initialisation, config generation
 - **Dependencies:** Docker, bats-core
-- **Run time:** 2-5 minutes
 
 ```bash
 ./tests/run-integration.sh
@@ -62,7 +60,6 @@ Test full VPN connectivity against a self-contained docker-compose stack
 - **Purpose:** Validate real VPN connections (OpenVPN UDP/TCP/HTTPS,
   WireGuard, WireGuard over HTTPS via wstunnel) end to end
 - **Dependencies:** Docker
-- **Run time:** 5-15 minutes
 
 ```bash
 # Run e2e tests (brings up the compose stack automatically)
@@ -79,7 +76,6 @@ external PKI, and real client tunnels carrying traffic.
 - **Framework:** pytest + kubectl + helm
 - **Dependencies:** a cluster you can install into, and an image reference it
   can pull
-- **Run time:** 1-2 minutes
 
 Every site-specific value comes from `tests/k8s/.env` (gitignored); copy
 `tests/k8s/.env.example` and fill it in. Unconfigured, every test SKIPS with a
