@@ -1,10 +1,10 @@
 # Edge fleet -> receiver
 
 An appliance fleet streaming data into a central receiver, with reverse
-admin back down the same tunnels. Any hub-and-spoke telemetry fleet looks
-like this: edge stream hubs pushing into a central ingest service, and
-operators needing a way back down to the appliances. It is the
-`edge-fleet` profile.
+admin back down the same tunnels. The edge here is EdgeStream Hub: its
+appliances push into the central ingest service, and operators need a way
+back down to them. Any hub-and-spoke telemetry fleet looks the same. It is
+the `edge-fleet` profile.
 
 This is the deployment we run culvert in ourselves, which is why the profile
 is opinionated rather than a blank template.

@@ -70,7 +70,7 @@ A profile is a YAML of site defaults under `profiles/`, loaded with `CULVERT_PRO
 | `home` | OpenVPN UDP, split tunnel, local PKI: reach your home LAN or a lab VM | [docs/use-case-home.md](docs/use-case-home.md) |
 | `corporate` | Per-user certs, OIDC SSO, group gating, TCP fallback, clean offboarding | [docs/use-case-corporate.md](docs/use-case-corporate.md) |
 | `travel` | OpenVPN and WireGuard over HTTPS, for networks that only pass web traffic | [docs/use-case-travel.md](docs/use-case-travel.md) |
-| `edge-fleet` | An appliance fleet streaming to a central receiver, reverse admin down the tunnels, CGNAT addressing | [docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md) |
+| `edge-fleet` | An EdgeStream Hub appliance fleet streaming to a central receiver, reverse admin down the tunnels, CGNAT addressing | [docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md) |
 
 Kubernetes has no profile and its own walkthrough: [docs/use-case-kubernetes.md](docs/use-case-kubernetes.md), the chart at `oci://ghcr.io/hyperi-io/charts/culvert`, one replica, assembled from [deploy/deployment-contract.json](deploy/deployment-contract.json) on the scalo-service library chart.
 
