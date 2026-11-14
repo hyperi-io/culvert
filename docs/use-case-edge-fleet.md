@@ -1,12 +1,12 @@
 # Edge fleet -> receiver
 
 An appliance fleet streaming data into a central receiver, with reverse
-admin back down the same tunnels. Any hub-and-spoke telemetry fleet has
-this shape: edge stream hubs pushing into a central ingest service, and
+admin back down the same tunnels. Any hub-and-spoke telemetry fleet looks
+like this: edge stream hubs pushing into a central ingest service, and
 operators needing a way back down to the appliances. It is the
 `edge-fleet` profile.
 
-This is the shape we run culvert in ourselves, which is why the profile
+This is the deployment we run culvert in ourselves, which is why the profile
 is opinionated rather than a blank template.
 
 Two things make this different from an ordinary client VPN. Understand
@@ -14,7 +14,7 @@ both before you deploy it.
 
 ## Difference 1: reverse admin
 
-A normal VPN only ever lets clients initiate outbound. This shape also
+A normal VPN only ever lets clients initiate outbound. This deployment also
 lets named admin networks INITIATE back DOWN an established client
 tunnel to reach an appliance - for updates, restricted repos, remote
 support. That inbound-to-client path is deliberate and needed here; it is

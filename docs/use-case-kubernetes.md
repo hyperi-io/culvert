@@ -1,6 +1,6 @@
 # Kubernetes
 
-Not a profile - a deploy shape, and a walkthrough you follow top to bottom.
+Not a profile - a deployment, and a walkthrough you follow top to bottom.
 Each release publishes a Helm chart beside the image, at
 `oci://ghcr.io/hyperi-io/charts/culvert`. The chart version is the release
 version, so chart `X.Y.Z` deploys image `vX.Y.Z`. Nothing is cloned to
@@ -269,7 +269,7 @@ External PKI section of [.env.example](../.env.example).
 ## See also
 
 - [use-case-edge-fleet.md](use-case-edge-fleet.md) - the hub-and-spoke fleet
-  shape that runs on this chart
+  deployment that runs on this chart
 - [use-case-corporate.md](use-case-corporate.md) - OIDC SSO and per-user
   certs, the config side of a corporate cluster deploy
 - [Configuration in the README](../README.md#configuration) and

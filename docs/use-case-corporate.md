@@ -18,7 +18,7 @@ the OIDC login proves the person.
   routed via the VPN; flip `CULVERT_FULL_TUNNEL=false` for split)
 - a local CA to start
 
-The profile sets the shape only. The OIDC secrets are yours to supply.
+The profile sets the defaults only. The OIDC secrets are yours to supply.
 
 ## 1. Supply the OIDC config
 
@@ -100,7 +100,7 @@ section of [.env.example](../.env.example).
 
 - [vpn-client-setup.md](vpn-client-setup.md) - OAuth2-capable clients
   (OpenVPN Connect 3.4.0+ / OpenVPN GUI) and provider setup
-- [use-case-kubernetes.md](use-case-kubernetes.md) - running this shape on
+- [use-case-kubernetes.md](use-case-kubernetes.md) - running this deployment on
   the Helm chart with external PKI and metrics
 - [use-case-travel.md](use-case-travel.md) - run the VPN over HTTPS for
   users on networks that block VPNs outright

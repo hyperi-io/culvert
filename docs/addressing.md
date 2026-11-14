@@ -104,7 +104,7 @@ README.
 
 ## See also
 
-- [use-case-edge-fleet.md](use-case-edge-fleet.md) - the one shape that
+- [use-case-edge-fleet.md](use-case-edge-fleet.md) - the one deployment that
   opts into `100.64/10`, and why
 - [use-case-home.md](use-case-home.md) and
   [use-case-corporate.md](use-case-corporate.md) - the split-tunnel and
