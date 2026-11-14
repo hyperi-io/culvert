@@ -6,37 +6,8 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-# Culvert Server
-# OpenVPN 2.7+ with DCO and WireGuard in one image - each optionally
-# tunnelled over HTTPS - plus OIDC SSO and external PKI
-# Drop-in 'just works' docker or k8s scale deploy
-#
-# Build (production):
-#   docker build \
-#     --build-arg VERSION=1.0.0 \
-#     -t ghcr.io/hyperi-io/culvert:1.0.0 .
-#
-# Build (development):
-#   docker build -t culvert:dev .
-#
-# Features:
-#   - OpenVPN 2.7.0+ from official repository (latest stable)
-#   - Data Channel Offload (DCO) when the HOST provides the kernel module.
-#     openvpn-dco-dkms is deliberately NOT installed here: DKMS would compile
-#     against the container's absent kernel headers, and the module has to be
-#     loaded on the host regardless - see vm-setup/setup-host.sh, which installs
-#     it there. Leaving it out drops a compiler toolchain from the image without
-#     costing the capability.
-#   - CNSA 2.0 classical suite on the OpenVPN path (TLS 1.3, AES-256-GCM,
-#     SHA-384, P-384). No ML-KEM or ML-DSA - the base image's OpenSSL has
-#     neither. WireGuard's suite is fixed and outside CNSA.
-#   - 4G/mobile network optimizations
-#   - Generic OIDC SSO (Entra ID, Okta, Keycloak, Google, Auth0)
-#   - Group-based access control
-#   - Stateless design for horizontal scaling
-#
-# Supply Chain:
-#   All third-party binaries are pulled directly from upstream GitHub releases.
+# Culvert server image: docs/architecture.md and docs/supply-chain.md.
+# openvpn-dco-dkms stays on the host (vm-setup/setup-host.sh), not in the image.
 
 # Base image pinned by digest so builds are reproducible. Override
 # BASE_IMAGE to rebuild on a newer base. hadolint ignore=DL3006
@@ -51,11 +22,7 @@ ARG VERSION
 ARG COMMIT
 
 LABEL maintainer="HyperI <opensource@hyperi.io>"
-# The crypto claim is scoped deliberately. The suite is the CNSA 2.0
-# CLASSICAL set and only on the OpenVPN path - WireGuard's suite is fixed
-# outside CNSA, and there is no ML-KEM or ML-DSA, so an unqualified
-# "CNSA 2.0 crypto" here would overstate it to anyone reading the label
-# without the README's limits section in front of them.
+# Scoped as docs/cryptography.md scopes it: the classical suite, OpenVPN path only.
 LABEL description="Culvert - OpenVPN + WireGuard, optionally tunnelled over HTTPS, CNSA 2.0 classical suite on the OpenVPN path, OIDC SSO"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${COMMIT}"
@@ -126,11 +93,8 @@ RUN apt-get update \
     && dpkg --compare-versions "${INSTALLED_OPENVPN}" ge "${OPENVPN_MIN_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
-# openvpn-auth-oauth2 from a pinned release .deb, checksum-checked before
-# dpkg. Its apt repo serves releases/latest (Suites ./) and cannot be pinned
-# to a version, which would make the image non-reproducible - hence the
-# artefact fetch. Version + SHA are bumped by
-# .github/workflows/dependency-check.yml.
+# openvpn-auth-oauth2 from a pinned, checksum-checked .deb: its apt repo serves
+# only latest. dependency-check.yml bumps the version and SHAs.
 # Source: https://github.com/jkroepke/openvpn-auth-oauth2
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
@@ -147,16 +111,11 @@ RUN ARCH=$(dpkg --print-architecture) \
     && rm /tmp/openvpn-auth-oauth2.deb \
     && openvpn-auth-oauth2 --version
 
-# Python dependencies from requirements-docker.txt, a hash-pinned lockfile
-# exported from uv.lock. --require-hashes means every transitive dep must
-# match its recorded SHA256, so a drifted or compromised PyPI release fails
-# the build rather than shipping. The granular secrets extras (file backend
-# is core, openbao=secrets-vault, aws=secrets-aws) plus otel are baked into
-# the lockfile; regenerate on any uv.lock change with:
+# requirements-docker.txt is a hash-pinned export of uv.lock. Regenerate on any
+# uv.lock change with:
 #   uv export --frozen --no-dev --no-emit-project --extra otel \
 #     --format requirements-txt -o requirements-docker.txt
-# The image has no venv by design, so pip's warning about installing as root
-# into the system site-packages is switched off.
+# No venv by design, so pip's root warning is off.
 COPY requirements-docker.txt /tmp/requirements-docker.txt
 RUN pip3 install --no-cache-dir --break-system-packages --root-user-action=ignore \
         --require-hashes -r /tmp/requirements-docker.txt \
@@ -165,10 +124,8 @@ RUN pip3 install --no-cache-dir --break-system-packages --root-user-action=ignor
 # scalo config cascade reads CULVERT_* env vars
 ENV ENV_PREFIX=CULVERT
 
-# wstunnel from a pinned release tarball, checksum-checked before extract.
-# There is no apt repo, and the upstream container image's binary links
-# against a glibc newer than the base image's, so the tarball is the only
-# option that runs here. BSD-3-Clause Rust binary.
+# wstunnel from a pinned, checksum-checked tarball: no apt repo, and the
+# upstream image's binary needs a newer glibc.
 ARG WSTUNNEL_VERSION="10.7.1"
 ARG WSTUNNEL_SHA256_AMD64="fa842ed53fbb14b1c69cd98829f9895d7f8a6b0d562c57c1175851a52cea9ea2"
 ARG WSTUNNEL_SHA256_ARM64="99f9506d01d1b4073254609600ec5056dab8dc58aec75c32f6eb0508335a8fd2"
@@ -194,15 +151,6 @@ RUN mkdir -p /etc/vpn/pki /etc/vpn/server/ccd /etc/vpn/clients \
     /etc/vpn/scripts /etc/vpn/docs /var/log/vpn
 
 # The canonical paths are /etc/vpn and /var/log/vpn, and nothing aliases them.
-#
-# There were compatibility symlinks to the legacy openvpn directories here. They
-# never worked: the openvpn package already owns both as real directories, so
-# `ln -s` created a link INSIDE each one rather than the alias it looks like.
-# Anything mounted at the legacy PKI path therefore landed somewhere the server
-# never reads, which silently defeated PKI persistence - a fresh CA on every
-# recreate. Removed rather than forced over package-owned directories: one set
-# of paths, and a mount at the wrong one now fails visibly instead of appearing
-# to work.
 
 # Configuration templates (processed by envsubst at runtime)
 COPY config/server.conf.template /etc/vpn/server/server.conf.template

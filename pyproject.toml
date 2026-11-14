@@ -13,10 +13,8 @@ description = "OpenVPN and WireGuard in one container, with OpenVPN reachable ov
 requires-python = ">=3.14"
 license = "Apache-2.0"
 
-# Granular secrets extras on purpose: culvert's backends are file (core,
-# no extra), openbao (secrets-vault) and aws (secrets-aws). The blanket
-# [secrets] extra would drag in ansible-vault + GCP + Azure (~180MB) that
-# no culvert backend uses.
+# Granular secrets extras: the blanket [secrets] extra pulls GCP, Azure and
+# ansible-vault, which no culvert backend uses.
 dependencies = [
     "scalo[metrics,secrets-vault,secrets-aws]>=2.31.17,<3",
     # Imported directly in lib/oauth2.py (yaml.safe_dump) and for the profile
@@ -31,9 +29,7 @@ secrets-gcp = ["scalo[secrets-gcp]"]
 secrets-azure = ["scalo[secrets-azure]"]
 otel = ["scalo[opentelemetry]"]
 
-# A group, not an extra: uv syncs it by default, so ty and pytest under
-# `uv run` resolve the test imports. Bounded, like the runtime deps -- an
-# unpinned dev dependency moves silently on the next lock refresh.
+# A group, not an extra, so `uv run` syncs it by default.
 [dependency-groups]
 dev = [
     "ruff>=0.17,<0.18",
@@ -49,9 +45,8 @@ dev = [
     "scalo[deployment]>=2.31.17,<3",
 ]
 
-# culvert is distributed as a container image, not a Python package.
-# Declare no packages so setuptools doesn't auto-discover config/, profiles/
-# and fail the build. A minimal wheel is still built for pipeline parity.
+# A container image, not a Python package: no packages, so setuptools does not
+# auto-discover config/ and profiles/.
 [tool.setuptools]
 packages = []
 
@@ -83,11 +78,8 @@ markers = [
     "e2e: end-to-end tests requiring Docker (deselect with -m 'not e2e')",
     "k8s: tests that install the Helm chart on a real cluster; needs a kubeconfig and CULVERT_K8S_* settings, never runs in CI (deselect with -m 'not k8s')",
 ]
-# A deprecation in our own code is a defect, so it fails the suite rather than
-# accumulating unseen - the previous blanket ignore hid the signal entirely.
-# Third-party ones are surfaced but not fatal: we cannot fix them here and a hard
-# failure would block on someone else's release. Add a namespace below when a new
-# dependency starts warning; the failure names the module.
+# A deprecation in our own code fails the suite. Third-party ones are shown, not
+# fatal: add a namespace below when a new dependency starts warning.
 filterwarnings = [
     "error::DeprecationWarning",
     "default::DeprecationWarning:scalo.*",

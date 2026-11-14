@@ -15,7 +15,7 @@
 #          culvert-client /etc/vpn/clients/alice-split.ovpn
 #
 # Base image: Override with --build-arg UBUNTU_VERSION=xx.xx
-# Default: the same 26.04 LTS digest the server image pins.
+# Default: the same digest the server image pins.
 
 ARG UBUNTU_VERSION=26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 FROM ubuntu:${UBUNTU_VERSION}

@@ -42,8 +42,8 @@ does not pass:
 - **Python dependencies** are installed from `requirements-docker.txt`,
   which pins every package to an exact version with hashes.
 
-**Not** verified: the image carries no provenance attestation. Nothing in
-the release pipeline generates one today, so there is no signature or
+**Not** verified: the image carries no provenance attestation. The release
+pipeline generates none, so there is no signature or
 SLSA statement to check a pulled image against - only the digest you
 pulled and the labels below. If you need attested provenance, build the
 image yourself from a tagged commit.
