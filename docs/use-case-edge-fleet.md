@@ -58,19 +58,17 @@ already established.
 `CULVERT_ROUTING_CONTROL_ENABLED=true` installs a dedicated FORWARD
 filtering chain. With the `edge-fleet` profile it enforces:
 
-- **Replies always pass.** Established/related flows are accepted, so an
+- Replies always pass: established and related flows are accepted, so an
   appliance reaching the receiver still gets its answers back.
-- **Appliances cannot reach each other.** `CULVERT_CLIENT_ISOLATION` is
-  on - client-to-client traffic is dropped.
-- **Appliances may only initiate to the receiver.**
-  `CULVERT_ALLOWED_DESTINATIONS` is the receiver CIDR; clients may
-  initiate only to those destinations. Pair it with
-  `CULVERT_PUSH_ROUTES` so clients are routed at exactly what they are
-  allowed to reach.
-- **Only admin CIDRs may initiate inbound.**
-  `CULVERT_DOWNSTREAM_ADMIN_CIDRS` are the only sources allowed to open
-  connections down into the tunnels; all other unsolicited inbound is
-  dropped.
+- Appliances cannot reach each other: `CULVERT_CLIENT_ISOLATION` is on,
+  so client-to-client traffic is dropped.
+- Appliances may only initiate to the receiver: `CULVERT_ALLOWED_DESTINATIONS`
+  is the receiver CIDR, and clients may initiate only to those destinations.
+  Pair it with `CULVERT_PUSH_ROUTES` so clients are routed at exactly what
+  they are allowed to reach.
+- Only admin CIDRs may initiate inbound: `CULVERT_DOWNSTREAM_ADMIN_CIDRS`
+  are the only sources allowed to open connections down into the tunnels,
+  and all other unsolicited inbound is dropped.
 
 The profile ships example CIDRs - set them to yours:
 
