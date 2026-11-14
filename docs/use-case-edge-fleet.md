@@ -9,6 +9,33 @@ the `edge-fleet` profile.
 This is the deployment we run culvert in ourselves, which is why the profile
 is opinionated rather than a blank template.
 
+## Connecting an EdgeStream Hub appliance
+
+EdgeStream Hub ships its own VPN client, documented at
+[System > VPN Client](https://hyperi-io.github.io/edgestream-hub/docs/operations/webui/system/vpn_client.html):
+it takes a WireGuard `.conf` or an OpenVPN `.ovpn`, routes named destination
+CIDRs through the tunnel, and has a kill switch and auto-start. Culvert mints
+that file. Data up, in order:
+
+1. Run culvert with the `edge-fleet` profile and one client per appliance.
+   The client files land in the `culvert-clients` volume, and the download
+   server hands them out with a bearer token
+   ([use-case-home.md](use-case-home.md) shows it).
+2. On the appliance, upload the client file under System > VPN Client, set
+   Destination Routing to the receiver CIDR (the same value as
+   `CULVERT_ALLOWED_DESTINATIONS`), and turn on the kill switch and auto-start.
+3. Point a [destination](https://hyperi-io.github.io/edgestream-hub/docs/operations/webui/configuration/destinations/index.html)
+   at dfe-receiver through the tunnel: the `vector` destination to the
+   receiver's Vector-compatible gRPC listener, or the `http` destination to
+   its `/ingest` endpoint. Both listeners are in the receiver's
+   [architecture page](https://github.com/hyperi-io/dfe-receiver/blob/main/docs/architecture.md).
+
+Admin down: culvert admits it from `CULVERT_DOWNSTREAM_ADMIN_CIDRS` (Difference
+1 below), and the appliance accepts administration over its tunnel. What DFE
+does not give you is the way in: a bastion or proxy on the DFE operator
+network whose address sits inside those admin CIDRs. Until it does, administer
+from a host that is already in them.
+
 Two things make this different from an ordinary client VPN. Understand
 both before you deploy it.
 
@@ -17,8 +44,8 @@ both before you deploy it.
 A normal VPN only ever lets clients initiate outbound. This deployment also
 lets named admin networks INITIATE back DOWN an established client
 tunnel to reach an appliance - for updates, restricted repos, remote
-support. That inbound-to-client path is deliberate and needed here; it is
-not something you want on a general-purpose VPN.
+support. That inbound-to-client path is deliberate and needed here, and it
+is not something you want on a general-purpose VPN.
 
 It is gated: only the CIDRs in `CULVERT_DOWNSTREAM_ADMIN_CIDRS` may
 initiate inbound. Everything else unsolicited into the tunnels is
@@ -81,7 +108,7 @@ udp_netmask:  "255.255.255.0"
 ```
 
 `push_routes` covers both the receiver and the admin CIDRs. The receiver
-route carries the appliance's outbound data; the admin route is what lets
+route carries the appliance's outbound data. The admin route is what lets
 an appliance's REPLY to an admin-initiated connection travel back UP the
 tunnel instead of leaking out its own default gateway. Omit the admin
 CIDR and reverse admin fails one-way - the admin can send but never gets
@@ -94,7 +121,7 @@ receiver, admin, and tunnel CIDRs.
 
 The profile also sets `log_mode: stdout` for the cluster log pipeline and
 starts on a local CA (external PKI - a fleet CA in OpenBao or a mounted
-Secret - is typical here; set `CULVERT_PKI_MODE=external` +
+Secret - is typical here, so set `CULVERT_PKI_MODE=external` and
 `CULVERT_SECRETS_*` to swap).
 
 Run it on the Kubernetes chart - see
