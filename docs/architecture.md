@@ -12,7 +12,7 @@ database and a web UI to configure one daemon. Culvert takes the other route:
 one image, configuration by environment variable, and every capability past
 plain OpenVPN over UDP an explicit opt-in. Upgrading is a `docker pull`.
 
-That choice is what shapes everything below. There is no state store, so a
+That choice decides everything below. There is no state store, so a
 replica is defined entirely by its environment and its mounted volumes. There
 is no control plane, so the container itself has to refuse to start when a
 control it was asked for did not install.
@@ -79,7 +79,7 @@ reads, and a remote provider is the update mechanism rather than the authority.
 That is what lets an external deployment keep serving when the provider is
 unreachable, on cached certificates, with a warning.
 
-Three things here are not guessable from the code's shape:
+Three things here are not guessable from reading the code:
 
 - `easyrsa init-pki` is never called. All it creates is three directories,
   and it insists on removing the PKI directory first, unconditionally on 3.2.x
@@ -110,7 +110,7 @@ cycle, not just whether the last refresh worked.
 ## Enforcement is two iptables chains, and the order matters
 
 NAT and MSS clamping go in the base `FORWARD` and `POSTROUTING` paths.
-Everything policy-shaped lives in two dedicated chains, both rebuilt on each
+Every policy rule lives in two dedicated chains, both rebuilt on each
 start so restarts cannot stack duplicates:
 
 - `CULVERT_FWD` -- opt-in routing control. Client isolation, the egress
@@ -180,5 +180,5 @@ together. No chart is committed to this repository.
   persistence.
 - Culvert runs as one replica. WireGuard mints its server key in the pod and
   the PKI volume is ReadWriteOnce, so the chart renders a singleton.
-- Defaults are generic, never site-specific. Anything site-shaped belongs in a
+- Defaults are generic, never site-specific. Anything specific to one site belongs in a
   profile or the deployment values.

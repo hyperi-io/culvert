@@ -10,7 +10,7 @@ why the shipped cipher is the "boring" one.
 Tuning is data, not code. It lives in `profiles/*.yaml`, loaded via
 `CULVERT_PROFILE` (a shipped name, or a path to your own file). Seven are
 shipped. The two tuning baselines are `default` and `mobile`. `home`,
-`corporate`, `travel` and `edge-fleet` are deployment shapes, and `example`
+`corporate`, `travel` and `edge-fleet` are deployment profiles, and `example`
 is a template:
 
 - **default** - the general-purpose baseline: `mssfix 1420` (off the PPPoE

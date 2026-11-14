@@ -12,11 +12,11 @@ Docs are grouped by what you are trying to do, not by feature.
   HTTPS-tunnelled variants. This one also ships inside the image at
   `/etc/vpn/docs/`, so it is available on the server itself.
 
-## Deploy a shape
+## Pick a deployment
 
 Each of these is a full walkthrough - deploy, issue a client, operate it.
 Home, corporate, travel and edge-fleet each match a `CULVERT_PROFILE=` preset,
-and kubernetes is a deploy shape, not a profile. The `mobile` preset
+and kubernetes is a deployment, not a profile. The `mobile` preset
 (`profiles/mobile.yaml`) has no walkthrough: [performance.md](performance.md)
 covers what it changes.
 

@@ -65,7 +65,7 @@ Everything is a `CULVERT_*` environment variable, read through [scalo](https://p
 
 A profile is a YAML of site defaults under `profiles/`, loaded with `CULVERT_PROFILE=<name>` (the shipped ones live at `/etc/vpn/profiles/` in the image, so the bare name works), and an explicit env var always wins over it. Four shipped profiles have a walkthrough, and `example` is a placeholder template to copy:
 
-| Profile | Shape | Walkthrough |
+| Profile | Use case | Walkthrough |
 |---------|-------|-------------|
 | `home` | OpenVPN UDP, split tunnel, local PKI: reach your home LAN or a lab VM | [docs/use-case-home.md](docs/use-case-home.md) |
 | `corporate` | Per-user certs, OIDC SSO, group gating, TCP fallback, clean offboarding | [docs/use-case-corporate.md](docs/use-case-corporate.md) |

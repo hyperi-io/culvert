@@ -219,7 +219,7 @@ If you have questions about contributing, please open an issue or contact us.
 
 A VPN server shipped as one container image. Python inside, but not a Python
 package -- the PyPI publish is opted out and a wheel is built only for pipeline
-parity. Anyone deploys it, so defaults are generic and anything site-shaped
+parity. Anyone deploys it, so defaults are generic and anything specific to one site
 belongs in a profile or the deployment values. It replaced dfe-vpn, now
 retired, so older references to that repo are stale.
 
