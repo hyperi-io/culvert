@@ -30,44 +30,22 @@ profiles (buffers, keepalive) is smoothing; MTU is the difference between
 Copy a profile, change values, point `CULVERT_PROFILE` at your file. There are
 no hidden presets in code.
 
-## Ciphers: the compliance default, and the cryptographer's favourite
+## Ciphers: AES-256-GCM first, ChaCha20-Poly1305 second
 
-The data channel ships `data-ciphers AES-256-GCM:CHACHA20-POLY1305` - AES-256-GCM
-first, ChaCha20-Poly1305 offered as the secondary.
+The data channel ships `data-ciphers AES-256-GCM:CHACHA20-POLY1305`.
 
-Derek would prefer ChaCha20-Poly1305 as the default - it is one of his
-favourites, and on the merits it is arguably the safer universal choice:
-constant-time by construction (no cache-timing side-channels the way software
-AES has without AES-NI), no hardware dependency, uniform speed from a Xeon to a
-Cortex-A53. It is the default in TLS 1.3, SSH, and WireGuard for those reasons.
+AES-256-GCM leads for compliance. CNSA 2.0 and FIPS name AES-256 and neither names ChaCha20, and the deployments culvert is built for often have to pass that audit. So the CNSA-classical path (TLS 1.3, P-384, SHA-384, tls-crypt-v2, AES-256-GCM) is what ships by default.
 
-For compliance we go boring with **AES-256-GCM**. CNSA 2.0 and FIPS mandate
-AES-256; ChaCha20 is on neither list. culvert's target deployments often *must*
-tick that box, and for them "high security" means "the algorithm an auditor
-accepts". So AES-256-GCM leads, and the CNSA-classical path (TLS 1.3, P-384,
-SHA-384, tls-crypt-v2, AES-256-GCM) stays intact by default.
+ChaCha20-Poly1305 is offered second because it is the safer cipher on a CPU without AES-NI: constant-time by construction, so no cache-timing side channel, and the same speed on a Xeon and a Cortex-A53. TLS 1.3, SSH and WireGuard default to it for those reasons.
 
-The cipher order is a per-profile knob (`data_ciphers`, or `CULVERT_DATA_CIPHERS`):
+The order is a per-profile setting (`data_ciphers`, or `CULVERT_DATA_CIPHERS`):
 
-- **default** profile: `AES-256-GCM:CHACHA20-POLY1305` - the CNSA/FIPS lead,
-  with ChaCha20 still offered as the secondary. This is the shipped default.
-- **mobile** profile: `CHACHA20-POLY1305:AES-256-GCM` - ChaCha20 first, for the
-  AES-NI-less clients that profile targets. **Choosing the mobile profile is
-  the informed opt-in**: the operator picks it knowing it leaves the CNSA suite
-  in exchange for mobile-client performance. AES-256-GCM stays offered as the
-  fallback, so nothing weaker is ever negotiated.
-- **Want ChaCha20 everywhere without OpenVPN at all?** Use **WireGuard** - its
-  suite is fixed at ChaCha20-Poly1305 / Curve25519 / BLAKE2s, fast on every
-  CPU, and it is the better mobile-roaming path (native re-handshake across
-  network switches). WireGuard is outside CNSA by design.
-- **Need CNSA/FIPS?** Use the default profile, and pin
-  `CULVERT_DATA_CIPHERS=AES-256-GCM` to refuse the ChaCha20 fallback outright.
+- `default` profile: `AES-256-GCM:CHACHA20-POLY1305`. The CNSA and FIPS lead, ChaCha20 still offered. This is what ships.
+- `mobile` profile: `CHACHA20-POLY1305:AES-256-GCM`. ChaCha20 first for the clients without AES-NI that profile targets. Picking it leaves the CNSA suite in exchange for mobile-client performance, and AES-256-GCM stays offered, so nothing weaker is negotiated.
+- ChaCha20 everywhere, without OpenVPN: WireGuard. Its suite is fixed at ChaCha20-Poly1305, Curve25519 and BLAKE2s, fast on every CPU, and it re-handshakes across network switches, so it is the better path for roaming clients. WireGuard is outside CNSA by design.
+- CNSA or FIPS required: the `default` profile with `CULVERT_DATA_CIPHERS=AES-256-GCM`, which refuses the ChaCha20 fallback outright.
 
-So the split: **AES-256-GCM is the compliance default; ChaCha20 is the
-cryptographer's default (and a personal favourite -- DT).** The default profile
-stays CNSA-safe; the mobile profile makes the ChaCha20 trade a deliberate,
-labelled choice - the operator opts in knowing what they get. Never reorder the
-default to ChaCha20-first; that would leave CNSA silently.
+The default profile is never reordered to ChaCha20 first. That would leave CNSA silently, where the mobile profile makes the same trade as a labelled choice.
 
 ## Data Channel Offload (DCO) - a host readiness item, not a culvert setting
 
