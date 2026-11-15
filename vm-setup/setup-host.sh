@@ -27,7 +27,9 @@
 # Usage: sudo ./setup-host.sh
 #
 # Requirements:
-#   - Linux kernel 5.4+ (6.x recommended for DCO)
+#   - Linux kernel 5.4+. DCO needs the `ovpn` module: in the kernel from 6.16,
+#     built by ovpn-dkms (ovpn-backports) on older kernels. OpenVPN 2.7 only
+#     supports `ovpn`, not the older ovpn-dco-v2 module.
 #   - Root access
 #   - Internet connectivity
 
@@ -104,12 +106,15 @@ log_info "Package manager: $PKG_MANAGER"
 
 #===============================================================================
 # OpenVPN DCO (Data Channel Offload) Kernel Module
-# This is the KEY performance optimization - moves encryption to kernel space
+# This is the KEY performance optimization - moves encryption to kernel space.
+# OpenVPN 2.7 (the container's floor) uses the `ovpn` module: in-tree from
+# Linux 6.16, otherwise built by ovpn-dkms. With neither, OpenVPN falls back to
+# userspace encryption.
 #===============================================================================
 log_section "Installing OpenVPN DCO Kernel Module"
 
 install_dco_ubuntu_debian() {
-    # Add OpenVPN official repository for DCO DKMS module
+    # Add OpenVPN official repository for the ovpn DKMS module
     if [[ ! -f /etc/apt/sources.list.d/openvpn.list ]]; then
         log_info "Adding OpenVPN official repository..."
         $PKG_INSTALL ca-certificates curl gnupg lsb-release
@@ -145,8 +150,14 @@ install_dco_ubuntu_debian() {
         apt-get update
     fi
 
+    # Linux 6.16+ ships the ovpn module, so no DKMS build is needed there
+    if modinfo ovpn >/dev/null 2>&1; then
+        log_info "ovpn module is in the kernel, skipping ovpn-dkms"
+        return 0
+    fi
+
     # Install DCO DKMS module (compiles against current kernel)
-    log_info "Installing openvpn-dco-dkms..."
+    log_info "Installing ovpn-dkms..."
 
     # Install kernel headers for DKMS compilation
     if [[ "$DISTRO_ID" == "ubuntu" ]]; then
@@ -155,8 +166,8 @@ install_dco_ubuntu_debian() {
         $PKG_INSTALL linux-headers-"$(uname -r)" || $PKG_INSTALL linux-headers-amd64 || true
     fi
 
-    $PKG_INSTALL openvpn-dco-dkms || {
-        log_warn "openvpn-dco-dkms not available - DCO will use in-tree module if present"
+    $PKG_INSTALL ovpn-dkms || {
+        log_warn "ovpn-dkms not available - DCO needs a kernel with the ovpn module (6.16+)"
     }
 }
 
@@ -168,7 +179,7 @@ install_dco_amazon_linux() {
     $PKG_INSTALL kernel-devel-"$(uname -r)" || $PKG_INSTALL kernel-devel || true
 
     # Try to load in-tree DCO module
-    modprobe ovpn-dco-v2 2>/dev/null || modprobe openvpn-dco 2>/dev/null || {
+    modprobe ovpn 2>/dev/null || {
         log_warn "DCO module not available on Amazon Linux"
         log_warn "Will use userspace encryption (still functional, slightly slower)"
     }
@@ -184,26 +195,28 @@ case "$DISTRO_ID" in
         ;;
     *)
         log_warn "Unknown distro '$DISTRO_ID' - attempting generic DCO setup"
-        modprobe ovpn-dco-v2 2>/dev/null || modprobe openvpn-dco 2>/dev/null || true
+        modprobe ovpn 2>/dev/null || true
         ;;
 esac
 
 # Try to load DCO module
 log_info "Loading DCO kernel module..."
-modprobe ovpn-dco-v2 2>/dev/null || modprobe openvpn-dco 2>/dev/null || {
+modprobe ovpn 2>/dev/null || {
     log_warn "DCO module not available - will fall back to userspace encryption"
     log_warn "This is normal on some kernels. Container will still work."
 }
 
 # Ensure DCO loads at boot (works on all distros)
+# Written only once the module loads, and rewritten so a host set up for the
+# older ovpn-dco-v2 module stops asking for it at boot.
 MODULES_FILE="/etc/modules-load.d/openvpn-dco.conf"
-if [[ ! -f "$MODULES_FILE" ]]; then
-    echo "ovpn-dco-v2" > "$MODULES_FILE"
-    log_info "Created $MODULES_FILE for boot"
+if lsmod | grep -q "^ovpn "; then
+    echo "ovpn" > "$MODULES_FILE"
+    log_info "Wrote $MODULES_FILE for boot"
 fi
 
 # Verify DCO status
-if lsmod | grep -q "ovpn_dco"; then
+if lsmod | grep -q "^ovpn "; then
     log_info "DCO module loaded successfully!"
     log_info "  Encryption will be offloaded to kernel space"
 else
@@ -485,7 +498,7 @@ log_section "Host Setup Complete"
 echo ""
 echo "Configuration Summary:"
 echo "  - OS: $DISTRO_PRETTY"
-echo "  - DCO module: $(lsmod | grep -q 'ovpn_dco' && echo 'LOADED (kernel encryption)' || echo 'not loaded (userspace fallback)')"
+echo "  - DCO module: $(lsmod | grep -q '^ovpn ' && echo 'LOADED (kernel encryption)' || echo 'not loaded (userspace fallback)')"
 echo "  - TCP BBR: $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
 echo "  - Buffer max: $(sysctl -n net.core.rmem_max 2>/dev/null) bytes"
 echo "  - Conntrack max: $(sysctl -n net.netfilter.nf_conntrack_max 2>/dev/null)"

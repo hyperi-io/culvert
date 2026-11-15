@@ -7,7 +7,7 @@
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
 # Culvert server image: docs/architecture.md and docs/supply-chain.md.
-# openvpn-dco-dkms stays on the host (vm-setup/setup-host.sh), not in the image.
+# ovpn-dkms stays on the host (vm-setup/setup-host.sh), not in the image.
 
 # Base image pinned by digest so builds are reproducible. Override
 # BASE_IMAGE to rebuild on a newer base. hadolint ignore=DL3006
