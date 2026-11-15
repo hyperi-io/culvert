@@ -16,9 +16,10 @@
 # DCO (Data Channel Offload) Note:
 #   DCO moves encryption to kernel space for massive performance gains.
 #   The container accesses the HOST's DCO kernel module - ensure host VM has:
-#   - Linux kernel 6.x+ (Ubuntu 24.04 has 6.8)
-#   - openvpn-dco-dkms package installed on host
-#   - 'modprobe ovpn-dco-v2' run on host
+#   - the `ovpn` module (OpenVPN 2.7 supports no other): in the kernel from
+#     Linux 6.16, else the ovpn-dkms package installed on the host
+#   - 'modprobe ovpn' run on host
+#   Without it OpenVPN encrypts in userspace and still works.
 #
 # Usage (CULVERT_IMAGE is required - see the image: line below):
 #   docker compose up -d                                # Start server
@@ -121,6 +122,8 @@ services:
     environment:
       # Server identity - MUST match DNS/certificate
       - CULVERT_SERVER_CN=${CULVERT_SERVER_CN:-vpn.example.com}
+      # Address clients dial when it differs from the certificate name
+      - CULVERT_EXTERNAL_ENDPOINT
 
       # Listener configuration. Default is the simplest working server:
       # OpenVPN UDP only. The TCP and HTTPS listeners are deliberate opt-ins.
@@ -207,6 +210,16 @@ services:
       - CULVERT_CLIENT_DOWNLOAD_ENABLED
       - CULVERT_CLIENT_DOWNLOAD_PORT
       - CULVERT_CLIENT_DOWNLOAD_TOKEN
+      # Loopback by default. Set 0.0.0.0 to serve off-box, and set the TLS pair
+      # to serve HTTPS (both or neither).
+      - CULVERT_CLIENT_DOWNLOAD_BIND
+      - CULVERT_CLIENT_DOWNLOAD_TLS_CERT
+      - CULVERT_CLIENT_DOWNLOAD_TLS_KEY
+
+      # OTLP push, optional: Prometheus scrape works without it
+      - CULVERT_OTEL_ENABLED
+      - CULVERT_OTEL_ENDPOINT
+      - CULVERT_OTEL_PROTOCOL
 
       # PKI settings (CNSA 2.0 compliant defaults)
       # ORG_NAME names the CA: "Acme" -> "Acme VPN CA". CA_CN overrides that
