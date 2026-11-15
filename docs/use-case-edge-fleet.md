@@ -18,12 +18,14 @@ CIDRs through the tunnel, and has a kill switch and auto-start. Culvert mints
 that file. Data up, in order:
 
 1. Run culvert with the `edge-fleet` profile and one client per appliance.
-   The client files land in the `culvert-clients` volume, and the download
-   server hands them out with a bearer token
-   ([use-case-home.md](use-case-home.md) shows it).
+   The client files land in `/etc/vpn/clients`, and the download server hands
+   them out with a bearer token ([use-case-home.md](use-case-home.md) shows
+   it).
 2. On the appliance, upload the client file under System > VPN Client, set
    Destination Routing to the receiver CIDR (the same value as
    `CULVERT_ALLOWED_DESTINATIONS`), and turn on the kill switch and auto-start.
+   On an OpenVPN tunnel the routes the profile pushes take precedence over
+   Destination Routing, so `push_routes` decides what goes down the tunnel.
 3. Point a [destination](https://hyperi-io.github.io/edgestream-hub/docs/operations/webui/configuration/destinations/index.html)
    at dfe-receiver through the tunnel: the `vector` destination to the
    receiver's Vector-compatible gRPC listener, or the `http` destination to
@@ -33,7 +35,7 @@ that file. Data up, in order:
 Admin down: culvert admits it from `CULVERT_DOWNSTREAM_ADMIN_CIDRS` (Difference
 1 below), and the appliance accepts administration over its tunnel. What DFE
 does not give you is the way in: a bastion or proxy on the DFE operator
-network whose address sits inside those admin CIDRs. Until it does, administer
+network whose address sits inside those admin CIDRs. Without one, administer
 from a host that is already in them.
 
 Two things make this different from an ordinary client VPN. Understand
@@ -60,16 +62,14 @@ and the destination network do not sit in `100.64/10`, so tunnel
 addresses never collide with either end and no NAT gateway is needed just
 to dodge overlap.
 
-**Warning:** do not use this preset for laptops on carrier or Starlink
-links. Those WANs already sit in `100.64/10`, as do Tailscale clients -
+Do not use this preset for laptops on carrier or Starlink links. Those WANs
+already sit in `100.64/10`, as do Tailscale clients -
 run a CGNAT tunnel on top of a CGNAT underlay and the transport
 misroutes. The why is in [addressing.md](addressing.md). This is safe
 here precisely because the operator owns both ends and knows the
 appliances are not on CGNAT WANs.
 
 ## Traffic model
-
-State it exactly:
 
 ```text
 outbound (data):  appliance      -> culvert -> receiver

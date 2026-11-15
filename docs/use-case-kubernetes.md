@@ -199,8 +199,13 @@ Production clusters generally do not want a self-generated CA. Set
 - File: certs mounted from a Kubernetes Secret (or cert-manager) volume.
   `CULVERT_SECRETS_*_PATH` are file paths. The values below do this.
 - OpenBao: Kubernetes auth exchanges the pod ServiceAccount token for a
-  short-lived token, with no static secret in env.
-- AWS Secrets Manager: use IRSA on EKS, with no static AWS keys.
+  short-lived token, with no static secret in env. The chart leaves the token
+  unmounted by default, so set `serviceAccount.mountToken: true`, plus
+  `CULVERT_SECRETS_OPENBAO_AUTH_METHOD=kubernetes` and
+  `CULVERT_SECRETS_OPENBAO_ROLE`.
+- AWS Secrets Manager: use IRSA on EKS, with no static AWS keys. The role goes
+  on the ServiceAccount as `serviceAccount.annotations`
+  (`eks.amazonaws.com/role-arn`).
 
 For the file provider, create the Secret, then add this to `values.yaml`:
 
@@ -254,13 +259,13 @@ External PKI section of [.env.example](../.env.example).
 
 ## 7. Observe
 
-- **Probes:** liveness `/livez`, readiness `/readyz` and a startup probe on
+- Probes: liveness `/livez`, readiness `/readyz` and a startup probe on
   `/livez`, all on the metrics port (`9090`). They are served always,
   independent of the metrics toggle.
-- **Metrics:** the pod carries `prometheus.io/scrape`, `prometheus.io/port` and
+- Metrics: the pod carries `prometheus.io/scrape`, `prometheus.io/port` and
   `prometheus.io/path` annotations. `/metrics` serves when
   `CULVERT_METRICS_ENABLED=true`.
-- **Drain:** on SIGTERM readiness drops at once, and connected clients keep
+- Drain: on SIGTERM readiness drops at once, and connected clients keep
   their tunnels for `CULVERT_DRAIN_SECONDS` (10 by default) while load balancers
   stop sending new ones. The drain ends early once no client is connected.
   OpenVPN is then stopped, which tells UDP clients to reconnect, and every child

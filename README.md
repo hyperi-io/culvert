@@ -55,13 +55,13 @@ Everything else is an opt-in with its own port:
 | WireGuard (alongside or instead) | `CULVERT_PROTOCOL=both` (or `wireguard`) | `51820/udp` |
 | TCP fallback listener | `CULVERT_TCP_ENABLED=true` | `1194/tcp` |
 | OpenVPN over HTTPS | `CULVERT_HTTPS_ENABLED=true` + stunnel certs | `443/tcp` |
-| WireGuard over HTTPS | `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true` | `4443/tcp` |
+| WireGuard over HTTPS | `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true` + the same certs | `4443/tcp` |
 | OIDC SSO | `CULVERT_OAUTH2_ENABLED=true` + IdP config | `9000-9002/tcp` |
 | Prometheus metrics | `CULVERT_METRICS_ENABLED=true` | on `9090/tcp` |
 
 ## Configuration
 
-Everything is a `CULVERT_*` environment variable, read through [scalo](https://pypi.org/project/scalo/)'s cascade (CLI, env, `.env`, `settings.{env}.yaml`, `settings.yaml`, `defaults.yaml`, built-in). [.env.example](.env.example) documents the common variables with example values. `CULVERT_ORG_NAME=Acme` names the self-generated CA `Acme VPN CA`.
+Everything is a `CULVERT_*` environment variable, read through [scalo](https://pypi.org/project/scalo/)'s cascade (env, `.env`, a profile, `settings.{env}.yaml`, `settings.yaml`, `defaults.yaml`, built-in). [.env.example](.env.example) documents the common variables with example values. `CULVERT_ORG_NAME=Acme` names the self-generated CA `Acme VPN CA`.
 
 A profile is a YAML of site defaults under `profiles/`, loaded with `CULVERT_PROFILE=<name>` (the shipped ones live at `/etc/vpn/profiles/` in the image, so the bare name works), and an explicit env var always wins over it. Four shipped profiles have a walkthrough, and `example` is a placeholder template to copy:
 
@@ -78,9 +78,9 @@ External PKI keeps the CA key at your CA, so Culvert neither signs nor revokes O
 
 ## Operating it
 
-One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) carries `/livez`, `/readyz` and, with `CULVERT_METRICS_ENABLED=true`, `/metrics`. OTLP push to `:4317` or `:4318` comes on with `CULVERT_OTEL_*`. Point a `startupProbe` at `/livez`: Kubernetes suspends liveness until it passes, so one path covers a generous boot and a tight liveness period.
+One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) carries `/livez`, `/readyz` and, with `CULVERT_METRICS_ENABLED=true`, `/metrics`. OTLP push needs metrics on as well, then `CULVERT_OTEL_ENABLED=true` and `CULVERT_OTEL_ENDPOINT`. Point a `startupProbe` at `/livez`: Kubernetes suspends liveness until it passes, so one path covers a generous boot and a tight liveness period.
 
-Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it moves only when the refresh has been failing, which is also logged at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns.
+Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it falls only while the refresh fails. A refresh that does not rewrite the CRL logs a warning, one that raises logs `CRL refresh error` at error, and under 7 days of CRL life left logs at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns.
 
 ## Documentation
 

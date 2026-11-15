@@ -4,8 +4,6 @@ What culvert is made of, why it is one container instead of a stack, and the
 invariants that no single file makes obvious. Look a fact up here before you
 change the startup order, the firewall chains or the PKI paths.
 
-## The short version
-
 A VPN server is easy to install and hard to keep correct. The usual answers
 either mutate a host with a shell script, or ship a management plane, a
 database and a web UI to configure one daemon. Culvert takes the other route:
@@ -39,13 +37,13 @@ The apt repo serves one version per suite and cannot be pinned, which is why
 the version floor is asserted after install rather than requested before it.
 The server config depends on 2.7 behaviour, so building on 2.6 would change it
 silently. `openvpn-auth-oauth2` gets the artefact treatment instead because its
-apt repo serves `releases/latest` and cannot be pinned at all.
+apt repo serves only the latest release and cannot be pinned at all.
 
-DCO is supported but its DKMS package is deliberately absent. Inside a
-container DKMS would compile against kernel headers that are not there, and the
-module has to be loaded on the host regardless -- `vm-setup/setup-host.sh` does
-that. Leaving it out drops a compiler toolchain from the image at no cost to
-the capability.
+DCO is supported but no kernel module ships in the image. Inside a container
+DKMS would compile against kernel headers that are not there, and the module
+has to be on the host regardless. OpenVPN 2.7 uses the `ovpn` module, in the
+kernel from Linux 6.16 and built by ovpn-backports on older ones. Leaving it out
+drops a compiler toolchain from the image at no cost to the capability.
 
 ## One entrypoint, one ordered sequence
 
@@ -174,10 +172,9 @@ together. No chart is committed to this repository.
 - Configuration is `CULVERT_*` environment variables through scalo's cascade,
   with profile YAML as an extra source. Explicit env always beats a profile.
 - `/etc/vpn` and `/var/log/vpn` are the canonical paths and nothing aliases
-  them. Compatibility symlinks to the legacy OpenVPN directories were removed
-  rather than forced, because the package already owns those as real
-  directories and the link landed inside one, which silently defeated PKI
-  persistence.
+  them. No symlink points at the OpenVPN package's own directories: the package
+  owns them as real directories, so a link lands inside one and the PKI no
+  longer persists.
 - Culvert runs as one replica. WireGuard mints its server key in the pod and
   the PKI volume is ReadWriteOnce, so the chart renders a singleton.
 - Defaults are generic, never site-specific. Anything specific to one site belongs in a
