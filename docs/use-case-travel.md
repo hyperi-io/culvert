@@ -32,10 +32,10 @@ covers both HTTPS-tunnelled listeners.
 listeners, a full tunnel (a split tunnel leaks which sites you reach
 directly), and mobile-tolerant timers:
 
-- **OpenVPN inside TLS on 443** (stunnel) - `CULVERT_HTTPS_ENABLED=true`,
+- OpenVPN inside TLS on 443 (stunnel) - `CULVERT_HTTPS_ENABLED=true`,
   publish `443/tcp`. On the wire this is a TLS session on the HTTPS port
   with a valid certificate.
-- **WireGuard over WebSocket/TLS on 4443** (wstunnel) -
+- WireGuard over WebSocket/TLS on 4443 (wstunnel) -
   `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true`, publish `4443/tcp`. Same
   treatment for the WireGuard path (`4443` avoids colliding with
   stunnel on `443`).
@@ -60,7 +60,7 @@ WireGuard (the profile runs both protocols) it also emits
 
 ## 4. Connect through the tunnel
 
-**OpenVPN** - start stunnel, then connect the HTTPS profile through it:
+For OpenVPN, start stunnel, then connect the HTTPS profile through it:
 
 ```bash
 # terminal 1: keep this running
@@ -71,13 +71,14 @@ sudo openvpn --config laptop-https-full.ovpn
 ```
 
 stunnel listens on `127.0.0.1:1195` and forwards to your server on
-`443`; the `.ovpn` connects to that local port.
+`443`, and the `.ovpn` connects to that local port.
 
-**WireGuard** - start the wstunnel client, then activate a `wg-https-`
-config:
+For WireGuard, start the wstunnel client, then activate a `wg-https-`
+config. The first lines of each `wg-https-*.conf` carry the exact command:
 
 ```bash
-wstunnel client wss://vpn.example.com:4443 -L udp://51820:127.0.0.1:51820
+wstunnel client -L udp://127.0.0.1:51820:127.0.0.1:51820 \
+  --tls-verify-certificate wss://vpn.example.com:4443
 # a full tunnel needs the server routed outside it first (Linux shown)
 sudo ip route add <server address> via <your gateway>
 # then activate laptop/wg-https-full.conf in your WireGuard client
@@ -89,21 +90,19 @@ Windows path) is in
 
 ## What this does and does not defeat
 
-Be straight about the threat model:
-
-- **Defeats protocol blocking.** To on-path inspection the traffic is
+- It defeats protocol blocking. To on-path inspection the traffic is
   TLS on `443` (or `4443`) presenting a valid certificate for your
   server name. A censor that drops "things that look like OpenVPN or
   WireGuard" does not see either.
-- **Does not defeat an active-probing or flow-analysis censor.** A censor
+- It does not defeat an active-probing or flow-analysis censor. A censor
   that actively probes your endpoint, or does long-term traffic-flow
   analysis (timing, volume, connection duration), is playing a different
   game. This buys you "indistinguishable from HTTPS at a glance", not
   invisibility.
-- **A full tunnel routes your traffic, but it does not by itself settle DNS.**
+- A full tunnel routes your traffic but does not by itself settle DNS.
   The server pushes its DNS servers, and whether your client uses them to
   the exclusion of the network's own resolver is up to the client. On
-  **Windows** you must uncomment `block-outside-dns` in the `.ovpn` -
+  Windows you must uncomment `block-outside-dns` in the `.ovpn` -
   without it applications can query the local network's resolver, which
   leaks the names you look up even though the traffic itself is tunnelled.
   It ships commented because OpenVPN 2.7 on Linux and macOS refuses to

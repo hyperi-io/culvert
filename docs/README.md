@@ -56,5 +56,5 @@ covers what it changes.
 ## Conventions
 
 Filenames are lowercase-kebab because slugs are case-sensitive and static-site
-generators lowercase them. Each doc covers one reader mode - follow a path, or
-look a fact up - and says which at the top.
+generators lowercase them. Each doc covers one reader mode: follow a path, or
+look a fact up.

@@ -58,7 +58,7 @@ Test full VPN connectivity against a self-contained docker-compose stack
 
 - **Framework:** pytest + docker-compose
 - **Purpose:** Validate real VPN connections (OpenVPN UDP/TCP/HTTPS,
-  WireGuard, WireGuard over HTTPS via wstunnel) end to end
+  WireGuard, WireGuard over HTTPS via wstunnel) from client to target
 - **Dependencies:** Docker
 
 ```bash
@@ -77,7 +77,7 @@ external PKI, and real client tunnels carrying traffic.
 - **Dependencies:** a cluster you can install into, and an image reference it
   can pull
 
-Every site-specific value comes from `tests/k8s/.env` (gitignored); copy
+Every site-specific value comes from `tests/k8s/.env` (gitignored). Copy
 `tests/k8s/.env.example` and fill it in. Unconfigured, every test SKIPS with a
 message naming what is missing, so a plain `pytest` run stays green. They never
 run in CI - the `k8s` marker is deselected and the tier is disabled in
@@ -136,13 +136,13 @@ python3 -m pytest tests/unit/ -v
 
 | Module | Unit Tests |
 |--------|-----------|
-| `lib/config.py` | Config defaults, env overrides, validation, network profiles |
-| `lib/process.py` | run, ProcessManager lifecycle, directory setup |
-| `lib/network.py` | CIDR-to-netmask conversion, edge cases |
-| `lib/pki.py` | PEM validation, external fetch and local-cert fallback, CRL refresh and expiry |
-| `lib/openvpn.py` | Template substitution, common options, timestamp stripping |
-| `lib/stunnel.py` | Config generation with valid/missing certs |
-| `lib/health.py` | Liveness, readiness, state transitions, retired paths 404 |
-| `lib/download.py` | File listing, download, path traversal prevention |
-| `lib/metrics.py` | OpenVPN status v3 parsing, WG transfer/handshake parsing |
-| `lib/wireguard.py` | Key gen, IP allocation, config gen, subnet validation |
+| `scripts/lib/config.py` | Config defaults, env overrides, validation, network profiles |
+| `scripts/lib/process.py` | run, ProcessManager lifecycle, directory setup |
+| `scripts/lib/network.py` | CIDR-to-netmask conversion, edge cases |
+| `scripts/lib/pki.py` | PEM validation, external fetch and local-cert fallback, CRL refresh and expiry |
+| `scripts/lib/openvpn.py` | Template substitution, common options, timestamp stripping |
+| `scripts/lib/stunnel.py` | Config generation with valid/missing certs |
+| `scripts/lib/health.py` | Liveness, readiness, state transitions, retired paths 404 |
+| `scripts/lib/download.py` | File listing, download, path traversal prevention |
+| `scripts/lib/metrics.py` | OpenVPN status v3 parsing, WG transfer/handshake parsing |
+| `scripts/lib/wireguard.py` | Key gen, IP allocation, config gen, subnet validation |

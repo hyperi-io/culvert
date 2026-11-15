@@ -10,10 +10,8 @@ Every VPN hands its clients addresses from some private range. Pick a
 range that clashes with a network the client is already on and traffic
 goes to the wrong place. Culvert defaults to `10.8.0.0/22` because that
 is the range home and small-office networks are least likely to be using,
-so it "just works" out of the box. If you run bigger networks, check it
-against your plan and override if needed.
-
-That is the practical takeaway. The rest is the why.
+so a default install connects from home without a clash. If you run bigger
+networks, check it against your plan and override if needed.
 
 ## The default: 10.8.0.0/22
 
@@ -61,10 +59,10 @@ on top of CGNAT underlay is a self-inflicted routing loop.
 
 ## When to override
 
-- **Corporate / larger networks.** `10.8.0.0/22` is safe for homes, but a
+- Corporate and larger networks: `10.8.0.0/22` is safe for homes, but a
   company already using `10.8.x` internally will clash. Check the `/22`
   against your addressing plan and move it if it collides.
-- **Edge fleet.** The [edge-fleet preset](use-case-edge-fleet.md) opts
+- Edge fleet: the [edge-fleet preset](use-case-edge-fleet.md) opts
   INTO `100.64/10` on purpose. There the operator controls both ends of
   every tunnel and knows the appliances are not on CGNAT WANs, so the
   range that is wrong for a travelling laptop is exactly right for
@@ -77,7 +75,7 @@ buys.
 
 ## How to override
 
-The OpenVPN listeners each take a network address plus a netmask; the NAT
+The OpenVPN listeners each take a network address plus a netmask. The NAT
 masquerade rule derives its prefix from that netmask, so the two always
 agree. WireGuard takes a single CIDR.
 
