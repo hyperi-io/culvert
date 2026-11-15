@@ -80,7 +80,7 @@ External PKI keeps the CA key at your CA, so Culvert neither signs nor revokes O
 
 One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) carries `/livez`, `/readyz` and, with `CULVERT_METRICS_ENABLED=true`, `/metrics`. OTLP push needs metrics on as well, then `CULVERT_OTEL_ENABLED=true` and `CULVERT_OTEL_ENDPOINT`. Point a `startupProbe` at `/livez`: Kubernetes suspends liveness until it passes, so one path covers a generous boot and a tight liveness period.
 
-Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it falls only while the refresh fails. Each failed refresh logs a warning, and under 7 days of CRL life left logs at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns.
+Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it falls only while the refresh fails. A refresh that does not rewrite the CRL logs a warning, one that raises logs `CRL refresh error` at error, and under 7 days of CRL life left logs at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns.
 
 ## Documentation
 

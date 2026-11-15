@@ -167,7 +167,7 @@ hyperi-ci reusable workflow.
 
 Publishing is deliberate, not a side effect of merging. A plain merge to
 `main` is a validate-only run: it does not tag or publish. A release happens
-only when the head commit on `main` carries a `Publish: true` trailer, or when
+only when the head commit on `main` carries a `Release: true` trailer, or when
 the workflow is dispatched by hand (Actions -> CI -> Run workflow, with
 `from-head=true`). On a publish run, semantic-release reads the commits since
 the last release, works out the next version from their types, updates the
