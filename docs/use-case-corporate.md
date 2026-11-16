@@ -6,6 +6,10 @@ group gating, and a TCP fallback for hostile guest networks. This is the
 certificate AND a live IdP login - the certificate proves the device,
 the OIDC login proves the person.
 
+OIDC sign-in is off by default (`CULVERT_OAUTH2_ENABLED`), and this profile
+turns it on. Unit tests cover the openvpn-auth-oauth2 config culvert writes, and no automated test signs
+in against an IdP.
+
 ## What the profile sets
 
 `CULVERT_PROFILE=corporate` turns on:

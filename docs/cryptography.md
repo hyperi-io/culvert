@@ -2,7 +2,7 @@
 
 The OpenVPN path ships the CNSA 2.0 *classical* suite by default, aligned
 to what can be deployed rather than to the policy text. No commonly deployable
-OSS VPN stack is fully CNSA 2.0 (DT hot tip: the gap everywhere is ML-DSA).
+OSS VPN stack is fully CNSA 2.0, and the gap everywhere is ML-DSA.
 
 What the defaults give you (OpenVPN, both the plain and the
 HTTPS-tunnelled listeners):

@@ -14,7 +14,8 @@ shipped. The two tuning baselines are `default` and `mobile`. `home`,
 is a template:
 
 - `default` - the general-purpose baseline: `mssfix 1420` (off the PPPoE
-  fragmentation cliff), OS-auto socket buffers, WireGuard MTU 1420.
+  fragmentation cliff), OS-auto socket buffers, WireGuard MTU 1420 (1500 less
+  the IPv6 outer headers).
 - `mobile` - constrained or extra-encapsulated paths (5G, phone tether,
   hotel/captive wifi, CGNAT): larger OpenVPN buffers, `tun-mtu`/`mssfix` 1400,
   tolerant keepalive, and WireGuard MTU 1280.

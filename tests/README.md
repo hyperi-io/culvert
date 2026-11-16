@@ -14,6 +14,7 @@ tests/
 |-- fixtures/       # Test data and mock files
 |-- helpers/        # Shared BATS helpers
 |-- cleanup.py      # Remove infrastructure an interrupted run left behind
+|-- doc_values.py   # Read the Helm values the Kubernetes walkthrough documents
 |-- tidy.py         # Session-end cleanup registry used by e2e and k8s
 `-- conftest.py     # pytest fixtures (temp_dir, clean_env, mock_pki_dir)
 ```
@@ -24,9 +25,9 @@ tests/
 
 Fast, isolated tests for Python modules. Run locally without Docker.
 
-- **Framework:** pytest
-- **Purpose:** Test config parsing, validation, template generation, metrics parsing
-- **Dependencies:** `uv sync --dev`
+- Framework: pytest
+- Purpose: Test config parsing, validation, template generation, metrics parsing
+- Dependencies: `uv sync --dev`
 
 ```bash
 # Run all unit tests
@@ -43,9 +44,9 @@ python3 -m pytest tests/unit/ --cov=scripts/lib --cov-report=term
 
 Test container functionality in Docker environment.
 
-- **Framework:** BATS + Docker
-- **Purpose:** Test container startup, PKI initialisation, config generation
-- **Dependencies:** Docker, bats-core
+- Framework: BATS + Docker
+- Purpose: Test container startup, PKI initialisation, config generation
+- Dependencies: Docker, bats-core
 
 ```bash
 ./tests/run-integration.sh
@@ -56,10 +57,10 @@ Test container functionality in Docker environment.
 Test full VPN connectivity against a self-contained docker-compose stack
 (server + client + target containers brought up by `conftest.py`).
 
-- **Framework:** pytest + docker-compose
-- **Purpose:** Validate real VPN connections (OpenVPN UDP/TCP/HTTPS,
+- Framework: pytest + docker-compose
+- Purpose: Validate real VPN connections (OpenVPN UDP/TCP/HTTPS,
   WireGuard, WireGuard over HTTPS via wstunnel) from client to target
-- **Dependencies:** Docker
+- Dependencies: Docker
 
 ```bash
 # Run e2e tests (brings up the compose stack automatically)
@@ -73,15 +74,14 @@ Install the published Helm chart on a real cluster, with the values
 with it - capabilities, ip_forward in the pod netns, probes, SIGTERM drain,
 external PKI, and real client tunnels carrying traffic.
 
-- **Framework:** pytest + kubectl + helm
-- **Dependencies:** a cluster you can install into, and an image reference it
+- Framework: pytest + kubectl + helm
+- Dependencies: a cluster you can install into, and an image reference it
   can pull
 
 Every site-specific value comes from `tests/k8s/.env` (gitignored). Copy
 `tests/k8s/.env.example` and fill it in. Unconfigured, every test SKIPS with a
-message naming what is missing, so a plain `pytest` run stays green. They never
-run in CI - the `k8s` marker is deselected and the tier is disabled in
-`.hyperi-ci.yaml`.
+message naming what is missing, so they never fail a plain `pytest` run. They
+never run in CI, because the `k8s` tier is disabled in `.hyperi-ci.yaml`.
 
 ```bash
 pytest tests/k8s/ -m k8s -v

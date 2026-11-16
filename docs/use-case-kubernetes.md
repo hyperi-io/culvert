@@ -4,7 +4,8 @@ Not a profile - a deployment, and a walkthrough you follow top to bottom.
 Each release publishes a Helm chart beside the image, at
 `oci://ghcr.io/hyperi-io/charts/culvert`. The chart version is the release
 version, so chart `X.Y.Z` deploys image `vX.Y.Z`. Nothing is cloned to
-install it.
+install it. The `tests/k8s` tier installs these values on a real cluster, run by
+hand rather than in CI.
 
 The chart runs one replica. The contract marks culvert a singleton, so it
 renders a Recreate rollout, no autoscaler and no disruption budget. WireGuard
@@ -264,7 +265,8 @@ External PKI section of [.env.example](../.env.example).
   independent of the metrics toggle.
 - Metrics: the pod carries `prometheus.io/scrape`, `prometheus.io/port` and
   `prometheus.io/path` annotations. `/metrics` serves when
-  `CULVERT_METRICS_ENABLED=true`.
+  `CULVERT_METRICS_ENABLED=true`, and the annotations stay with metrics off
+  ([#74](https://github.com/hyperi-io/culvert/issues/74)).
 - Drain: on SIGTERM readiness drops at once, and connected clients keep
   their tunnels for `CULVERT_DRAIN_SECONDS` (10 by default) while load balancers
   stop sending new ones. The drain ends early once no client is connected.

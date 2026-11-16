@@ -1,13 +1,5 @@
-# E2E stack for routing control (CULVERT_ROUTING_CONTROL_ENABLED).
-#
-# Topology proves the three routing-control guarantees with real traffic:
-#   client-net   clients dial the server here
-#   receiver-net the allowed destination (egress allow-list target)
-#   admin-net    admin (in downstream_admin_cidrs) + non-admin (not)
-#
-# Clients and the receiver sit on separate bridges, so a client only
-# reaches the receiver through the tunnel. admin/non-admin add a static
-# route to the tunnel subnet to test reverse admin.
+# Routing-control e2e stack. Clients and the receiver sit on separate bridges,
+# so a client reaches the receiver only through the tunnel.
 services:
   vpn-server:
     build:
@@ -32,11 +24,9 @@ services:
       CULVERT_ROUTING_CONTROL_ENABLED: "true"
       CULVERT_CLIENT_ISOLATION: "true"
       CULVERT_ALLOWED_DESTINATIONS: "172.29.1.0/24"
-      # Only the admin host (.30), NOT the non-admin (.31), may reach back
-      # down the tunnels.
+      # The admin host (.30) may reach back down the tunnels, the non-admin (.31) not.
       CULVERT_DOWNSTREAM_ADMIN_CIDRS: "172.29.2.30/32"
-      # Push the receiver (outbound data) AND the admin net (so appliance
-      # replies to admin route back up the tunnel).
+      # The receiver and the admin net, so replies to admin route back up the tunnel.
       CULVERT_PUSH_ROUTES: "172.29.1.0/24,172.29.2.0/24"
     networks:
       client-net:

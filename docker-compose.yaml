@@ -1,188 +1,115 @@
-# Culvert Server
-# OpenVPN 2.7+ with DCO and WireGuard in one image - each optionally
-# tunnelled over HTTPS - plus OIDC SSO and external PKI
-# Drop-in 'just works' docker or k8s scale deploy
-#
-# Authentication:
-#   - Certificate + OIDC hybrid authentication
-#   - Device identity via client certificate
-#   - User identity via OIDC (openvpn-auth-oauth2)
-#   - Group-based access control via your IdP (configure groups in IdP + OIDC claim)
-#
-# Deployment Modes:
-#   Single-node:  docker compose up -d
-#   Scale-out:    docker compose -f docker-compose.yaml -f docker-compose.shared.yaml up -d
-#
-# DCO (Data Channel Offload) Note:
-#   DCO moves encryption to kernel space for massive performance gains.
-#   The container accesses the HOST's DCO kernel module - ensure host VM has:
-#   - the `ovpn` module (OpenVPN 2.7 supports no other): in the kernel from
-#     Linux 6.16, else the ovpn-dkms package installed on the host
-#   - 'modprobe ovpn' run on host
-#   Without it OpenVPN encrypts in userspace and still works.
-#
-# Usage (CULVERT_IMAGE is required - see the image: line below):
-#   docker compose up -d                                # Start server
-#   docker compose logs -f                              # View logs
-#   docker compose down                                 # Stop server
-#   docker compose exec openvpn generate-client --name alice  # Generate client config (all protocols/modes)
-#   docker compose exec openvpn revoke-client alice           # Revoke client
+# Single-host deploy: docs/use-case-home.md. Scale-out adds docker-compose.shared.yaml.
 
 services:
   openvpn:
-    # There is no default image: set CULVERT_IMAGE (in .env or the shell) to a
-    # digest pin of the published multi-arch image
-    # (ghcr.io/hyperi-io/culvert:vX.Y.Z@sha256:...) or to a private mirror, so a
-    # pull can never change what a deploy runs. To build locally instead,
-    # uncomment the build: block below, set CULVERT_IMAGE to the tag the build
-    # should carry, and run `docker compose up --build`.
+    # No default image: set CULVERT_IMAGE to a digest-pinned image, or uncomment build: below.
     image: ${CULVERT_IMAGE:?set CULVERT_IMAGE to a digest-pinned image}
     # build:
     #   context: .
     #   dockerfile: Dockerfile
     container_name: ${CONTAINER_NAME:-culvert}
     restart: unless-stopped
-    # The SIGTERM drain and the children's stop take up to 25 s. Docker's
-    # default of 10 s would kill the server part way through.
+    # The drain and the children's stop take up to 25 s, past Docker's 10 s default.
     stop_grace_period: 30s
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
-    # NET_ADMIN: network configuration, iptables, tun device. That is all the
-    # server needs - kernel modules (DCO, wireguard) are loaded on the HOST,
-    # so SYS_MODULE is not granted here. Uncomment it only if your host
-    # offers OpenVPN DCO kernel offload and you want the container to load it;
-    # it is close to host-root, since it can load any module.
+    # SYS_MODULE is close to host root: uncomment it only to let the container load DCO.
     cap_add:
       - NET_ADMIN
       # - SYS_MODULE
 
-    # Device access for VPN
     devices:
       - /dev/net/tun:/dev/net/tun
 
-    # The tunnels carry IPv4. IPv6 forwarding is deliberately NOT enabled:
-    # routing control (client isolation, the egress allow-list, the
-    # reverse-admin gate) is enforced with iptables only, so forwarded IPv6
-    # would walk straight past every one of those rules.
+    # IPv4 only: forwarded IPv6 would bypass every routing-control rule.
     sysctls:
       - net.ipv4.ip_forward=1
 
-    # DNS servers for container (required for OAuth2 OIDC discovery)
-    # Uses internal DNS first, falls back to Cloudflare
+    # Needed for OIDC discovery.
     dns:
       - ${CULVERT_DNS1:-1.0.0.1}
       - ${CULVERT_DNS2:-1.1.1.1}
 
-    # Default publishes the simplest working server: OpenVPN UDP + the health
-    # endpoint. Every other listener is a deliberate opt-in - uncomment its
-    # port mapping AND set its CULVERT_*_ENABLED (or CULVERT_PROTOCOL) knob.
+    # Uncomment a port AND set its CULVERT_* switch: docs/architecture.md.
     ports:
-      # UDP - Primary OpenVPN (best performance with DCO)
       - "${CULVERT_UDP_PORT:-1194}:${CULVERT_UDP_PORT:-1194}/udp"
-      # Observability - health probes + Prometheus /metrics on one port
-      # (bind is CULVERT_METRICS_ADDR; keep the port here in sync with it).
-      # Published on loopback only: /livez + /metrics are unauthenticated.
-      # Scraping from another host? Change to "9090:9090/tcp" and firewall it.
+      # Loopback only: /livez and /metrics are unauthenticated.
       - "127.0.0.1:9090:9090/tcp"
-      # TCP - Proxy fallback for corporate firewalls (CULVERT_TCP_ENABLED=true)
+      # CULVERT_TCP_ENABLED=true
       # - "${CULVERT_TCP_PORT:-1194}:${CULVERT_TCP_PORT:-1194}/tcp"
-      # HTTPS - OpenVPN inside TLS on 443 (CULVERT_HTTPS_ENABLED=true)
+      # CULVERT_HTTPS_ENABLED=true
       # - "${CULVERT_HTTPS_PORT:-443}:${CULVERT_HTTPS_PORT:-443}/tcp"
-      # WireGuard - UDP primary (CULVERT_PROTOCOL=wireguard or both)
+      # CULVERT_PROTOCOL=wireguard or both
       # - "${CULVERT_WG_PORT:-51820}:${CULVERT_WG_PORT:-51820}/udp"
-      # WireGuard over HTTPS via wstunnel (CULVERT_WG_HTTPS_TUNNEL_ENABLED=true)
+      # CULVERT_WG_HTTPS_TUNNEL_ENABLED=true
       # - "${CULVERT_WG_HTTPS_TUNNEL_PORT:-4443}:${CULVERT_WG_HTTPS_TUNNEL_PORT:-4443}/tcp"
-      # OAuth2 callback servers, one per enabled OpenVPN listener
-      # (CULVERT_OAUTH2_ENABLED=true; each listener needs its own instance)
+      # CULVERT_OAUTH2_ENABLED=true, one port per OpenVPN listener
       # - "${CULVERT_OAUTH2_UDP_PORT:-9000}:${CULVERT_OAUTH2_UDP_PORT:-9000}/tcp"
       # - "${CULVERT_OAUTH2_HTTPS_PORT:-9001}:${CULVERT_OAUTH2_HTTPS_PORT:-9001}/tcp"
       # - "${CULVERT_OAUTH2_TCP_PORT:-9002}:${CULVERT_OAUTH2_TCP_PORT:-9002}/tcp"
-      # Client config download server (CULVERT_CLIENT_DOWNLOAD_ENABLED=true)
+      # CULVERT_CLIENT_DOWNLOAD_ENABLED=true
       # - "${CULVERT_CLIENT_DOWNLOAD_PORT:-8443}:${CULVERT_CLIENT_DOWNLOAD_PORT:-8443}/tcp"
 
     volumes:
-      # PKI - certificates and keys (MANDATORY - persistent on host filesystem)
-      # These MUST be bind mounts to survive container recreation
+      # Bind mounts, so the CA survives the container being recreated.
       - ${CULVERT_PKI_PATH:-./pki}:/etc/vpn/pki
-      # Client configs output (persistent on host filesystem)
       - ${CULVERT_CLIENTS_PATH:-./clients}:/etc/vpn/clients
-      # Client-specific configs (ccd) - mount from host for customization
       - ./config/ccd:/etc/vpn/server/ccd:ro
-      # Logs (persistent)
       - ${CULVERT_LOGS_PATH:-./logs}:/var/log/vpn
-      # OAuth2 TLS certificates (required when CULVERT_OAUTH2_ENABLED=true)
-      # Mount wildcard or server-specific certificate for HTTPS callback endpoint
+      # The OIDC callback and stunnel certificates.
       - ${OAUTH2_TLS_CERT_PATH:-/opt/openvpn/certs}:/etc/vpn/oauth2-tls:ro
 
-    # Every CULVERT_* setting below passes through ONLY when you set it (shell or
-    # .env). Anything left unset comes from CULVERT_PROFILE, then the code
-    # defaults. A default written here would override the profile: a corporate
-    # profile would lose OIDC and an edge-fleet one its routing control.
+    # An unset variable passes nothing, so a profile's value stands. A default here would override it.
     environment:
-      # Server identity - MUST match DNS/certificate
+      # Must match DNS and the certificate.
       - CULVERT_SERVER_CN=${CULVERT_SERVER_CN:-vpn.example.com}
       # Address clients dial when it differs from the certificate name
       - CULVERT_EXTERNAL_ENDPOINT
 
-      # Listener configuration. Default is the simplest working server:
-      # OpenVPN UDP only. The TCP and HTTPS listeners are deliberate opt-ins.
-      # UDP - Primary (best performance)
       - CULVERT_UDP_ENABLED
       - CULVERT_UDP_PORT
       - CULVERT_UDP_NETWORK
       - CULVERT_UDP_NETMASK
-      # HTTPS - OpenVPN wrapped in TLS on port 443 (opt-in)
       - CULVERT_HTTPS_ENABLED
       - CULVERT_HTTPS_PORT
       - CULVERT_HTTPS_NETWORK
       - CULVERT_HTTPS_NETMASK
-      # TCP - Proxy fallback (opt-in)
       - CULVERT_TCP_ENABLED
       - CULVERT_TCP_PORT
       - CULVERT_TCP_NETWORK
       - CULVERT_TCP_NETMASK
 
-      # DNS servers pushed to clients
       - CULVERT_DNS1
       - CULVERT_DNS2
 
-      # Routing
       - CULVERT_FULL_TUNNEL
       - CULVERT_PUSH_ROUTES
       - CULVERT_DNS_DOMAIN
 
-      # Routing control: who clients may reach, and who may reach back down the
-      # tunnels. Off by default (clients route wherever the host can). Turning it
-      # on denies client-to-client and unsolicited inbound; see .env.example.
+      # Routing control: docs/use-case-edge-fleet.md.
       - CULVERT_ROUTING_CONTROL_ENABLED
       - CULVERT_CLIENT_ISOLATION
       - CULVERT_ALLOWED_DESTINATIONS
       - CULVERT_DOWNSTREAM_ADMIN_CIDRS
 
-      # Clients cannot reach 169.254.0.0/16, which on a cloud instance is the
-      # metadata service and this host's credentials. On by default, and applies
-      # whether or not the routing control above is enabled.
+      # On by default: clients cannot reach the cloud metadata service.
       - CULVERT_BLOCK_LINK_LOCAL
 
-      # Site profile: loads profiles/<name>.yaml as a base for everything above
       - CULVERT_PROFILE
 
-      # WireGuard (opt-in: set CULVERT_PROTOCOL=wireguard, or both to run it
-      # alongside OpenVPN, then uncomment the knobs you need)
+      # WireGuard: set CULVERT_PROTOCOL=wireguard or both.
       # - CULVERT_PROTOCOL
       # - CULVERT_WG_NETWORK
       # - CULVERT_WG_PORT
       # - CULVERT_WG_MTU
       # - CULVERT_WG_PERSISTENT_KEEPALIVE
-      # WireGuard over HTTPS via wstunnel (a further opt-in on top of WireGuard)
       # - CULVERT_WG_HTTPS_TUNNEL_ENABLED
       # - CULVERT_WG_HTTPS_TUNNEL_PORT
 
-      # Network profile: "default" (fast internet) or "wireless" (4G/mobile optimized)
+      # A label only: docs/performance.md.
       - CULVERT_NETWORK_PROFILE
 
-      # Performance tuning (optional - profile sets sensible defaults)
       - CULVERT_SNDBUF
       - CULVERT_RCVBUF
       - CULVERT_TUN_MTU
@@ -192,56 +119,40 @@ services:
       - CULVERT_MAX_CLIENTS
       - CULVERT_RENEG_SEC
 
-      # Concurrent connections per client identity (laptop + phone). Set
-      # ALLOW_SHARED_CLIENTS=false to make each credential exclusive.
       - CULVERT_ALLOW_SHARED_CLIENTS
       - CULVERT_SHARED_CLIENT_SLOTS
       - CULVERT_LOG_MODE
       - CULVERT_VERB
       - CULVERT_MUTE
 
-      # Observability listener: always serves health probes; /metrics is
-      # served when CULVERT_METRICS_ENABLED=true
       - CULVERT_METRICS_ENABLED
       - CULVERT_METRICS_ADDR
 
-      # Client config download server (REQUIRES a bearer token when enabled:
-      # the served configs embed client private keys, so it fails closed)
+      # Needs a bearer token: the configs embed private keys.
       - CULVERT_CLIENT_DOWNLOAD_ENABLED
       - CULVERT_CLIENT_DOWNLOAD_PORT
       - CULVERT_CLIENT_DOWNLOAD_TOKEN
-      # Loopback by default. Set 0.0.0.0 to serve off-box, and set the TLS pair
-      # to serve HTTPS (both or neither).
+      # Loopback unless set. The TLS pair is both or neither.
       - CULVERT_CLIENT_DOWNLOAD_BIND
       - CULVERT_CLIENT_DOWNLOAD_TLS_CERT
       - CULVERT_CLIENT_DOWNLOAD_TLS_KEY
 
-      # OTLP push, optional: Prometheus scrape works without it
       - CULVERT_OTEL_ENABLED
       - CULVERT_OTEL_ENDPOINT
       - CULVERT_OTEL_PROTOCOL
 
-      # PKI settings (CNSA 2.0 compliant defaults)
-      # ORG_NAME names the CA: "Acme" -> "Acme VPN CA". CA_CN overrides that
-      # derivation outright - set it only if you want to name the CA yourself.
+      # CULVERT_ORG_NAME names the CA "<org> VPN CA", and CULVERT_CA_CN overrides it.
       - CULVERT_ORG_NAME
       - CULVERT_CA_CN
       - CULVERT_KEY_TYPE
       - CULVERT_KEY_SIZE
-      # OpenVPN data-channel cipher order. AES-256-GCM first is the CNSA/FIPS
-      # default; a profile (or this var) may prefer ChaCha20 -- which leaves CNSA.
+      # ChaCha20 first leaves CNSA: docs/performance.md.
       - CULVERT_DATA_CIPHERS
-      # Local-PKI certificate lifetimes (days). Defaults: 10-year CA, 2-year
-      # leaf. Raise for a set-and-forget deployment with no rotation operator,
-      # e.g. 7300 (20y), so the server cert cannot silently expire.
+      # Local-PKI lifetimes in days: .env.example.
       - CULVERT_CA_EXPIRE_DAYS
       - CULVERT_CERT_EXPIRE_DAYS
       - CULVERT_CRL_DAYS
-      # "local" mints a CA on first start. "external" takes the CA and server
-      # keypair from a secrets backend instead, which needs every
-      # CULVERT_SECRETS_* path below - see the External PKI section of
-      # .env.example. TC_KEY_PATH is what lets more than one server share
-      # clients; a single server can leave it unset and mint its own.
+      # External PKI: .env.example.
       - CULVERT_PKI_MODE
       - CULVERT_SECRETS_PROVIDER
       - CULVERT_SECRETS_CA_CERT_PATH
@@ -250,46 +161,34 @@ services:
       - CULVERT_SECRETS_CRL_PATH
       - CULVERT_SECRETS_TC_KEY_PATH
 
-      # OIDC SSO, opt-in (works with Entra ID, Okta, Keycloak, Google, Auth0, etc.)
+      # OIDC: docs/use-case-corporate.md.
       - CULVERT_OAUTH2_ENABLED
       - CULVERT_OAUTH2_ISSUER
       - CULVERT_OAUTH2_CLIENT_ID
       - CULVERT_OAUTH2_CLIENT_SECRET
       - CULVERT_OAUTH2_VALIDATE_GROUPS
-      # Per-listener OAuth2 enable/disable (defaults to CULVERT_OAUTH2_ENABLED)
       - CULVERT_OAUTH2_UDP_ENABLED
       - CULVERT_OAUTH2_HTTPS_ENABLED
       - CULVERT_OAUTH2_TCP_ENABLED
-      # Per-listener OAuth2 callback ports (defaults: 9000=UDP, 9001=HTTPS, 9002=TCP)
       - CULVERT_OAUTH2_UDP_PORT
       - CULVERT_OAUTH2_HTTPS_PORT
       - CULVERT_OAUTH2_TCP_PORT
       - CULVERT_OAUTH2_HTTP_SECRET
-      # Default scopes match the code default. Add offline_access for IdPs
-      # that issue refresh tokens through it (e.g. Entra ID); some IdPs
-      # reject unknown scopes, so it is not the default.
+      # Add offline_access for IdPs that issue refresh tokens through it.
       - CULVERT_OAUTH2_SCOPES
-      # OAuth2 TLS (REQUIRED when CULVERT_OAUTH2_ENABLED=true - most IdPs
-      # require HTTPS redirect URIs). These four default to the
-      # OAUTH2_TLS_CERT_PATH volume above, which only this file mounts.
+      # These default to the oauth2-tls mount above.
       - CULVERT_OAUTH2_TLS_CERT=${CULVERT_OAUTH2_TLS_CERT:-/etc/vpn/oauth2-tls/fullchain.pem}
       - CULVERT_OAUTH2_TLS_KEY=${CULVERT_OAUTH2_TLS_KEY:-/etc/vpn/oauth2-tls/privkey.pem}
-      # stunnel TLS (for the opt-in HTTPS tunnel - same certs as OAuth2 by default)
-      # Note: Use fullchain (leaf + intermediate CA) for proper certificate verification
+      # A fullchain, so clients can verify the certificate.
       - CULVERT_STUNNEL_CERT=${CULVERT_STUNNEL_CERT:-/etc/vpn/oauth2-tls/fullchain.pem}
       - CULVERT_STUNNEL_KEY=${CULVERT_STUNNEL_KEY:-/etc/vpn/oauth2-tls/privkey.pem}
-      # OAuth2 Branding (optional). Set ASSETS_PATH to a non-empty path or
-      # leave it unset: an empty value replaces the baked-in branding with "".
+      # An empty CULVERT_OAUTH2_ASSETS_PATH replaces the built-in branding with nothing.
       - CULVERT_OAUTH2_TEMPLATE
       - CULVERT_OAUTH2_ASSETS_PATH
 
-      # Timezone
       - TZ=${TZ:-Australia/Sydney}
 
-    # No healthcheck override: the image's protocol-aware HEALTHCHECK
-    # (entrypoint healthcheck -> /livez) covers OpenVPN, WireGuard, and
-    # both. A pgrep for openvpn would report a WireGuard-only server
-    # unhealthy forever.
+    # The image's HEALTHCHECK covers every protocol.
 
     logging:
       driver: "json-file"
@@ -297,25 +196,13 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  #=============================================================================
-  # Watchtower - Automatic Docker Container Updates
-  #=============================================================================
-  # Monitors containers and updates them when new images are available.
-  # Schedule: Daily at 04:00 (after 03:00 VM security updates)
-  # Only updates containers with com.centurylinklabs.watchtower.enable=true label
-  #
-  # Behavior:
+  # Opt-in image updates: docker compose --profile watchtower up -d.
   #   - Pulls new image if available
   #   - Stops container gracefully
   #   - Recreates with same config
   #   - Removes old image
-  #
-  # Disable: Set WATCHTOWER_ENABLED=false in .env
   watchtower:
-    # Note: containrrr/watchtower was archived Dec 2025 and broken with Docker 29+
-    # Using maintained fork (pinned): https://github.com/nicholas-fedor/watchtower
-    # SECURITY: mounting docker.sock hands this container root-equivalent
-    # control of the HOST - keep this profile opt-in and the tag pinned.
+    # docker.sock is root on the host: keep this profile opt-in and the tag pinned.
     image: nickfedor/watchtower:1.23.2@sha256:62fb91130ddb493f869cad7e198fa260dd16c5da293ed092cbd5d8781566f7a6
     container_name: watchtower
     restart: unless-stopped
@@ -324,13 +211,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # Schedule: 04:00 daily (cron format: sec min hour day month weekday)
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
-      # Only update containers with enable label (opt-in)
       - WATCHTOWER_LABEL_ENABLE=true
-      # Remove old images after update
       - WATCHTOWER_CLEANUP=true
-      # Timezone
       - TZ=${TZ:-Australia/Sydney}
     logging:
       driver: "json-file"
@@ -338,9 +221,3 @@ services:
         max-size: "5m"
         max-file: "2"
 
-# NOTE: PKI, clients, and logs now use bind mounts (host directories) by default
-# This ensures persistence across container recreation and volume removal
-# Set CULVERT_PKI_PATH, CULVERT_CLIENTS_PATH, CULVERT_LOGS_PATH in .env to customize paths
-#
-# Watchtower: Enable with `docker compose --profile watchtower up -d`
-# Or add COMPOSE_PROFILES=watchtower to .env for always-on

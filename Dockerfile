@@ -17,7 +17,6 @@ ARG COMMIT=""
 
 FROM ${BASE_IMAGE}
 
-# Re-import ARGs into the image stage for use in LABELs
 ARG VERSION
 ARG COMMIT
 
@@ -38,19 +37,8 @@ ARG OPENVPN_AUTH_OAUTH2_VERSION="2.3.0"
 ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="7fca51384a9cc21320282b1bbfe0766e396df6e0d011df4bc45d48316596eaa7"
 ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="9fe67da523ebcefe8dc2ca65efe2d5a9f390b4970d4ca10f3150654b17e7c83d"
 
-# openvpn from the project's signed apt repo. The downloaded keyring must carry
-# EXACTLY ONE primary key and its fingerprint must be the pinned one, so neither
-# a substituted key nor a second key smuggled in alongside the real one can
-# reach /etc/apt/keyrings. Counting `pub` records rather than `fpr` records is
-# deliberate: a key with signing subkeys emits an `fpr` line per subkey, all
-# legitimately belonging to the same primary. Key 30EB F4E7 3CCE 63EE E124 DD27
-# 8E6D A8B4 E158 C569 (Samuli Seppanen, expires 2030) - re-pin if it rotates.
-#
-# The installed openvpn is then checked against OPENVPN_MIN_VERSION. The apt
-# repo serves one version per suite so it cannot be pinned, and the server
-# config depends on 2.7 behaviour: persist-key is deprecated there and only 2.7
-# clients reject an unknown pushed option, which is why block-outside-dns is not
-# pushed. Silently building on 2.6 would change both.
+# openvpn from its signed apt repo, one pinned key and a version floor: docs/supply-chain.md.
+# The pinned key expires in 2030, so re-pin it when it rotates.
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -146,7 +134,6 @@ RUN ARCH=$(dpkg --print-architecture) \
 
 WORKDIR /etc/vpn
 
-# Create directory structure
 RUN mkdir -p /etc/vpn/pki /etc/vpn/server/ccd /etc/vpn/clients \
     /etc/vpn/scripts /etc/vpn/docs /var/log/vpn
 
@@ -158,22 +145,17 @@ COPY config/server-https.conf.template /etc/vpn/server/server-https.conf.templat
 COPY config/server-tcp.conf.template /etc/vpn/server/server-tcp.conf.template
 COPY config/stunnel-server.conf.template /etc/vpn/server/stunnel-server.conf.template
 
-# Entrypoint and management scripts
 COPY scripts/entrypoint.py /entrypoint.py
 COPY scripts/generate-client.py /usr/local/bin/generate-client
 COPY scripts/revoke-client.py /usr/local/bin/revoke-client
 COPY scripts/update-crl.py /usr/local/bin/update-crl
 
-# Shared library modules (config, process, network, pki, openvpn, wireguard, etc.)
 COPY scripts/lib/ /etc/vpn/scripts/lib/
 
-# Shipped deployment profiles (opt-in via CULVERT_PROFILE)
 COPY profiles/ /etc/vpn/profiles/
 
-# OAuth2 branding assets
 COPY oauth2-assets/ /etc/openvpn-auth-oauth2/assets/
 
-# Client documentation
 COPY docs/vpn-client-setup.md /etc/vpn/docs/vpn-client-setup.md
 
 RUN chmod +x /entrypoint.py /usr/local/bin/generate-client \
@@ -182,26 +164,16 @@ RUN chmod +x /entrypoint.py /usr/local/bin/generate-client \
 # PYTHONPATH for lib/ module imports (entrypoint is at / but lib/ is under scripts/)
 ENV PYTHONPATH="/etc/vpn/scripts"
 
-# Bake version info for runtime inspection
 ARG VERSION
 ARG COMMIT
 RUN echo "${VERSION}" > /etc/vpn/VERSION \
     && echo "${COMMIT}" > /etc/vpn/COMMIT
 
-# Volumes for persistent data
 VOLUME ["/etc/vpn/pki", "/etc/vpn/server/ccd", "/etc/vpn/clients", "/var/log/vpn"]
 
-# UDP 1194 - OpenVPN (best performance with DCO)
-# TCP 1194 - OpenVPN TCP fallback
-# TCP 443  - OpenVPN inside a TLS tunnel (stunnel), for networks that only
-#            pass HTTPS
-# UDP 51820 - WireGuard
-# TCP 4443 - WireGuard inside a WebSocket/TLS tunnel (wstunnel), same purpose
-# TCP 9000-9002 - OAuth2 callback servers
-# TCP 9090 - Observability (health probes + Prometheus /metrics)
+# Each port and the switch that opens it: docs/architecture.md.
 EXPOSE 1194/udp 1194/tcp 443/tcp 51820/udp 4443/tcp 9000/tcp 9001/tcp 9002/tcp 9090/tcp
 
-# Protocol-aware health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["/entrypoint.py", "healthcheck"]
 

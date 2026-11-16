@@ -444,7 +444,7 @@ With OAuth2/SSO enabled, either one opens your browser for authentication.
 Running the client inside a container or a Kubernetes pod, on a full tunnel
 (`AllowedIPs = 0.0.0.0/0`)? Look for this line in the `wg-quick up` output:
 
-```text
+```console
 [#] sysctl -q net.ipv4.conf.all.src_valid_mark=1
 sysctl: setting key "net.ipv4.conf.all.src_valid_mark", ignoring: Read-only file system
 ```

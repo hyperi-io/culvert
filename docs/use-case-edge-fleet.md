@@ -32,18 +32,18 @@ that file. Data up, in order:
    its `/ingest` endpoint. Both listeners are in the receiver's
    [architecture page](https://github.com/hyperi-io/dfe-receiver/blob/main/docs/architecture.md).
 
-Admin down: culvert admits it from `CULVERT_DOWNSTREAM_ADMIN_CIDRS` (Difference
-1 below), and the appliance accepts administration over its tunnel. What DFE
+Admin down: culvert admits it from `CULVERT_DOWNSTREAM_ADMIN_CIDRS` (reverse
+admin, below), and the appliance accepts administration over its tunnel. What DFE
 does not give you is the way in: a bastion or proxy on the DFE operator
 network whose address sits inside those admin CIDRs. Without one, administer
 from a host that is already in them.
 
+## Reverse admin and CGNAT addressing
+
 Two things make this different from an ordinary client VPN. Understand
 both before you deploy it.
 
-## Difference 1: reverse admin
-
-A normal VPN only ever lets clients initiate outbound. This deployment also
+Reverse admin comes first. A normal VPN only ever lets clients initiate outbound. This deployment also
 lets named admin networks INITIATE back DOWN an established client
 tunnel to reach an appliance - for updates, restricted repos, remote
 support. That inbound-to-client path is deliberate and needed here, and it
@@ -53,9 +53,35 @@ It is gated: only the CIDRs in `CULVERT_DOWNSTREAM_ADMIN_CIDRS` may
 initiate inbound. Everything else unsolicited into the tunnels is
 dropped.
 
-## Difference 2: CGNAT addressing
+This diagram shows the two flows through culvert in an edge fleet.
 
-Because the operator controls BOTH ends (the appliances and the
+```mermaid
+flowchart TB
+    accTitle: L4 Detail -- Edge fleet traffic
+    accDescr: Data flows up from the appliances through culvert to the receiver. Admin traffic flows down from the admin networks through culvert to the appliances.
+
+    subgraph up["Data, up the tunnel"]
+        direction LR
+        appliances["Appliances"] -->|data| culvertup[["Culvert"]] -->|data| receiver["Receiver"]
+    end
+    subgraph down["Admin, down the tunnel"]
+        direction LR
+        admin["Admin networks"] -->|admin| culvertdown[["Culvert"]] -->|admin| appliancesdown["Appliances"]
+    end
+    up ~~~ down
+
+    classDef default fill:#F8FAFC,stroke:#64748B,stroke-width:1px,color:#0F172A
+    classDef core fill:#DCEBF7,stroke:#0072B2,stroke-width:2px,color:#0B2A3F
+    classDef ext fill:#EEF0F2,stroke:#6B7280,stroke-width:1px,stroke-dasharray:4 3,color:#1F2937
+    classDef group fill:none,stroke:#64748B,stroke-width:1px,stroke-dasharray:2 4
+    class appliances,receiver,admin,appliancesdown ext
+    class culvertup,culvertdown core
+    class up,down group
+```
+
+*Figure 1. L4 Detail -- Edge fleet traffic. Both flows ride the tunnels the appliances opened.* Up: [L1 Context -- Culvert](architecture.md#l1-context-and-l3-components).
+
+CGNAT addressing is the second. Because the operator controls BOTH ends (the appliances and the
 receiver), the tunnel is `100.64.0.0/24`, inside the `100.64.0.0/10` (RFC 6598,
 carrier-grade NAT) range, instead of the default `10.8.0.0/22`. The appliances' own LANs
 and the destination network do not sit in `100.64/10`, so tunnel
@@ -68,17 +94,6 @@ run a CGNAT tunnel on top of a CGNAT underlay and the transport
 misroutes. The why is in [addressing.md](addressing.md). This is safe
 here precisely because the operator owns both ends and knows the
 appliances are not on CGNAT WANs.
-
-## Traffic model
-
-```text
-outbound (data):  appliance      -> culvert -> receiver
-inbound  (admin): admin / repos  -> culvert (back down tunnel) -> appliance
-```
-
-Data flows up from the appliances to the receiver. Admin flows down from
-the admin networks to the appliances, over the tunnels the appliances
-already established.
 
 ## Routing control
 
@@ -123,6 +138,10 @@ The profile also sets `log_mode: stdout` for the cluster log pipeline and
 starts on a local CA (external PKI - a fleet CA in OpenBao or a mounted
 Secret - is typical here, so set `CULVERT_PKI_MODE=external` and
 `CULVERT_SECRETS_*` to swap).
+
+Client sharing stays at the shipped default, so give each appliance its own
+certificate. A copied certificate still connects while sharing is on, so revoke
+a compromised one with `revoke-client`.
 
 Run it on the Kubernetes chart - see
 [use-case-kubernetes.md](use-case-kubernetes.md). The chart runs one replica,

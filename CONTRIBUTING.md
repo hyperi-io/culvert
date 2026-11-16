@@ -63,13 +63,13 @@ BREAKING CHANGE: Named exports are now used instead of default exports.
 Scope is optional but recommended. Use it to indicate the area of the codebase
 affected (e.g., `api`, `auth`, `core`, `cli`, `docs`).
 
-## Semantic Versioning
+### Semantic Versioning
 
 This project follows [Semantic Versioning 2.0.0](https://semver.org/):
 
-- **MAJOR** (X.0.0): Breaking changes that require users to modify their code
-- **MINOR** (0.X.0): New features that are backwards-compatible
-- **PATCH** (0.0.X): Bug fixes and minor improvements
+- MAJOR (X.0.0): Breaking changes that require users to modify their code
+- MINOR (0.X.0): New features that are backwards-compatible
+- PATCH (0.0.X): Bug fixes and minor improvements
 
 Versions are automatically determined by semantic-release based on commit
 messages. Do not manually update version numbers.
@@ -82,11 +82,11 @@ contributor certifies they have the right to submit their contribution.
 By making a contribution to this project, you certify that:
 
 1. The contribution was created in whole or in part by you and you have the
-   right to submit it under the license indicated in the file; or
+   right to submit it under the license indicated in the file, or
 
 2. The contribution is based upon previous work that, to the best of your
    knowledge, is covered under an appropriate open source license and you
-   have the right under that license to submit that work with modifications;
+   have the right under that license to submit that work with modifications,
    or
 
 3. The contribution was provided directly to me by some other person who
@@ -98,7 +98,7 @@ By making a contribution to this project, you certify that:
    and may be redistributed consistent with this project or the license(s)
    involved.
 
-## How to Sign Off Your Commits
+### How to Sign Off Your Commits
 
 You must sign off each commit to indicate your acceptance of the DCO. Combine
 the signoff with your conventional commit message:
@@ -129,11 +129,11 @@ Version 2.0, the same license that covers the project (inbound = outbound).
 
 ## How to Contribute
 
-1. **Fork the repository** and create your branch from `main`
-2. **Make your changes** following the commit message format above
-3. **Sign off your commits** with the DCO
-4. **Test your changes** to ensure they work as expected
-5. **Submit a pull request** with a clear description of what you've done
+1. Fork the repository and create your branch from `main`
+2. Make your changes following the commit message format above
+3. Sign off your commits with the DCO
+4. Test your changes to check they work as expected
+5. Submit a pull request with a clear description of what you've done
 
 ### Pull Request Checklist
 
@@ -181,14 +181,14 @@ publish separately when you want it shipped.
 ### Environment variables
 
 All runtime configuration is namespaced under `CULVERT_*` and is
-read by `scalo` via a 7-layer cascade (CLI -> env -> `.env` ->
+read by `scalo` through its cascade (env -> `.env` -> a profile ->
 `settings.{env}.yaml` -> `settings.yaml` -> `defaults.yaml` ->
-hard-coded), with profile YAML as an additional config source.
+hard-coded), the profile YAML loaded when `CULVERT_PROFILE` names one.
 When adding a config field:
 
 - Add it to `scripts/lib/config.py` as a dataclass attribute with a
   sensible generic default (`""` or `0`, never a HyperI-specific value).
-- Document validation rules in `__post_init__`.
+- Put validation rules in its `validate()` method.
 - Update `.env.example` with the new variable name (prefixed
   `CULVERT_`) and quoted value (empty string is fine for defaults).
 - Add a unit test in `tests/unit/test_config.py` that asserts the

@@ -13,7 +13,7 @@ Thin orchestrator that delegates to focused modules under lib/.
 Handles container initialisation, PKI setup, and VPN server management.
 
 Environment Variables:
-    See README.md for full list of configuration options.
+    .env.example lists the configuration options.
 """
 
 import argparse

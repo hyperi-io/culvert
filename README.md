@@ -6,7 +6,7 @@ OpenVPN and WireGuard in one container, with OpenVPN reachable over HTTPS and OI
 
 - The VPN server that installs as a container: `docker run` it on one host, or install the Helm chart. In a DFE deployment it is the edge-fleet VPN, the door an appliance dials before it posts to dfe-receiver.
 - OpenVPN on UDP or TCP and WireGuard, on their own or both at once.
-- Either protocol wrapped in TLS on a web port: stunnel for OpenVPN on TCP 443, wstunnel for WireGuard on TCP 4443. A network that lets out HTTPS alone passes the tunnel.
+- Either protocol wrapped in TLS on a web port: stunnel for OpenVPN on TCP 443 and wstunnel for WireGuard on TCP 4443 by default. A network that lets out HTTPS on 443 alone passes the OpenVPN tunnel, and the WireGuard one once its port is moved or opened.
 - OIDC sign-in on OpenVPN with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 or any other OIDC provider, through [openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2). WireGuard uses keys.
 - PKI from file mounts, OpenBao or Vault, or AWS Secrets Manager, with a self-generated Easy-RSA CA when you bring none.
 - TLS 1.3 only, AES-256-GCM, SHA-384 and P-384 on the OpenVPN path, the CNSA 2.0 classical suite ([docs/cryptography.md](docs/cryptography.md)).
@@ -42,11 +42,13 @@ Then mint a client and hand it the file it writes into the `culvert-clients` vol
 
 ```bash
 docker exec -it <container> generate-client --name zaphod
-docker exec -it <container> generate-client --status   # CURRENT, STALE or UNKNOWN per client
+docker exec -it <container> generate-client --status   # CURRENT, STALE or UNKNOWN per client, non-zero exit on either of the last two
 docker exec -it <container> revoke-client zaphod        # access ends here, not when the file goes
 ```
 
-The `culvert-pki` volume holds the CA that signs every client. Back it up and keep it private. One identity covers Zaphod's devices at once: OpenVPN shares the certificate across sessions, and WireGuard gets one peer per device slot (`CULVERT_SHARED_CLIENT_SLOTS`). The client side, provider by provider, is [docs/vpn-client-setup.md](docs/vpn-client-setup.md).
+The `culvert-pki` volume holds the CA that signs every OpenVPN client and the WireGuard server key. Back it up and keep it private: losing it invalidates every issued config, and leaking the CA key lets someone else issue OpenVPN certificates. A client name cannot end in `-proxy`, because `generate-client --proxy` writes `<name>-proxy-stunnel.conf`.
+
+One identity covers Zaphod's devices at once: OpenVPN shares the certificate across sessions, and WireGuard gets one peer per device slot (`CULVERT_SHARED_CLIENT_SLOTS`). Set `CULVERT_ALLOW_SHARED_CLIENTS=false` to hold each credential to one connection at a time. WireGuard slots issued before the change keep connecting until you revoke the client. The client side, provider by provider, is [docs/vpn-client-setup.md](docs/vpn-client-setup.md).
 
 Everything else is an opt-in with its own port:
 
@@ -80,11 +82,11 @@ External PKI keeps the CA key at your CA, so Culvert neither signs nor revokes O
 
 One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) carries `/livez`, `/readyz` and, with `CULVERT_METRICS_ENABLED=true`, `/metrics`. OTLP push needs metrics on as well, then `CULVERT_OTEL_ENABLED=true` and `CULVERT_OTEL_ENDPOINT`. Point a `startupProbe` at `/livez`: Kubernetes suspends liveness until it passes, so one path covers a generous boot and a tight liveness period.
 
-Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it falls only while the refresh fails. A refresh that does not rewrite the CRL logs a warning, one that raises logs `CRL refresh error` at error, and under 7 days of CRL life left logs at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns.
+Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it falls only while the refresh fails. A refresh that does not rewrite the CRL logs a warning, one that raises logs `CRL refresh error` at error, and under 7 days of CRL life left logs at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns. Culvert logs a warning naming the peer and both addresses.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md): what is in the image, the entrypoint sequence, the two PKI modes, the iptables chains and the invariants.
+- [docs/architecture.md](docs/architecture.md): the diagrams of what culvert talks to and what runs inside it, what is in the image, the entrypoint sequence, the two PKI modes, the iptables chains and the invariants.
 - [docs/addressing.md](docs/addressing.md): why the tunnels default to `10.8.0.0/22`, and when to use the CGNAT range.
 - [docs/cryptography.md](docs/cryptography.md): the CNSA 2.0 classical suite, and what is not there yet.
 - [docs/performance.md](docs/performance.md): throughput, DCO and the cipher choice.

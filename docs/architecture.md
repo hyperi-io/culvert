@@ -15,6 +15,91 @@ replica is defined entirely by its environment and its mounted volumes. There
 is no control plane, so the container itself has to refuse to start when a
 control it was asked for did not install.
 
+Diagram map:
+
+- [L1 Context -- Culvert](#l1-context-and-l3-components)
+  - [L3 Components -- Culvert](#l1-context-and-l3-components)
+    - [L4 Detail -- Startup sequence](#one-entrypoint-one-ordered-sequence)
+  - [L4 Detail -- Edge fleet traffic](use-case-edge-fleet.md#reverse-admin-and-cgnat-addressing)
+
+## L1 context and L3 components
+
+This diagram shows culvert as one box and what it talks to.
+
+```mermaid
+flowchart LR
+    accTitle: L1 Context -- Culvert
+    accDescr: VPN clients open tunnels to culvert, which routes their traffic to site networks. An external PKI can supply certificates, an OIDC provider signs users in, and a metrics collector receives metrics.
+
+    clients["VPN clients"]
+    pki["External PKI"]
+    culvert[["Culvert"]]
+    networks["Site networks"]
+    idp["OIDC provider"]
+    collector["Metrics collector"]
+
+    clients -->|tunnels| culvert
+    pki -.->|certificates| culvert
+    culvert -->|routed traffic| networks
+    culvert -.->|sign-in| idp
+    culvert -.->|metrics| collector
+
+    classDef default fill:#F8FAFC,stroke:#64748B,stroke-width:1px,color:#0F172A
+    classDef core fill:#DCEBF7,stroke:#0072B2,stroke-width:2px,color:#0B2A3F
+    classDef ext fill:#EEF0F2,stroke:#6B7280,stroke-width:1px,stroke-dasharray:4 3,color:#1F2937
+    class clients,pki,networks,idp,collector ext
+    class culvert core
+```
+
+*Figure 1. L1 Context -- Culvert. Dashed boxes are external, and dotted arrows are opt-in.* Up: top of culvert. Down: [L3 Components -- Culvert](#l1-context-and-l3-components).
+
+This diagram shows the processes inside the container.
+
+```mermaid
+flowchart LR
+    accTitle: L3 Components -- Culvert
+    accDescr: Clients reach OpenVPN directly or through stunnel, and WireGuard directly or through wstunnel. OpenVPN hands sign-in to openvpn-auth-oauth2. One listener serves health and metrics.
+
+    clients["VPN clients"]
+    pki["External PKI"]
+
+    subgraph culvert["Culvert"]
+        direction LR
+        stunnel["stunnel"] --> openvpn["OpenVPN"] --> oauth2["openvpn-auth-oauth2"]
+        wstunnel["wstunnel"] --> wireguard["WireGuard wg0"]
+        observability["Health and<br/>metrics"]
+    end
+
+    networks["Site networks"]
+    idp["OIDC provider"]
+    collector["Metrics collector"]
+
+    clients -->|tunnels| culvert
+    pki -.->|certificates| culvert
+    culvert -->|routed traffic| networks
+    culvert -.->|sign-in| idp
+    culvert -.->|metrics| collector
+
+    classDef default fill:#F8FAFC,stroke:#64748B,stroke-width:1px,color:#0F172A
+    classDef ext fill:#EEF0F2,stroke:#6B7280,stroke-width:1px,stroke-dasharray:4 3,color:#1F2937
+    classDef group fill:none,stroke:#64748B,stroke-width:1px,stroke-dasharray:2 4
+    class clients,pki,networks,idp,collector ext
+    class culvert group
+```
+
+*Figure 2. L3 Components -- Culvert. Dashed boxes are external, and dotted arrows are opt-in.* Up: [L1 Context -- Culvert](#l1-context-and-l3-components). Down: [L4 Detail -- Startup sequence](#one-entrypoint-one-ordered-sequence).
+
+A client on an open network dials OpenVPN or WireGuard directly. Behind HTTPS-only egress it dials stunnel or wstunnel, which unwrap the TLS and hand the session on inside the container. Each process runs only when its switch is on:
+
+| Process | Port | Runs when |
+|---|---|---|
+| OpenVPN | `1194/udp`, `1194/tcp` | `CULVERT_PROTOCOL` is `openvpn` (the default) or `both`. UDP runs while `CULVERT_UDP_ENABLED` is true (the default), TCP once `CULVERT_TCP_ENABLED=true` |
+| stunnel | `443/tcp` | OpenVPN runs and `CULVERT_HTTPS_ENABLED=true` |
+| openvpn-auth-oauth2 | `9000-9002/tcp` | One per enabled OpenVPN listener whose `CULVERT_OAUTH2_UDP_ENABLED`, `_HTTPS_ENABLED` or `_TCP_ENABLED` is true. Each defaults to `CULVERT_OAUTH2_ENABLED` |
+| WireGuard `wg0` | `51820/udp` | `CULVERT_PROTOCOL` is `wireguard` or `both` |
+| wstunnel | `4443/tcp` | WireGuard runs and `CULVERT_WG_HTTPS_TUNNEL_ENABLED=true` |
+| Health and metrics | `9090/tcp` | Always, with `/metrics` once `CULVERT_METRICS_ENABLED=true` |
+
 ## What is in the image
 
 The base is the Ubuntu image `BASE_IMAGE` pins by tag and digest in the `Dockerfile`. Every third-party binary comes
@@ -36,7 +121,8 @@ key and counting keys catches a second one smuggled in alongside the real one.
 The apt repo serves one version per suite and cannot be pinned, which is why
 the version floor is asserted after install rather than requested before it.
 The server config depends on 2.7 behaviour, so building on 2.6 would change it
-silently. `openvpn-auth-oauth2` gets the artefact treatment instead because its
+silently: 2.7 deprecates `persist-key` on the server, and only 2.7 clients
+reject an unknown pushed option, which is why `block-outside-dns` is not pushed. `openvpn-auth-oauth2` gets the artefact treatment instead because its
 apt repo serves only the latest release and cannot be pinned at all.
 
 DCO is supported but no kernel module ships in the image. Inside a container
@@ -51,11 +137,33 @@ drops a compiler toolchain from the image at no cost to the capability.
 in a focused module under `scripts/lib/`, and the entrypoint's job is the
 order.
 
-```text
-config -> directories -> log rotation -> network -> routing control
-       -> forward guards -> [OpenVPN branch] -> [WireGuard branch]
-       -> observability -> CRL refresh -> client download -> block
+This diagram shows the startup steps as three stages.
+
+```mermaid
+flowchart TB
+    accTitle: L4 Detail -- Startup sequence
+    accDescr: Three stages run in order. Prepare loads config and sets up directories, log rotation and the network. Firewall and protocols installs routing control and the forward guards, then sets up OpenVPN and WireGuard. Serve starts observability and any CRL refresh or client download, then runs the OpenVPN listeners, or waits for signals when only WireGuard runs.
+
+    subgraph s1["1 Prepare"]
+        direction LR
+        config["Load config"] --> directories["Directories"] --> logrotation["Log rotation"] --> network["Network"]
+    end
+    subgraph s2["2 Firewall and protocols"]
+        direction LR
+        routing["Routing control"] --> guards["Forward guards"] --> ovpnsetup["OpenVPN setup"] --> wgsetup["WireGuard setup"]
+    end
+    subgraph s3["3 Serve"]
+        direction LR
+        observe["Observability"] --> crl["CRL refresh"] --> download["Client download"] --> block(["Run OpenVPN<br/>or wait"])
+    end
+    s1 --> s2 --> s3
+
+    classDef default fill:#F8FAFC,stroke:#64748B,stroke-width:1px,color:#0F172A
+    classDef group fill:none,stroke:#64748B,stroke-width:1px,stroke-dasharray:2 4
+    class s1,s2,s3 group
 ```
+
+*Figure 3. L4 Detail -- Startup sequence. Read each stage left to right, then down.* Up: [L3 Components -- Culvert](#l1-context-and-l3-components).
 
 The OpenVPN branch initialises PKI, renders the UDP, HTTPS and TCP server
 configs from `config/*.template`, sets up stunnel, generates any auto-clients
