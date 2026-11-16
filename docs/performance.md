@@ -8,13 +8,14 @@ concern rather than a culvert setting, and why the shipped cipher is the
 ## Tuning profiles
 
 Tuning is data, not code. It lives in `profiles/*.yaml`, loaded via
-`CULVERT_PROFILE` (a shipped name, or a path to your own file). Seven are
+`CULVERT_PROFILE` (a shipped name, or a path to your file). Seven are
 shipped. The two tuning baselines are `default` and `mobile`. `home`,
 `corporate`, `travel` and `edge-fleet` are deployment profiles, and `example`
 is a template:
 
 - `default` - the general-purpose baseline: `mssfix 1420` (off the PPPoE
-  fragmentation cliff), OS-auto socket buffers, WireGuard MTU 1420.
+  fragmentation cliff), OS-auto socket buffers, WireGuard MTU 1420 (1500 less
+  the IPv6 outer headers).
 - `mobile` - constrained or extra-encapsulated paths (5G, phone tether,
   hotel/captive wifi, CGNAT): larger OpenVPN buffers, `tun-mtu`/`mssfix` 1400,
   tolerant keepalive, and WireGuard MTU 1280.
@@ -26,7 +27,7 @@ The one client-resilience knob that matters most is MTU. A 1420 WireGuard
 tunnel black-holes on a ~1400 NAT64/CGNAT/PPPoE path: it connects, the
 handshake completes, then large transfers stall silently because carriers
 filter the ICMP that would signal "too big". 1280 is the IPv6 minimum every
-network must carry, so it gets through with headroom. Everything else in the
+network must pass, so it gets through with headroom. Everything else in the
 profiles (buffers, keepalive) is smoothing. MTU is the difference between
 "works" and "connects but hangs".
 
@@ -46,7 +47,7 @@ The order is a per-profile setting (`data_ciphers`, or `CULVERT_DATA_CIPHERS`):
 - `default` profile: `AES-256-GCM:CHACHA20-POLY1305`. The CNSA and FIPS lead, ChaCha20 still offered. This is what ships.
 - `mobile` profile: `CHACHA20-POLY1305:AES-256-GCM`. ChaCha20 first for the clients without AES-NI that profile targets. Picking it leaves the CNSA suite in exchange for mobile-client performance, and AES-256-GCM stays offered, so nothing weaker is negotiated.
 - ChaCha20 everywhere, without OpenVPN: WireGuard. Its suite is fixed at ChaCha20-Poly1305, Curve25519 and BLAKE2s, fast on every CPU, and it re-handshakes across network switches, so it is the better path for roaming clients. WireGuard is outside CNSA by design.
-- CNSA or FIPS required: the `default` profile with `CULVERT_DATA_CIPHERS=AES-256-GCM`, which refuses the ChaCha20 fallback outright.
+- CNSA or FIPS required: the `default` profile with `CULVERT_DATA_CIPHERS=AES-256-GCM`, which rejects the ChaCha20 fallback outright.
 
 The default profile is never reordered to ChaCha20 first. That would leave CNSA silently, where the mobile profile makes the same trade as a labelled choice.
 
@@ -58,7 +59,7 @@ something a profile can turn on:
 
 - The `ovpn` module is in the kernel from Linux 6.16. On an older kernel the
   ovpn-backports DKMS project builds it. Either way needs OpenVPN 2.7+ (culvert
-  ships it) and an AEAD cipher with no compression (culvert's defaults already
+  ships it) and an AEAD cipher with no compression (culvert's defaults
   satisfy this). The older `ovpn-dco` module and its `openvpn-dco-dkms` package
   serve OpenVPN 2.6 and do nothing for 2.7.
 - Without the module, OpenVPN runs its data channel in userspace - correct
@@ -92,6 +93,6 @@ interface, and can regress inside virtualised/tunnel-in-tunnel stacks
 
 - Reordering OpenVPN to ChaCha20-first as a default - leaves CNSA (see above).
 - OpenVPN `float` for roaming - it widens attack surface by accepting an
-  authenticated session from a new source IP. Use WireGuard for roaming
+  authenticated session from a different source IP. Use WireGuard for roaming
   instead.
-- Compression - disabled on purpose (VORACLE), and it also disables DCO.
+- Compression - disabled on purpose (VORACLE), and it disables DCO as well.

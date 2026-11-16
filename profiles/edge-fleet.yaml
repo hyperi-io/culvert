@@ -1,66 +1,20 @@
-# Edge-fleet profile -- the pre-opinionated preset for an appliance fleet
-# streaming data INTO a central receiver, with reverse admin back down
-# the same tunnels - the shape of any hub-and-spoke telemetry fleet
-# (edge stream hubs -> central ingest). Load with:
-# CULVERT_PROFILE=edge-fleet
-#
-# Two deliberate differences from an ordinary client VPN:
-#   1. Reverse admin: admin networks may INITIATE back down an
-#      established client tunnel to reach the appliance (updates,
-#      restricted repos, remote support). A normal VPN never allows
-#      inbound-to-client.
-#   2. CGNAT addressing: because the operator controls BOTH ends
-#      (appliance + receiver), the tunnels use 100.64.0.0/10 (RFC 6598)
-#      - the range appliances' own LANs and the destination network do
-#      not occupy, so no NAT gateway is needed for overlap avoidance.
-#      Do NOT use this preset for laptops on carrier/Starlink links
-#      (they already sit in 100.64/10 - see the default 10.8 profile).
-#
-# Traffic model:
-#   outbound (data): appliance -> culvert -> receiver
-#   inbound  (admin): admin/repos -> culvert (back down tunnel) -> appliance
-#
-# Explicit CULVERT_* env vars always override these values.
+# Appliance fleet into a central receiver, with reverse admin: docs/use-case-edge-fleet.md.
+# Load with CULVERT_PROFILE=edge-fleet. Never for laptops on carrier or Starlink links: docs/addressing.md.
 
 protocol: openvpn
 udp_enabled: true
 
-# CGNAT tunnel subnet - operator controls both ends (see header).
-udp_network: "100.64.0.0"
+udp_network: "100.64.0.0"   # CGNAT range, safe only where the operator owns both ends
 udp_netmask: "255.255.255.0"
 
-# Routing control: the whole point of this preset.
 routing_control_enabled: true
-
-# Appliances must NOT reach each other - only the receiver (and admin
-# reaches them). Isolation stays ON.
 client_isolation: true
 
-# Sharing is left at the shipped default deliberately. Each appliance holds
-# its own certificate, and a cloned one is caught by the connection log and
-# revoked with revoke-client, not by duplicate-cn.
-
-# Outbound allow-list: appliances may only INITIATE to the receiver
-# network. Set this to your receiver's service CIDR.
+# Example CIDRs: set them to yours. push_routes must cover both of the others.
 allowed_destinations: "10.20.0.0/16"
-
-# Reverse admin: these source networks may INITIATE back down the
-# established client tunnels to reach an appliance (remote admin,
-# updates, restricted repos). Set to your admin/bastion CIDR(s).
-# Everything else inbound-to-tunnel is denied.
 downstream_admin_cidrs: "10.10.0.0/16"
-
-# Pushed routes MUST cover both the receiver (so appliances route their
-# outbound data through the tunnel) AND the admin CIDRs (so an
-# appliance's REPLY to an admin-initiated connection routes back up the
-# tunnel rather than out its own default gateway). Keep this in sync with
-# allowed_destinations + downstream_admin_cidrs.
 push_routes: "10.20.0.0/16,10.10.0.0/16"
 
-# Log to stdout for the cluster log pipeline; see
-# docs/use-case-kubernetes.md for the single-replica chart install.
 log_mode: stdout
 
-# External PKI is typical here (fleet CA in OpenBao / a mounted secret).
-# Start local; set CULVERT_PKI_MODE=external + CULVERT_SECRETS_* to swap.
 pki_mode: local

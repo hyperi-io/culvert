@@ -5,8 +5,8 @@ OpenVPN and WireGuard in one container, with OpenVPN reachable over HTTPS and OI
 ## What it does
 
 - The VPN server that installs as a container: `docker run` it on one host, or install the Helm chart. In a DFE deployment it is the edge-fleet VPN, the door an appliance dials before it posts to dfe-receiver.
-- OpenVPN on UDP or TCP and WireGuard, on their own or both at once.
-- Either protocol wrapped in TLS on a web port: stunnel for OpenVPN on TCP 443, wstunnel for WireGuard on TCP 4443. A network that lets out HTTPS alone passes the tunnel.
+- OpenVPN on UDP or TCP and WireGuard, alone or both at once.
+- Either protocol wrapped in TLS on a web port: stunnel for OpenVPN on TCP 443 and wstunnel for WireGuard on TCP 4443 by default. A network that lets out HTTPS on 443 alone passes the OpenVPN tunnel, and the WireGuard one once its port is moved or opened.
 - OIDC sign-in on OpenVPN with Microsoft Entra ID, Google Workspace, Okta, Keycloak, Auth0 or any other OIDC provider, through [openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2). WireGuard uses keys.
 - PKI from file mounts, OpenBao or Vault, or AWS Secrets Manager, with a self-generated Easy-RSA CA when you bring none.
 - TLS 1.3 only, AES-256-GCM, SHA-384 and P-384 on the OpenVPN path, the CNSA 2.0 classical suite ([docs/cryptography.md](docs/cryptography.md)).
@@ -42,13 +42,15 @@ Then mint a client and hand it the file it writes into the `culvert-clients` vol
 
 ```bash
 docker exec -it <container> generate-client --name zaphod
-docker exec -it <container> generate-client --status   # CURRENT, STALE or UNKNOWN per client
+docker exec -it <container> generate-client --status   # CURRENT, STALE or UNKNOWN per client, non-zero exit on either of the last two
 docker exec -it <container> revoke-client zaphod        # access ends here, not when the file goes
 ```
 
-The `culvert-pki` volume holds the CA that signs every client. Back it up and keep it private. One identity covers Zaphod's devices at once: OpenVPN shares the certificate across sessions, and WireGuard gets one peer per device slot (`CULVERT_SHARED_CLIENT_SLOTS`). The client side, provider by provider, is [docs/vpn-client-setup.md](docs/vpn-client-setup.md).
+The `culvert-pki` volume holds the CA that signs every OpenVPN client and the WireGuard server key. Back it up and keep it private: losing it invalidates every issued config, and leaking the CA key lets someone else issue OpenVPN certificates. A client name cannot end in `-proxy`, because `generate-client --proxy` writes `<name>-proxy-stunnel.conf`.
 
-Everything else is an opt-in with its own port:
+One identity covers Zaphod's devices at once: OpenVPN shares the certificate across sessions, and WireGuard gets one peer per device slot (`CULVERT_SHARED_CLIENT_SLOTS`). Set `CULVERT_ALLOW_SHARED_CLIENTS=false` to hold each credential to one connection at a time. WireGuard slots issued before the change keep connecting until you revoke the client. The client side, provider by provider, is [docs/vpn-client-setup.md](docs/vpn-client-setup.md).
+
+Everything else is an opt-in, each on a separate port:
 
 | Capability | Enable with | Port |
 |------------|-------------|------|
@@ -72,19 +74,17 @@ A profile is a YAML of site defaults under `profiles/`, loaded with `CULVERT_PRO
 | `travel` | OpenVPN and WireGuard over HTTPS, for networks that only pass web traffic | [docs/use-case-travel.md](docs/use-case-travel.md) |
 | `edge-fleet` | An EdgeStream Hub appliance fleet streaming to a central receiver, reverse admin down the tunnels, CGNAT addressing | [docs/use-case-edge-fleet.md](docs/use-case-edge-fleet.md) |
 
-Kubernetes has no profile and its own walkthrough: [docs/use-case-kubernetes.md](docs/use-case-kubernetes.md), the chart at `oci://ghcr.io/hyperi-io/charts/culvert`, one replica, assembled from [deploy/deployment-contract.json](deploy/deployment-contract.json) on the scalo-service library chart.
+Kubernetes has no profile but has a walkthrough: [docs/use-case-kubernetes.md](docs/use-case-kubernetes.md), the chart at `oci://ghcr.io/hyperi-io/charts/culvert`, one replica, assembled from [deploy/deployment-contract.json](deploy/deployment-contract.json) on the scalo-service library chart.
 
-External PKI keeps the CA key at your CA, so Culvert neither signs nor revokes OpenVPN client certificates. Issue one there, place it at `pki/issued/<name>.crt` and `pki/private/<name>.key`, and run `generate-client --config-only --name <name>`. Revoke at the CA too: the refresh from `CULVERT_SECRETS_CRL_PATH` ends the session.
+External PKI keeps the CA key at your CA, so Culvert neither signs nor revokes OpenVPN client certificates. Issue one there, place it at `pki/issued/<name>.crt` and `pki/private/<name>.key`, and run `generate-client --config-only --name <name>`. Revoke at the CA, and the refresh from `CULVERT_SECRETS_CRL_PATH` ends the session.
 
-## Operating it
+One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) serves `/livez`, `/readyz` and, with `CULVERT_METRICS_ENABLED=true`, `/metrics`. OTLP push needs metrics on as well, then `CULVERT_OTEL_ENABLED=true` and `CULVERT_OTEL_ENDPOINT`. Point a `startupProbe` at `/livez`: Kubernetes suspends liveness until it passes, so one path covers a generous boot and a tight liveness period.
 
-One listener (`CULVERT_METRICS_ADDR`, default `0.0.0.0:9090`) carries `/livez`, `/readyz` and, with `CULVERT_METRICS_ENABLED=true`, `/metrics`. OTLP push needs metrics on as well, then `CULVERT_OTEL_ENABLED=true` and `CULVERT_OTEL_ENDPOINT`. Point a `startupProbe` at `/livez`: Kubernetes suspends liveness until it passes, so one path covers a generous boot and a tight liveness period.
+Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then rejects every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so a falling value means the refresh is failing. A refresh that does not rewrite the CRL logs a warning, one that raises logs `CRL refresh error` at error, and under 7 days of CRL life left logs at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns. Culvert logs a warning naming the peer and both addresses.
 
-Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the CRL expires, and OpenVPN then refuses every client, valid ones included, with `certificate expired`. The auto-refresh keeps it topped up, so it falls only while the refresh fails. A refresh that does not rewrite the CRL logs a warning, one that raises logs `CRL refresh error` at error, and under 7 days of CRL life left logs at error. `vpn_wireguard_endpoint_flaps_total{peer}` counts a peer's endpoint returning to an address it left within 10 minutes: a roaming phone moves once and stays, and a key loaded on two devices makes them take turns.
+## Documentation, help and licence
 
-## Documentation
-
-- [docs/architecture.md](docs/architecture.md): what is in the image, the entrypoint sequence, the two PKI modes, the iptables chains and the invariants.
+- [docs/architecture.md](docs/architecture.md): the diagrams of what culvert talks to and what runs inside it, what is in the image, the entrypoint sequence, the two PKI modes, the iptables chains and the invariants.
 - [docs/addressing.md](docs/addressing.md): why the tunnels default to `10.8.0.0/22`, and when to use the CGNAT range.
 - [docs/cryptography.md](docs/cryptography.md): the CNSA 2.0 classical suite, and what is not there yet.
 - [docs/performance.md](docs/performance.md): throughput, DCO and the cipher choice.
@@ -93,12 +93,8 @@ Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the
 
 The suite's published docs are at <https://dfe.docs.hyperi.io>, and this repository's pages at <https://dfe.docs.hyperi.io/culvert/>.
 
-## Help and contributing
-
 How to work in this repo, the commands that prove a change and what tends to bite are in [CONTRIBUTING.md](CONTRIBUTING.md). Security issues go to the [security policy](https://github.com/hyperi-io/culvert/security/policy), and community expectations are the [code of conduct](https://github.com/hyperi-io/.github/blob/main/.github/CODE_OF_CONDUCT.md).
 
 Open bugs: [this repo](https://github.com/hyperi-io/culvert/issues?q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor) | [whole DFE suite](https://github.com/search?type=issues&q=is%3Aopen+is%3Aissue+type%3ABug+-label%3Abacklog+-label%3Anext-minor+repo%3Ahyperi-io%2Fdfe-infra+repo%3Ahyperi-io%2Fdfe-docker+repo%3Ahyperi-io%2Fdfe-deploy+repo%3Ahyperi-io%2Fdfe-engine+repo%3Ahyperi-io%2Fdfe-loader+repo%3Ahyperi-io%2Fdfe-receiver+repo%3Ahyperi-io%2Fdfe-fetcher+repo%3Ahyperi-io%2Fdfe-archiver+repo%3Ahyperi-io%2Fdfe-transform-vrl+repo%3Ahyperi-io%2Fdfe-transform-vector+repo%3Ahyperi-io%2Fdfe-transform-elastic+repo%3Ahyperi-io%2Fdfe-ui+repo%3Ahyperi-io%2Fdfe-hyperdx+repo%3Ahyperi-io%2Fscalo-rs+repo%3Ahyperi-io%2Fscalo-py+repo%3Ahyperi-io%2Flogreducer+repo%3Ahyperi-io%2Fdfe-schemas+repo%3Ahyperi-io%2Fvector-vrl+repo%3Ahyperi-io%2Fculvert+repo%3Ahyperi-io%2Fdfe-clickhouse-rs+repo%3Ahyperi-io%2Ffactbook-rs)
 
-## License
-
-[Apache-2.0](LICENSE). Third-party components bundled in the container image are listed in [NOTICE](NOTICE) with their own licences.
+[Apache-2.0](LICENSE). Third-party components bundled in the container image are listed in [NOTICE](NOTICE) with their licences.

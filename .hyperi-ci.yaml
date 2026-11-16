@@ -4,7 +4,6 @@
 
 language: python
 
-# Category 4, general OSS: public, Apache-2.0, container on a public registry.
 classification: oss
 
 quality:
@@ -37,7 +36,6 @@ quality:
     ruff_security: blocking
     # Non-blocking until tests/ is clean under ty.
     ty: warn
-    # At zero findings over scripts/ and tests/, so new dead code fails the build.
     vulture: blocking
 
 test:
@@ -53,26 +51,18 @@ test:
       enabled: false
     e2e:
       enabled: false
-      # E2E tests need Docker + TUN devices and a running dual-container stack.
-      # Run locally with: pytest tests/e2e/ -m e2e -v
+      # Needs Docker and TUN: tests/README.md.
     k8s:
       enabled: false
-      # Cluster tests install the Helm chart on a real cluster, so they need a
-      # kubeconfig and site-specific settings that deliberately live outside
-      # this repo (tests/k8s/.env, gitignored). They skip without it.
-      # Run against your own cluster with: pytest tests/k8s/ -m k8s -v
+      # Needs a real cluster and tests/k8s/.env: tests/README.md.
 
 release:
   enabled: true
   channel: release
-  # culvert ships ONLY its GHCR container - it is not a Python package.
-  # Opt out of the default PyPI publish while keeping the container.
+  # A container image, not a Python package.
   destinations:
     python: false
-  # The thin chart, assembled from the committed contract on the scalo-service
-  # library chart, with version and appVersion taken from the release. culvert
-  # has no CLI to emit the contract at release time, so
-  # scripts/generate-deploy-artefacts.py writes it and a unit test holds it there.
+  # The contract is committed because culvert has no CLI to emit it: docs/architecture.md.
   helm:
     enabled: true
     contract: deploy/deployment-contract.json

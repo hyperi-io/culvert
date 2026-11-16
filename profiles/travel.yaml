@@ -1,38 +1,17 @@
-# Travel profile -- for networks where only web traffic gets out: hotel and
-# conference wifi, captive portals, tight corporate egress, or a network that
-# blocks VPN protocols outright. Runs both tunnels over HTTPS on web ports.
-# Load with: CULVERT_PROFILE=travel
-#
-# These are deliberate opt-ins with a real cost (extra listeners, a TLS
-# cert, and the overhead of a second encryption layer). Use them when you
-# need them, not by default. Explicit CULVERT_* env vars always override
-# these values.
+# Both tunnels over HTTPS for networks that pass only web traffic: docs/use-case-travel.md.
+# Load with CULVERT_PROFILE=travel. The stunnel cert and key come from the environment or a mount.
 
 protocol: both
 
-# OpenVPN inside TLS on 443 (stunnel) - to on-path inspection this is a
-# TLS session on the HTTPS port with a valid certificate.
 udp_enabled: true
 https_enabled: true
 https_port: 443
 
-# WireGuard over WebSocket/TLS on 4443 (wstunnel) - the same treatment
-# for the WireGuard path.
 wg_https_tunnel_enabled: true
 
-# Use a REAL certificate for your server name (Let's Encrypt is fine). A
-# self-signed cert works where the client trusts it, but it stands out to
-# anything inspecting certificates. Provide the cert/key via the
-# environment or a mount:
-#   CULVERT_STUNNEL_CERT, CULVERT_STUNNEL_KEY
-#
-# Full tunnel so DNS and all traffic ride the HTTPS path - on a network
-# that filters or logs, a split tunnel leaks which sites you reach
-# directly.
-full_tunnel: true
+full_tunnel: true   # a split tunnel leaks which sites you reach directly
 
-# Mobile-tolerant timers and MTU - travel means 4G/5G and flaky wifi. These are
-# the same values as the mobile profile, inlined so this file stands alone.
+# The mobile profile's values, inlined so this file stands alone.
 network_profile: mobile
 sndbuf: 393216
 rcvbuf: 393216

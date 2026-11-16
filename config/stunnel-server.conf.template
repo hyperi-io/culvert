@@ -1,37 +1,27 @@
-# Culvert stunnel Server Configuration
-# Wraps OpenVPN TCP in real TLS so the VPN can travel over a web port
-#
-# On the wire this is an ordinary TLS session on 443, which is what lets it
-# through networks that only pass HTTPS.
-# Client connects: stunnel(TLS) -> stunnel(server) -> OpenVPN TCP
+# stunnel in front of the HTTPS listener: docs/architecture.md.
 
-# Run as nobody for security (after binding to port)
+# Drops to nobody after binding the port.
 setuid = nobody
 setgid = nogroup
 
-# Foreground mode for container
 foreground = yes
 
-# Logging
 debug = 4
 output = /var/log/vpn/stunnel.log
 
-# TLS configuration - use same certs as OAuth2 endpoints
 cert = ${STUNNEL_CERT_PATH}
 key = ${STUNNEL_KEY_PATH}
 
-# TLS 1.3 only (CNSA 2.0)
+# TLS 1.3 only: docs/cryptography.md.
 sslVersionMin = TLSv1.3
 sslVersionMax = TLSv1.3
-# Note: TLS 1.3 ciphersuites use 'ciphersuites' (not 'ciphers' which is TLS 1.2)
+# TLS 1.3 suites take `ciphersuites`, not `ciphers`.
 ciphersuites = TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
 
-# HTTPS tunnel service
 [openvpn-https]
 accept = 0.0.0.0:${OPENVPN_HTTPS_PORT}
 connect = 127.0.0.1:${OPENVPN_HTTPS_INTERNAL_PORT}
 
-# Performance tuning
 TIMEOUTclose = 0
 socket = l:TCP_NODELAY=1
 socket = r:TCP_NODELAY=1

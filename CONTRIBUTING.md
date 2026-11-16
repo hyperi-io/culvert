@@ -17,7 +17,7 @@ versioning and changelog generation. All commits must follow this format:
 [optional footer(s)]
 ```
 
-### Types
+Each type sets the version bump:
 
 | Type | Description | Version Bump |
 |------|-------------|--------------|
@@ -33,8 +33,6 @@ versioning and changelog generation. All commits must follow this format:
 | `chore` | Other changes that don't modify src or test files | None |
 | `revert` | Reverts a previous commit | Varies |
 
-### Breaking Changes
-
 For breaking changes that require a major version bump, add `!` after the type
 or include `BREAKING CHANGE:` in the footer:
 
@@ -44,7 +42,7 @@ feat!: remove deprecated API endpoints
 BREAKING CHANGE: The /v1/users endpoint has been removed. Use /v2/users instead.
 ```
 
-### Examples
+Examples:
 
 ```text
 feat(auth): add OAuth2 support for Google login
@@ -58,18 +56,14 @@ refactor(core)!: restructure module exports
 BREAKING CHANGE: Named exports are now used instead of default exports.
 ```
 
-### Scope
-
-Scope is optional but recommended. Use it to indicate the area of the codebase
+The scope is optional but recommended. Use it to indicate the area of the codebase
 affected (e.g., `api`, `auth`, `core`, `cli`, `docs`).
-
-## Semantic Versioning
 
 This project follows [Semantic Versioning 2.0.0](https://semver.org/):
 
-- **MAJOR** (X.0.0): Breaking changes that require users to modify their code
-- **MINOR** (0.X.0): New features that are backwards-compatible
-- **PATCH** (0.0.X): Bug fixes and minor improvements
+- MAJOR (X.0.0): Breaking changes that require users to modify their code
+- MINOR (0.X.0): New features that are backwards-compatible
+- PATCH (0.0.X): Bug fixes and minor improvements
 
 Versions are automatically determined by semantic-release based on commit
 messages. Do not manually update version numbers.
@@ -82,11 +76,11 @@ contributor certifies they have the right to submit their contribution.
 By making a contribution to this project, you certify that:
 
 1. The contribution was created in whole or in part by you and you have the
-   right to submit it under the license indicated in the file; or
+   right to submit it under the license indicated in the file, or
 
 2. The contribution is based upon previous work that, to the best of your
    knowledge, is covered under an appropriate open source license and you
-   have the right under that license to submit that work with modifications;
+   have the right under that license to submit that work with modifications,
    or
 
 3. The contribution was provided directly to me by some other person who
@@ -97,8 +91,6 @@ By making a contribution to this project, you certify that:
    you submit with it, including your sign-off) is maintained indefinitely
    and may be redistributed consistent with this project or the license(s)
    involved.
-
-## How to Sign Off Your Commits
 
 You must sign off each commit to indicate your acceptance of the DCO. Combine
 the signoff with your conventional commit message:
@@ -122,31 +114,27 @@ git config --global user.name "Your Name"
 git config --global user.email "your.email@example.com"
 ```
 
-## License for Contributions
-
 All contributions to this project are licensed under the Apache License,
 Version 2.0, the same license that covers the project (inbound = outbound).
 
 ## How to Contribute
 
-1. **Fork the repository** and create your branch from `main`
-2. **Make your changes** following the commit message format above
-3. **Sign off your commits** with the DCO
-4. **Test your changes** to ensure they work as expected
-5. **Submit a pull request** with a clear description of what you've done
+1. Fork the repository and create your branch from `main`
+2. Make your changes following the commit message format above
+3. Sign off your commits with the DCO
+4. Test your changes to check they work as expected
+5. Submit a pull request with a clear description of what you've done
 
-### Pull Request Checklist
+Before you open the pull request:
 
 - [ ] Commits follow the conventional commit format
 - [ ] All commits are signed off (DCO)
 - [ ] Tests pass (if applicable)
 - [ ] Documentation is updated (if applicable)
 
-## Run the checks locally before you push
-
-HyperI projects gate every push through CI (lint, format, tests, secret scan,
-dependency audit, build). Run the SAME checks locally first so your change lands
-green instead of bouncing:
+Run the checks locally before you push. HyperI projects gate every push through CI (lint, format, tests, secret scan,
+dependency audit, build). Run the SAME checks locally first so CI does not bounce
+your change:
 
 ```bash
 hyperi-ci check
@@ -167,7 +155,7 @@ hyperi-ci reusable workflow.
 
 Publishing is deliberate, not a side effect of merging. A plain merge to
 `main` is a validate-only run: it does not tag or publish. A release happens
-only when the head commit on `main` carries a `Release: true` trailer, or when
+when the head commit on `main` has a `Release: true` trailer, or when
 the workflow is dispatched by hand (Actions -> CI -> Run workflow, with
 `from-head=true`). On a publish run, semantic-release reads the commits since
 the last release, works out the next version from their types, updates the
@@ -178,49 +166,41 @@ publish separately when you want it shipped.
 
 ## culvert Conventions
 
-### Environment variables
-
 All runtime configuration is namespaced under `CULVERT_*` and is
-read by `scalo` via a 7-layer cascade (CLI -> env -> `.env` ->
+read by `scalo` through its cascade (env -> `.env` -> a profile ->
 `settings.{env}.yaml` -> `settings.yaml` -> `defaults.yaml` ->
-hard-coded), with profile YAML as an additional config source.
+hard-coded), the profile YAML loaded when `CULVERT_PROFILE` names one.
 When adding a config field:
 
 - Add it to `scripts/lib/config.py` as a dataclass attribute with a
   sensible generic default (`""` or `0`, never a HyperI-specific value).
-- Document validation rules in `__post_init__`.
-- Update `.env.example` with the new variable name (prefixed
+- Put validation rules in its `validate()` method.
+- Update `.env.example` with the variable name (prefixed
   `CULVERT_`) and quoted value (empty string is fine for defaults).
 - Add a unit test in `tests/unit/test_config.py` that asserts the
   default and any validation behaviour.
 
-### Deployment profiles
-
 Site-specific defaults ship as YAML files under `profiles/` and load
 opt-in via `CULVERT_PROFILE=/etc/vpn/profiles/<name>.yaml`. The
 shipped `example.yaml` profile is a placeholder template. Copy it and
-edit the values for your own site profile. Env vars always override
+edit the values for your site profile. Env vars always override
 profile values.
 
-### Template variables
-
 Config templates under `config/*.template` use envsubst-style
-`${VAR}` placeholders. Only keys rendered by `entrypoint.py` belong
-here. Do not introduce new template placeholders without wiring them
-through `scripts/lib/openvpn.py` or `scripts/lib/stunnel.py`.
+`${VAR}` placeholders, and `scripts/lib/openvpn.py` or
+`scripts/lib/stunnel.py` fills in each one. Wire a placeholder through one of
+them before you add it to a template.
 
-## Questions
-
-If you have questions about contributing, please open an issue or contact us.
+Questions about contributing go in an issue.
 
 ## Context
 
 ### What this is
 
 A VPN server shipped as one container image. Python inside, but not a Python
-package -- the PyPI publish is opted out and a wheel is built only for pipeline
-parity. Anyone deploys it, so defaults are generic and anything specific to one site
-belongs in a profile or the deployment values. It replaced dfe-vpn, now
+package -- the PyPI publish is opted out and a wheel is built for pipeline
+parity alone. Anyone deploys it, so defaults are generic and anything specific to one site
+belongs in a profile or the deployment values. It replaced dfe-vpn, which is
 retired, so older references to that repo are stale.
 
 ### Where things live
@@ -238,14 +218,14 @@ retired, so older references to that repo are stale.
 
 `hyperi-ci check` locally, `tests/run-all.sh` for the tiers.
 
-Green in CI is the UNIT tier alone, with coverage of `scripts/` held to hyperi-ci's default 80% floor. `.hyperi-ci.yaml` disables integration, e2e and k8s and leaves `ty` non-blocking. Run the rest yourself:
+A passing CI run covers the UNIT tier alone, with coverage of `scripts/` held to hyperi-ci's default 80% floor. `.hyperi-ci.yaml` disables integration, e2e and k8s and leaves `ty` non-blocking. Run the rest yourself:
 
 ```bash
 pytest tests/e2e/ -m e2e -v     # needs Docker and TUN
 pytest tests/k8s/ -m k8s -v     # needs a kubeconfig and CULVERT_K8S_*
 ```
 
-`addopts` carries no `-m "not e2e"`, so a bare `pytest` tries the e2e tier and
+`addopts` has no `-m "not e2e"`, so a bare `pytest` tries the e2e tier and
 fails without Docker rather than skipping.
 
 ### What tends to bite
@@ -255,14 +235,14 @@ fails without Docker rather than skipping.
 | Write the skip-CI marker literally in a commit message | Describe it | GitHub scans the whole message, body included, so a literal marker anywhere in it gives the PR no CI run at all |
 | Hand-edit `deploy/deployment-contract.json` or `deploy/compose/culvert.yaml` | Re-run `scripts/generate-deploy-artefacts.py` | Both render from the scalo deployment contract in `scripts/lib/deployment.py`, and a unit test compares the committed output against a fresh render |
 | Call `easyrsa init-pki` | Create the directories directly, as `scripts/lib/pki.py` does | On 3.2.x it removes the PKI directory unconditionally. That is a volume mount, so it fails outright, and where it succeeds it takes the CA ([issue #11](https://github.com/hyperi-io/culvert/issues/11)) |
-| Check a renamed doc's links on macOS | Let `tests/unit/test_docs_links.py` do it | It compares against `git ls-files`, so case matters. A new doc also has to be linked from `docs/README.md` |
-| Read a green PR as proof the image runs | Confirm the Container job built | Only the Container job starts the image, so a base-image bump or a broken config can pass every other check and die at startup |
+| Check a renamed doc's links on macOS | Let `tests/unit/test_docs_links.py` do it | It compares against `git ls-files`, so case matters. Every doc has to be linked from `docs/README.md`, which the same test checks |
+| Read a passing PR as proof the image runs | Confirm the Container job built | The Container job is the one that starts the image, so a base-image bump or a broken config can pass every other check and die at startup |
 
 ### Where this sits
 
-Inbound: **hyperi-io/scalo-py**, the only suite edge. `pyproject.toml` declares
+Inbound: **hyperi-io/scalo-py**, the one suite edge. `pyproject.toml` declares
 `scalo[metrics,secrets-vault,secrets-aws]` bounded below 3 at runtime, plus a
-dev-only `scalo[deployment]` range the artefact generators need and the runtime
+dev-group `scalo[deployment]` range the artefact generators need and the runtime
 never imports. Granular extras on purpose.
 
 Outbound: nothing in the suite graph consumes culvert, and it is an optional

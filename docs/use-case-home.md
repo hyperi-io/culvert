@@ -38,7 +38,7 @@ CULVERT_IMAGE=ghcr.io/hyperi-io/culvert:<version>@sha256:<digest> docker compose
 
 ## 2. Open UDP 1194 to the host
 
-The server is only reachable once the port reaches it:
+The server is reachable once the port reaches it:
 
 - Home: forward UDP `1194` on your router to the host running the
   container.
@@ -49,7 +49,7 @@ not part of what you expose.
 
 ## 3. Choose what the tunnel reaches
 
-The `home` profile is split tunnel: only the VPN subnet and the routes
+The `home` profile is split tunnel: the VPN subnet and the routes
 you push go down the tunnel, the rest of the client's traffic stays
 local. The profile pushes `192.168.1.0/24` as a starting point - set it
 to your actual LAN:
@@ -80,7 +80,7 @@ This writes six `.ovpn` files, WireGuard configs under `laptop/` and
 you want is `laptop-udp-split.ovpn` (UDP, split tunnel), and
 `laptop-udp-full.ovpn` is the full-tunnel variant. The TCP and HTTPS variants
 are for later cases and need their listeners enabled server side, and the
-WireGuard configs connect only once `CULVERT_PROTOCOL` includes `wireguard`.
+WireGuard configs connect once `CULVERT_PROTOCOL` includes `wireguard`.
 
 To remove access again:
 
@@ -93,8 +93,6 @@ docker exec -it <container> revoke-client laptop
 Copy `laptop-udp-split.ovpn` to the client and import it. Platform steps
 (OpenVPN Connect, Tunnelblick, the Linux CLI, always-on setups) are in
 [vpn-client-setup.md](vpn-client-setup.md).
-
-### Fetching the configs over HTTP
 
 If copying files off the volume is a nuisance, turn on the download server:
 
@@ -114,7 +112,7 @@ front before exposing it further. The repo's compose file does not pass the
 bind address or the TLS pair through, so add them to its `environment:` list
 first.
 
-## See also
+Related pages:
 
 - [vpn-client-setup.md](vpn-client-setup.md) - installing and connecting
   the client

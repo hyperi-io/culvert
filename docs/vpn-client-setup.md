@@ -2,23 +2,19 @@
 
 This guide covers installing and configuring OpenVPN and WireGuard clients on Linux, macOS, and Windows.
 
-## Client Requirements
-
-### Minimum Versions
+Each client's minimum version:
 
 | Client | Minimum Version | OAuth2/SSO Support | Download |
 |--------|-----------------|-------------------|----------|
 | **OpenVPN Connect** | 3.4.0+ | Yes | <https://openvpn.net/client/> |
 | **OpenVPN GUI (Windows)** | 2.6.0+ | Yes | <https://openvpn.net/community-downloads/> |
-| **OpenVPN (Linux CLI)** | 2.6.0+ | No (certificate only) | <https://openvpn.net/community-downloads/> |
-| **Tunnelblick (macOS)** | 3.8.8+ | No (certificate only) | <https://tunnelblick.net/> |
+| **OpenVPN (Linux CLI)** | 2.6.0+ | No (certificates) | <https://openvpn.net/community-downloads/> |
+| **Tunnelblick (macOS)** | 3.8.8+ | No (certificates) | <https://tunnelblick.net/> |
 | **WireGuard** | Any | N/A (key-based) | <https://www.wireguard.com/install/> |
-
-### OAuth2/SSO Authentication
 
 If your organisation uses OAuth2/OIDC SSO (e.g., Microsoft Entra ID, Okta, Google), use OpenVPN Connect 3.4.0+ or OpenVPN GUI 2.6.0+ (Windows). These clients support the web-based OAuth2 authentication flow required for SSO. When connecting, your browser will open to complete authentication.
 
-Certificate-only authentication works with any OpenVPN 2.6+ client.
+Certificate authentication without SSO works with any OpenVPN 2.6+ client.
 
 WireGuard uses key-based authentication and does not support OAuth2/SSO. Keys are distributed via configuration files provided by the VPN administrator.
 
@@ -26,31 +22,27 @@ WireGuard uses key-based authentication and does not support OAuth2/SSO. Keys ar
 
 ## Configuration Files Included
 
-### OpenVPN
+OpenVPN files:
 
 | File | Protocol | Use Case |
 |------|----------|----------|
-| `*-udp-split.ovpn` | UDP 1194 | **Recommended** - Fastest, VPN routes only |
+| `*-udp-split.ovpn` | UDP 1194 | **Recommended** - Fastest, split tunnel |
 | `*-udp-full.ovpn` | UDP 1194 | All traffic through VPN |
 | `*-tcp-split.ovpn` | TCP 1194 | Fallback when UDP blocked |
 | `*-tcp-full.ovpn` | TCP 1194 | All traffic, TCP fallback |
-| `*-https-split.ovpn` | TCP 443 (stunnel) | over HTTPS, VPN routes only |
+| `*-https-split.ovpn` | TCP 443 (stunnel) | over HTTPS, split tunnel |
 | `*-https-full.ovpn` | TCP 443 (stunnel) | over HTTPS, all traffic |
 | `*-stunnel.conf` | - | stunnel config for HTTPS tunnel |
 
-### WireGuard
-
-WireGuard configs come in a folder named for you, because the file name is the
+WireGuard configs come in a folder with your name, because the file name is the
 name of the tunnel and Linux and Android allow it 15 characters.
 
 | File | Protocol | Use Case |
 |------|----------|----------|
-| `wg-split.conf` | UDP 51820 | **Recommended** - VPN routes only |
+| `wg-split.conf` | UDP 51820 | **Recommended** - split tunnel |
 | `wg-full.conf` | UDP 51820 | All traffic through VPN |
-| `wg-https-split.conf` | WSS 4443 (wstunnel) | over HTTPS, VPN routes only |
+| `wg-https-split.conf` | WSS 4443 (wstunnel) | over HTTPS, split tunnel |
 | `wg-https-full.conf` | WSS 4443 (wstunnel) | over HTTPS, all traffic |
-
-### Using more than one device
 
 The same `.ovpn` works on a laptop and a phone at once. WireGuard does not: a
 key connects from one place at a time, so you get a set of files per device -
@@ -64,31 +56,29 @@ Which to use:
 3. If UDP blocked, try OpenVPN TCP (TCP 1194)
 4. If still blocked, run the VPN over HTTPS - WireGuard via wstunnel (WSS 4443) or OpenVPN via stunnel (TCP 443)
 
-### When to get a new file
-
-These files are a snapshot of the server's settings when they were issued. Ask your administrator for a new set after the server's address, ports, DNS, MTU, routes or keys change. Restarting the server does not update a file already imported on a device.
+These files are a snapshot of the server's settings when they were issued. Ask your administrator for a fresh set after the server's address, ports, DNS, MTU, routes or keys change. Restarting the server does not update a file imported on a device earlier.
 
 ---
 
 ## WireGuard Client Setup
 
-### Installation
+Install the client:
 
 - Windows: download from <https://www.wireguard.com/install/>
 - macOS: `brew install wireguard-tools` or "WireGuard" from the App Store
 - Linux (Ubuntu/Debian): `sudo apt install wireguard-tools`
 - Linux (Fedora/RHEL): `sudo dnf install wireguard-tools`
-- Linux (Arch): `sudo pacman -S wireguard-tools`
+- Arch Linux: `sudo pacman -S wireguard-tools`
 - iOS/Android: WireGuard app from the App Store / Play Store
 
-### Importing Configuration
+Then import a config:
 
 1. Request your configuration files from the VPN administrator
-2. You will receive `wg-split.conf` and `wg-full.conf`, in a folder named for you
+2. You will receive `wg-split.conf` and `wg-full.conf`, in a folder with your name
 3. Import into your WireGuard client (drag and drop, or "Import tunnel from file")
 4. Activate the tunnel
 
-The split tunnel (`wg-split.conf`) sends only VPN traffic through the tunnel, and internet traffic uses your normal connection. The full tunnel (`wg-full.conf`) sends all traffic through it. Use it when you need full network isolation.
+The split tunnel (`wg-split.conf`) sends VPN traffic through the tunnel, and internet traffic uses your normal connection. The full tunnel (`wg-full.conf`) sends all traffic through it. Use it when you need full network isolation.
 
 ### Linux: Command Line
 
@@ -124,7 +114,7 @@ sudo systemctl status wg-quick@culvert
 3. Select your `.conf` file
 4. Click "Activate"
 
-On macOS the command line works too: `brew install wireguard-tools`, then `sudo wg-quick up ./wg-split.conf`.
+On macOS the command line works as well: `brew install wireguard-tools`, then `sudo wg-quick up ./wg-split.conf`.
 
 ---
 
@@ -140,7 +130,7 @@ like OpenVPN or WireGuard" does not see either. It is NOT tested against, and
 makes no claim about, a censor that actively probes your endpoint or does
 traffic-flow analysis on timing, volume and connection duration. Treat this as
 "indistinguishable from HTTPS at a glance", not as invisibility, and do not rely
-on it where being wrong carries a personal risk.
+on it where being wrong puts you at personal risk.
 
 ### OpenVPN over HTTPS (stunnel)
 
@@ -164,12 +154,12 @@ The HTTPS-tunnel configs (`wg-https-*.conf`) need wstunnel on your machine.
    ```
 
    (Replace `vpn.example.com` with your VPN server hostname. The first lines of
-   each `wg-https-*.conf` carry the exact command for that config, including
+   each `wg-https-*.conf` hold the exact command for that config, including
    `--tls-sni-override` when the server is dialled by address.)
 
-   A full tunnel would route wstunnel's own connection into the tunnel it
-   carries. Before you activate `wg-https-full.conf`, route the server's address
-   through the gateway you use now, for example
+   A full tunnel would route wstunnel's connection into the tunnel it
+   holds. Before you activate `wg-https-full.conf`, route the server's address
+   through your current gateway, for example
    `sudo ip route add 203.0.113.10 via 192.168.1.1` on Linux. The config's first
    lines give the macOS and Windows forms.
 
@@ -215,7 +205,7 @@ openvpn3 config-import --config alice-udp-split.ovpn --name culvert
 openvpn3 session-start --config culvert
 ```
 
-### OpenVPN 2 (open source, certificate only)
+### OpenVPN 2 (open source, certificates without SSO)
 
 ```bash
 # Ubuntu/Debian
@@ -243,7 +233,7 @@ sudo killall openvpn  # To disconnect
 
 ### HTTPS Tunnel (stunnel + OpenVPN)
 
-The HTTPS tunnel wraps OpenVPN in TLS on port 443, so on the wire it is an ordinary HTTPS session. That gets it through networks which only permit web traffic, and past filters that block VPN protocols by signature.
+The HTTPS tunnel wraps OpenVPN in TLS on port 443, so on the wire it is an ordinary HTTPS session. That gets it through networks that permit web traffic and nothing else, and past filters that block VPN protocols by signature.
 
 ```bash
 # Install stunnel: Ubuntu/Debian, Fedora/RHEL, Arch
@@ -286,7 +276,7 @@ sudo systemctl start openvpn-client@culvert
 sudo systemctl status openvpn-client@culvert
 ```
 
-For the HTTPS tunnel, run stunnel as its own service and make the OpenVPN unit depend on it:
+For the HTTPS tunnel, run stunnel as a separate service and make the OpenVPN unit depend on it:
 
 ```bash
 sudo tee /etc/systemd/system/stunnel-vpn.service << 'EOF'
@@ -348,9 +338,9 @@ Download it from <https://openvpn.net/client/> or the Mac App Store. The minimum
 
 If OAuth2/SSO is enabled, your browser will open for authentication.
 
-### macOS: Tunnelblick or the command line (certificate only)
+### macOS: Tunnelblick or the command line (certificates without SSO)
 
-[Tunnelblick](https://tunnelblick.net/) is a free, open-source OpenVPN GUI for macOS, minimum version 3.8.8. Install it, double-click the `.ovpn` file to import it, then pick "Connect" for the configuration from the menu bar icon. Tunnelblick does not support OAuth2/SSO or stunnel, so use it for certificate-only direct UDP/TCP connections.
+[Tunnelblick](https://tunnelblick.net/) is a free, open-source OpenVPN GUI for macOS, minimum version 3.8.8. Install it, double-click the `.ovpn` file to import it, then pick "Connect" for the configuration from the menu bar icon. Tunnelblick does not support OAuth2/SSO or stunnel, so use it for direct UDP/TCP connections with a certificate.
 
 ```bash
 # Command line, via Homebrew
@@ -372,7 +362,7 @@ OpenVPN Connect (<https://openvpn.net/client/>, minimum 3.4.0) supports OAuth2/S
 3. Select your `.ovpn` file
 4. Click **Connect**
 
-OpenVPN GUI (<https://openvpn.net/community-downloads/>, minimum 2.6.0) also supports OAuth2/SSO:
+OpenVPN GUI (<https://openvpn.net/community-downloads/>, minimum 2.6.0) supports OAuth2/SSO as well:
 
 1. Download and install OpenVPN (includes GUI)
 2. Copy `.ovpn` file to `C:\Users\<username>\OpenVPN\config\`
@@ -408,43 +398,43 @@ With OAuth2/SSO enabled, either one opens your browser for authentication.
 
 ## Troubleshooting
 
-### OAuth2/SSO Issues
+OAuth2/SSO:
 
 - "Browser doesn't open": check you're using OpenVPN Connect 3.4.0+
 - "Authentication failed": check with your administrator that your account has VPN access
 - "Redirect URL mismatch": contact your administrator, the OAuth2 callback URL may be misconfigured
 
-### Connection Timeouts
+Connection timeouts:
 
 1. Check the firewall: outbound UDP/TCP 1194 or TCP 443 must be allowed
 2. Try a different protocol: if UDP fails, try TCP, and if TCP fails, try the HTTPS tunnel
 3. Check DNS: verify your VPN server hostname resolves correctly from the client
 
-### TLS Handshake Failed
+TLS handshake failed:
 
 - Check the system time is accurate (TLS certificates are time-sensitive)
 - Check if your network blocks VPN protocols (use HTTPS tunnel)
 - Verify you're using OpenVPN 2.6.0+ (older versions may not support TLS 1.3)
 
-### HTTPS Tunnel Issues
+HTTPS tunnel:
 
 - Verify stunnel is running before starting OpenVPN
 - Check stunnel logs for certificate verification errors
 - Check the `.ovpn` file connects to `127.0.0.1:1195` (local stunnel)
 
-### WireGuard Issues
+WireGuard:
 
 - "Handshake did not complete": check that the server is reachable on port 51820 (or 4443 for the HTTPS tunnel)
 - DNS not working: check DNS settings in the `.conf` file
 - Connected but no internet: try the split tunnel config instead of full tunnel
 - wstunnel connection refused: WireGuard over HTTPS must be enabled on the server (`CULVERT_WG_HTTPS_TUNNEL_ENABLED=true`)
 
-### WireGuard in a container: handshake succeeds but nothing flows
+## WireGuard in a container: handshake succeeds but nothing flows
 
 Running the client inside a container or a Kubernetes pod, on a full tunnel
 (`AllowedIPs = 0.0.0.0/0`)? Look for this line in the `wg-quick up` output:
 
-```text
+```console
 [#] sysctl -q net.ipv4.conf.all.src_valid_mark=1
 sysctl: setting key "net.ipv4.conf.all.src_valid_mark", ignoring: Read-only file system
 ```
@@ -452,8 +442,8 @@ sysctl: setting key "net.ipv4.conf.all.src_valid_mark", ignoring: Read-only file
 wg-quick routes a full tunnel with an fwmark and a policy rule, and that needs
 `src_valid_mark=1` or strict reverse-path filtering discards every encrypted
 packet coming back. A container's `/proc/sys` is read-only however many
-capabilities it holds, so wg-quick's own attempt fails - and it fails quietly,
-leaving a tunnel that shows a recent handshake and carries no data. `wg show`
+capabilities it holds, so wg-quick's attempt fails - and it fails quietly,
+leaving a tunnel that shows a recent handshake and moves no data. `wg show`
 gives it away: a few hundred bytes sent, ~92 bytes received, and nothing more.
 
 Two ways out:
@@ -467,10 +457,10 @@ Two ways out:
 This is a client-side container limitation, not a server setting - the same
 config works unchanged on a normal host.
 
-### Split vs Full Tunnel
+Split against full tunnel:
 
-- Split tunnel: only routes to your site's internal networks go through the VPN
-- Full tunnel: all traffic, internet included. OpenVPN refuses IPv6 while it is up, as the tunnel carries IPv4 only.
+- Split tunnel: routes to your site's internal networks go through the VPN, and the rest goes direct
+- Full tunnel: all traffic, internet included. OpenVPN blocks IPv6 for as long as it is up, because the tunnel has no IPv6.
 
 ---
 
@@ -483,4 +473,4 @@ config works unchanged on a normal host.
 - WireGuard uses ChaCha20-Poly1305 encryption with Curve25519 key exchange
 - WireGuard over HTTPS (wstunnel) adds a WebSocket/TLS layer on port 4443
 
-For issues, contact your system administrator or open a ticket. The internal networks routed through the VPN are set by your administrator through `CULVERT_PUSH_ROUTES`, so your site's own documentation lists them.
+For issues, contact your system administrator or open a ticket. The internal networks routed through the VPN are set by your administrator through `CULVERT_PUSH_ROUTES`, so your site's documentation lists them.

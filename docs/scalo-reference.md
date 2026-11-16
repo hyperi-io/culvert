@@ -7,7 +7,7 @@ exist in `scripts/`, not the full library surface. The
 
 ## Installation
 
-In `pyproject.toml`, which carries the version range (granular extras - one
+In `pyproject.toml`, which holds the version range (granular extras - one
 per backend culvert actually uses, not the blanket `[secrets]`):
 
 ```toml
@@ -41,7 +41,7 @@ legacy aliases. An optional profile YAML is layered in via `additional_files`
 when `CULVERT_PROFILE` is set.
 
 Cascade priority, highest wins: `CULVERT_*` env vars (a `./.env` loads
-beneath any already set) -> the profile YAML -> `settings.{env}.yaml` ->
+beneath any set in the environment) -> the profile YAML -> `settings.{env}.yaml` ->
 `settings.yaml` -> `defaults.yaml` -> the fallback each `Config.from_settings`
 read passes.
 
@@ -55,13 +55,13 @@ logger.error(f"Failed to start WireGuard: {result.stderr}")
 ```
 
 Loguru-based singleton: RFC 3339 timestamps, JSON in containers / coloured in a
-terminal (auto-detected), automatic masking of secrets. Only culvert's own
-log lines are structured. OpenVPN, stunnel, wstunnel and WireGuard keep their
+terminal (auto-detected), automatic masking of secrets. culvert's log lines
+are structured, and OpenVPN, stunnel, wstunnel and WireGuard keep their
 native log formats.
 
 ## Metrics (Prometheus + OpenTelemetry)
 
-culvert calls `create_metrics` directly, registers its own metric handles,
+culvert calls `create_metrics` directly, registers its metric handles,
 and registers scalo's `AppMetrics` group beside them.
 
 ```python
@@ -89,16 +89,16 @@ content_type = mgr.content_type
 ```
 
 See `scripts/lib/metrics.py`. When OTel is enabled the same metrics push via
-OTLP and also serve on the Prometheus `/metrics` endpoint. Otherwise only the
-Prometheus scrape is available. OTLP needs `CULVERT_METRICS_ENABLED=true` too,
+OTLP and serve on the Prometheus `/metrics` endpoint as well. Otherwise the
+Prometheus scrape is all there is. OTLP needs `CULVERT_METRICS_ENABLED=true` as well,
 because nothing initialises metrics without it.
 
 In OTel mode the `process_*`, `python_gc_*` and `python_info` families that
-`/metrics` serves also push over OTLP, under the same names and labels, so a
+`/metrics` serves push over OTLP as well, under the same names and labels, so a
 collector that does not scrape the pod still receives them. They go through a
-second MeterProvider that holds only an OTLP reader, built from scalo's
+second MeterProvider that holds an OTLP reader and nothing else, built from scalo's
 resolved OTLP settings (`resolve_otel_config`), exporter factory and backoff
-gate, with the same resource and scope as the `vpn_*` push. On scalo's own
+gate, with the same resource and scope as the `vpn_*` push. On scalo's
 provider they would render on `/metrics` a second time, beside
 prometheus_client's copy.
 
@@ -112,7 +112,7 @@ collector-side liveness check keys on, and `start_time_seconds`. `version` and
 `/etc/vpn`, and read `dev` and `unknown` where a file is absent or empty. The
 same version is the OTLP resource's `service.version` on both pushes. The
 group's throughput and memory instruments are registered but never recorded, so
-the OTLP push does not carry them.
+the OTLP push does not include them.
 
 ## Secrets / External PKI
 

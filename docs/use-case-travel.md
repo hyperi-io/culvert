@@ -2,16 +2,16 @@
 
 For networks that block or throttle VPNs. Culvert can run listeners that
 look like ordinary HTTPS, so protocol blocking does not see a VPN on the
-wire. This is the `travel` profile. It carries a real cost - extra
+wire. This is the `travel` profile. It has a cost - extra
 listeners and a TLS certificate - so it is a deliberate opt-in, not a
 default.
 
 Read the [threat model](#what-this-does-and-does-not-defeat) before you
 rely on it.
 
-## 1. Get a real TLS certificate first
+## 1. Get a CA-signed TLS certificate first
 
-It is only as convincing as the certificate. Get a real cert
+It is as convincing as the certificate and no more. Get a CA-signed cert
 for your server name (Let's Encrypt is fine). A self-signed cert defeats
 the point - an inspector that hits a self-signed cert on port 443 has
 found you.
@@ -55,7 +55,7 @@ docker exec -it <container> generate-client --name laptop
 
 For OpenVPN this emits, among the set, `laptop-https-split.ovpn`,
 `laptop-https-full.ovpn`, and a matching `laptop-stunnel.conf`. For
-WireGuard (the profile runs both protocols) it also emits
+WireGuard (the profile runs both protocols) it emits
 `laptop/wg-https-split.conf` and `laptop/wg-https-full.conf`.
 
 ## 4. Connect through the tunnel
@@ -74,7 +74,7 @@ stunnel listens on `127.0.0.1:1195` and forwards to your server on
 `443`, and the `.ovpn` connects to that local port.
 
 For WireGuard, start the wstunnel client, then activate a `wg-https-`
-config. The first lines of each `wg-https-*.conf` carry the exact command:
+config. The first lines of each `wg-https-*.conf` hold the exact command:
 
 ```bash
 wstunnel client -L udp://127.0.0.1:51820:127.0.0.1:51820 \
@@ -101,11 +101,11 @@ Windows path) is in
   invisibility.
 - A full tunnel routes your traffic but does not by itself settle DNS.
   The server pushes its DNS servers, and whether your client uses them to
-  the exclusion of the network's own resolver is up to the client. On
+  the exclusion of the network's resolver is up to the client. On
   Windows you must uncomment `block-outside-dns` in the `.ovpn` -
   without it applications can query the local network's resolver, which
   leaks the names you look up even though the traffic itself is tunnelled.
-  It ships commented because OpenVPN 2.7 on Linux and macOS refuses to
+  It ships commented because OpenVPN 2.7 on Linux and macOS fails to
   start on an option it does not know. After connecting, check what
   resolver you are actually using before trusting the tunnel.
 
@@ -113,7 +113,7 @@ Use it where the barrier is protocol fingerprinting. Do not oversell it
 to yourself where the adversary is nation-state grade and paying
 attention to you specifically.
 
-## See also
+Related pages:
 
 - [vpn-client-setup.md](vpn-client-setup.md#running-the-vpn-over-https)
   - installing stunnel / wstunnel and connecting on each platform
