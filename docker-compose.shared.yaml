@@ -1,6 +1,7 @@
 # Scale-out override on shared storage. Use with docker-compose.yaml:
 #   docker compose -f docker-compose.yaml -f docker-compose.shared.yaml up -d
 # Set CULVERT_IMAGE and SHARED_STORAGE_PATH (an NFS, EFS or similar mount) in .env.
+# OpenVPN only, with limits on startup, client issue and tunnel addresses: docs/shared-storage.md.
 
 services:
   openvpn:
