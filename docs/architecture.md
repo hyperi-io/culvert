@@ -283,7 +283,9 @@ together. No chart is committed to this repository.
   them. No symlink points at the OpenVPN package's directories: the package
   ships them as directories, so a link lands inside one and the PKI no
   longer persists.
-- Culvert runs as one replica. WireGuard mints its server key in the pod and
-  the PKI volume is ReadWriteOnce, so the chart renders a singleton.
+- The chart runs one replica. WireGuard mints its server key in the pod and
+  the PKI volume is ReadWriteOnce, so the chart renders a singleton. Several
+  OpenVPN instances on shared storage are the compose overlay's job, with the
+  limits in [shared-storage.md](shared-storage.md).
 - Defaults are generic, never site-specific. Anything specific to one site belongs in a
   profile or the deployment values.

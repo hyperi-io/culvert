@@ -30,6 +30,8 @@ covers what it changes.
   one replica: install values, the PKI volume, external PKI, probes, metrics.
 - [use-case-edge-fleet.md](use-case-edge-fleet.md) - an appliance fleet into a
   central receiver, with reverse admin back down the tunnels.
+- [shared-storage.md](shared-storage.md) - several OpenVPN instances on one
+  PKI volume, and what is not safe to do at once.
 
 ## Understand a decision
 
