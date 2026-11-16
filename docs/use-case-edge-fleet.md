@@ -53,7 +53,7 @@ It is gated: the CIDRs in `CULVERT_DOWNSTREAM_ADMIN_CIDRS` are the sources
 allowed to initiate inbound. Everything else unsolicited into the tunnels is
 dropped.
 
-This diagram shows the two flows through culvert in an edge fleet.
+In an edge fleet, data flows up from the appliances to the receiver, and admin traffic flows down from the admin networks to the appliances.
 
 ```mermaid
 flowchart TB

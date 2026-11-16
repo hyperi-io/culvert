@@ -24,7 +24,7 @@ Diagram map:
 
 ## L1 context and L3 components
 
-This diagram shows culvert as one box and what it talks to.
+Clients tunnel into culvert, which routes their traffic to the site networks.
 
 ```mermaid
 flowchart LR
@@ -53,7 +53,7 @@ flowchart LR
 
 *Figure 1. L1 Context -- Culvert. Dashed boxes are external, and dotted arrows are opt-in.* Up: top of culvert. Down: [L3 Components -- Culvert](#l1-context-and-l3-components).
 
-This diagram shows the processes inside the container.
+stunnel fronts OpenVPN and wstunnel fronts WireGuard.
 
 ```mermaid
 flowchart LR
@@ -137,7 +137,7 @@ drops a compiler toolchain from the image at no cost to the capability.
 in a focused module under `scripts/lib/`, and the entrypoint's job is the
 order.
 
-This diagram shows the startup steps as three stages.
+Network and firewall come up before either VPN.
 
 ```mermaid
 flowchart TB
