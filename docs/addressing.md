@@ -4,10 +4,8 @@ Which IP range the tunnels use, why the default is what it is, and when
 to change it. If you followed a link here from one of the use-case docs,
 this is the whole answer.
 
-## The short version
-
 Every VPN hands its clients addresses from some private range. Pick a
-range that clashes with a network the client is already on and traffic
+range that clashes with a network the client sits on and traffic
 goes to the wrong place. Culvert defaults to `10.8.0.0/22` because that
 is the range home and small-office networks are least likely to be using,
 so a default install connects from home without a clash. If you run bigger
@@ -27,28 +25,28 @@ Culvert carves one `/24` per listener out of `10.8.0.0/22`:
 Distinct subnets mean any combination of listeners - and WireGuard
 alongside - can run at once without colliding.
 
-`10.8.x` is the hub-VPN convention. OpenVPN's own reference config,
+`10.8.x` is the hub-VPN convention. OpenVPN's reference config,
 [angristan/openvpn-install](https://github.com/angristan/openvpn-install),
 and [wg-easy](https://github.com/wg-easy/wg-easy) all default into
 `10.8.x`. Home and small-office LANs almost always sit in `192.168.x`
 (and larger ones in `10.0.x` / `172.16.x`), so a client dialing in from
-home does not find its tunnel address clashing with its own LAN. Picking
+home does not find its tunnel address clashing with its LAN. Picking
 the same convention as the common tooling is the point - it is the range
-least likely to already be in use where clients connect from.
+least likely to be in use where clients connect from.
 
 ## Why not 100.64.0.0/10 (CGNAT) by default
 
 `100.64.0.0/10` is the RFC 6598 carrier-grade NAT range. Overlay meshes
 like Tailscale and NetBird default into it, which is a fair question:
-why not culvert too?
+why not culvert?
 
-Because that range is already occupied on exactly the links a travelling
+Because that range is in use on exactly the links a travelling
 client uses. Carrier WANs - Starlink, 4G/5G mobile - put the subscriber's
-own WAN address inside `100.64/10`. A machine already on Tailscale is
-carrying `100.x` addresses too.
+WAN address inside `100.64/10`. A machine on Tailscale has
+`100.x` addresses as well.
 
-Here is the real failure. Starlink gives your router a `100.64/10` WAN
-address. If the VPN then also hands the tunnel a `100.64/10` address, the
+Here is the failure. Starlink gives your router a `100.64/10` WAN
+address. If the VPN then hands the tunnel a `100.64/10` address, the
 client has two reasons to route `100.x` traffic - the underlay (its path
 to the Starlink gateway and the internet) and the tunnel. Those routes
 overlap, the client sends tunnel-destined packets at the underlay (or the
@@ -57,10 +55,10 @@ on top of CGNAT underlay is a self-inflicted routing loop.
 
 `10.8.x` does not have this problem, so it is the default.
 
-## When to override
+## When and how to override
 
 - Corporate and larger networks: `10.8.0.0/22` is safe for homes, but a
-  company already using `10.8.x` internally will clash. Check the `/22`
+  company using `10.8.x` internally will clash. Check the `/22`
   against your addressing plan and move it if it collides.
 - Edge fleet: the [edge-fleet preset](use-case-edge-fleet.md) opts
   INTO `100.64/10` on purpose. There the operator controls both ends of
@@ -68,14 +66,12 @@ on top of CGNAT underlay is a self-inflicted routing loop.
   range that is wrong for a travelling laptop is exactly right for
   keeping appliance LANs and the receiver network from ever overlapping.
 
-The rule of thumb: use `10.8.x` (or your own `10.x` / `172.16.x` block)
+The rule of thumb: use `10.8.x` (or a `10.x` / `172.16.x` block of yours)
 whenever a client might be on a network you do not control. Reach for
-`100.64/10` only when you own both ends and want the overlap-avoidance it
+`100.64/10` when you control both ends and want the overlap-avoidance it
 buys.
 
-## How to override
-
-The OpenVPN listeners each take a network address plus a netmask. The NAT
+To override it: the OpenVPN listeners each take a network address plus a netmask. The NAT
 masquerade rule derives its prefix from that netmask, so the two always
 agree. WireGuard takes a single CIDR.
 
@@ -100,7 +96,7 @@ for the CGNAT case (`udp_network: "100.64.0.0"`). See the
 [deployment profiles](../README.md#configuration) section of the
 README.
 
-## See also
+Related pages:
 
 - [use-case-edge-fleet.md](use-case-edge-fleet.md) - the one deployment that
   opts into `100.64/10`, and why

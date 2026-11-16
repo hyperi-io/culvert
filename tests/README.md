@@ -1,8 +1,6 @@
 # Culvert Test Suite
 
-This directory contains the test framework for the culvert deployment.
-
-## Test Structure
+The test tiers, their tooling and their cleanup, laid out like this:
 
 ```text
 tests/
@@ -10,7 +8,7 @@ tests/
 |-- smoke/          # Container startup smoke test (BATS)
 |-- integration/    # Docker-based integration tests (BATS)
 |-- e2e/            # Full VPN connectivity over docker-compose (pytest)
-|-- k8s/            # Published Helm chart on a real cluster (pytest, opt-in)
+|-- k8s/            # Published Helm chart on a live cluster (pytest, opt-in)
 |-- fixtures/       # Test data and mock files
 |-- helpers/        # Shared BATS helpers
 |-- cleanup.py      # Remove infrastructure an interrupted run left behind
@@ -19,9 +17,7 @@ tests/
 `-- conftest.py     # pytest fixtures (temp_dir, clean_env, mock_pki_dir)
 ```
 
-## Test Types
-
-### Unit Tests (`tests/unit/`)
+## Unit Tests (`tests/unit/`)
 
 Fast, isolated tests for Python modules. Run locally without Docker.
 
@@ -40,7 +36,7 @@ python3 -m pytest tests/unit/test_config.py -v
 python3 -m pytest tests/unit/ --cov=scripts/lib --cov-report=term
 ```
 
-### Integration Tests (`tests/integration/`)
+## Integration Tests (`tests/integration/`)
 
 Test container functionality in Docker environment.
 
@@ -52,13 +48,13 @@ Test container functionality in Docker environment.
 ./tests/run-integration.sh
 ```
 
-### End-to-End Tests (`tests/e2e/`)
+## E2E Tests (`tests/e2e/`)
 
 Test full VPN connectivity against a self-contained docker-compose stack
 (server + client + target containers brought up by `conftest.py`).
 
 - Framework: pytest + docker-compose
-- Purpose: Validate real VPN connections (OpenVPN UDP/TCP/HTTPS,
+- Purpose: Validate VPN connections (OpenVPN UDP/TCP/HTTPS,
   WireGuard, WireGuard over HTTPS via wstunnel) from client to target
 - Dependencies: Docker
 
@@ -67,12 +63,12 @@ Test full VPN connectivity against a self-contained docker-compose stack
 pytest tests/e2e/ -m e2e -v
 ```
 
-### Cluster Tests (`tests/k8s/`)
+## Cluster Tests (`tests/k8s/`)
 
-Install the published Helm chart on a real cluster, with the values
+Install the published Helm chart on a live cluster, with the values
 `docs/use-case-kubernetes.md` documents, and assert on what the cluster does
 with it - capabilities, ip_forward in the pod netns, probes, SIGTERM drain,
-external PKI, and real client tunnels carrying traffic.
+external PKI, and client tunnels carrying traffic.
 
 - Framework: pytest + kubectl + helm
 - Dependencies: a cluster you can install into, and an image reference it
@@ -89,8 +85,8 @@ pytest tests/k8s/ -m k8s -v
 
 ## Test Infrastructure Naming and Cleanup
 
-Everything the docker and cluster tiers create is named for the tier that owns
-it, so you can tell at a glance what a stray object belongs to:
+Everything the docker and cluster tiers create takes the name of the tier that
+created it, so you can tell at a glance what a stray object belongs to:
 
 | Tier | Names |
 |------|-------|
@@ -99,8 +95,8 @@ it, so you can tell at a glance what a stray object belongs to:
 | integration (BATS) | `culvert-test-integration-<test file>`, one per test file |
 | cluster | `culvert-test-k8s-client`, `culvert-test-k8s-target`, release `culvert-test` |
 
-Both tiers sweep what they own BEFORE they build, so a run that was killed
-cannot make the next one fail on a name collision or a stale volume. They also
+Both tiers sweep their leftovers BEFORE they build, so a run that was killed
+cannot make the next one fail on a name collision or a stale volume. They
 tear down at session end however the session ends - a normal finish, a
 collection error, Ctrl-C, or SIGTERM - because the cleanups are registered with
 `tidy.py` rather than left to a fixture finaliser, which is skipped when the
@@ -122,7 +118,7 @@ not delete the namespace: a namespace still Terminating when the next run starts
 makes every pod creation fail, which reads as a cluster fault rather than as
 leftover state.
 
-## Running All Tests
+`tests/run-all.sh` runs every suite:
 
 ```bash
 # Unit tests only (fast, no Docker)

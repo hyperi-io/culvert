@@ -10,8 +10,6 @@ OIDC sign-in is off by default (`CULVERT_OAUTH2_ENABLED`), and this profile
 turns it on. Unit tests cover the openvpn-auth-oauth2 config culvert writes, and no automated test signs
 in against an IdP.
 
-## What the profile sets
-
 `CULVERT_PROFILE=corporate` turns on:
 
 - OpenVPN UDP primary plus a TCP fallback (hotel / captive-portal
@@ -20,11 +18,11 @@ in against an IdP.
 - group gating (`oauth2_validate_groups`, default `vpn-users`)
 - full tunnel (common for compliance - all client traffic inspected and
   routed via the VPN, and `CULVERT_FULL_TUNNEL=false` flips it to split)
-- a local CA to start, named `Acme VPN CA` from the profile's placeholder
+- a local CA to start, called `Acme VPN CA` from the profile's placeholder
   `org_name: Acme`, so set `CULVERT_ORG_NAME` to your organisation before the
   first start mints it
 
-The profile sets the defaults only. The OIDC secrets are yours to supply.
+The profile sets defaults and nothing else. The OIDC secrets are yours to supply.
 
 ## 1. Supply the OIDC config
 
@@ -40,7 +38,7 @@ into a profile or image:
 | `CULVERT_OAUTH2_TLS_KEY` | Key for that cert |
 
 Set `CULVERT_OAUTH2_HTTP_SECRET` (session secret, `openssl rand -hex 16`)
-too. Left unset, the server generates a random one at every start.
+as well. Left unset, the server generates a random one at every start.
 `CULVERT_OAUTH2_CLIENT_SECRET`, the key behind `CULVERT_OAUTH2_TLS_KEY` and
 `CULVERT_OAUTH2_HTTP_SECRET` are secrets - inject them via Kubernetes Secrets,
 a secret store, or the External Secrets Operator, not into git. See the
@@ -94,7 +92,7 @@ files. A socket it cannot reach is a warning, not a failure, and a session on
 that listener lasts until its next renegotiation (`CULVERT_RENEG_SEC`, an hour
 by default), so read the output. The server enforces the CRL, so the revoked
 device cannot reconnect - independent of whether the person can still log in
-to the IdP. Both gates stand on their own:
+to the IdP. Each gate stands alone:
 revoke the cert to kill the device, disable the IdP account or drop the
 group membership to kill the person.
 
@@ -107,7 +105,7 @@ server certificate, switch to external PKI: set
 [External PKI in the README](../README.md#configuration) and the PKI Mode
 section of [.env.example](../.env.example).
 
-## See also
+Related pages:
 
 - [vpn-client-setup.md](vpn-client-setup.md) - OAuth2-capable clients
   (OpenVPN Connect 3.4.0+ / OpenVPN GUI)

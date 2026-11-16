@@ -197,10 +197,6 @@ services:
         max-file: "3"
 
   # Opt-in image updates: docker compose --profile watchtower up -d.
-  #   - Pulls new image if available
-  #   - Stops container gracefully
-  #   - Recreates with same config
-  #   - Removes old image
   watchtower:
     # docker.sock is root on the host: keep this profile opt-in and the tag pinned.
     image: nickfedor/watchtower:1.23.2@sha256:62fb91130ddb493f869cad7e198fa260dd16c5da293ed092cbd5d8781566f7a6

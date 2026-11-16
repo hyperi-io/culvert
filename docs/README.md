@@ -9,7 +9,7 @@ Docs are grouped by what you are trying to do, not by feature.
 
 - [vpn-client-setup.md](vpn-client-setup.md) - installing and connecting on
   macOS, Linux and Windows, plus the WireGuard mobile apps, for both protocols and for the
-  HTTPS-tunnelled variants. This one also ships inside the image at
+  HTTPS-tunnelled variants. This page ships inside the image as well, at
   `/etc/vpn/docs/`, so it is available on the server itself.
 
 ## Pick a deployment
@@ -52,8 +52,6 @@ covers what it changes.
 - [scalo-reference.md](scalo-reference.md) - the scalo calls culvert makes.
   The [scalo repo](https://github.com/hyperi-io/scalo-py) is the API source of
   truth.
-
-## Conventions
 
 Filenames are lowercase-kebab because slugs are case-sensitive and static-site
 generators lowercase them. Each doc covers one reader mode: follow a path, or

@@ -4,7 +4,7 @@ The secrets and variables the culvert pipeline reads, the triggers that run it, 
 
 ## Build configuration
 
-`.hyperi-ci.yaml` carries it. The image is `ghcr.io/hyperi-io/culvert`, built from `Dockerfile` for `linux/amd64` and `linux/arm64` on a release, and for amd64 alone on a pull request.
+`.hyperi-ci.yaml` holds it. The image is `ghcr.io/hyperi-io/culvert`, built from `Dockerfile` for `linux/amd64` and `linux/arm64` on a release, and for amd64 alone on a pull request.
 
 ## Secrets and variables
 
@@ -36,6 +36,6 @@ There are two workflows: `ci.yml` (the main pipeline, delegating to the shared h
 | Push to main, no `Release: true` trailer | Validate-only: no tag, no publish |
 | Push to main with a `Release: true` trailer | Semantic-release -> multi-arch build -> push to GHCR |
 | `workflow_dispatch` (`from-head=true`) | Same publish path, triggered by hand |
-| Dependency Check (weekly, Mon 09:00 UTC) | Check for a new `openvpn-auth-oauth2` release, open PR |
+| Dependency Check (weekly, Mon 09:00 UTC) | Open a PR when upstream `openvpn-auth-oauth2` tags a version past the pinned one |
 
 A release pushes the image as `vX.Y.Z`, `latest` and `sha-<first 8 hex of the commit>`, and the Helm chart as `oci://ghcr.io/hyperi-io/charts/culvert` at `X.Y.Z`. [supply-chain.md](supply-chain.md) lists where each third-party binary comes from.

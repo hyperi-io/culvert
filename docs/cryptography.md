@@ -8,9 +8,9 @@ What the defaults give you (OpenVPN, both the plain and the
 HTTPS-tunnelled listeners):
 
 - TLS 1.3 only (`tls-version-min 1.3`), no downgrade
-- Data channel AES-256-GCM, SHA-384 control-channel auth. DCO requires an
-  AEAD cipher rather than this one specifically - ChaCha20-Poly1305 also
-  qualifies. DCO itself needs the `ovpn` kernel module on the HOST (Linux
+- Data channel AES-256-GCM, SHA-384 control-channel auth. DCO needs an
+  AEAD cipher rather than this one specifically - ChaCha20-Poly1305
+  qualifies as well. DCO itself needs the `ovpn` kernel module on the HOST (Linux
   6.16+, or ovpn-backports). Without it OpenVPN encrypts in userspace and says
   so at startup
 - Key exchange P-384 (`secp384r1`) first, X25519 as a compatibility
@@ -27,7 +27,7 @@ The limits, for those cryptanalysis inclined:
   compatibility. Strict deployments pin the data channel with
   `CULVERT_DATA_CIPHERS=AES-256-GCM`. `tls-groups secp384r1:X25519` is written
   into the server templates under `config/`, so dropping X25519 means mounting
-  your own templates over `/etc/vpn/server/*.conf.template`.
+  your templates over `/etc/vpn/server/*.conf.template`.
 - WireGuard is outside CNSA by design. Its suite is fixed (Curve25519,
   ChaCha20-Poly1305, BLAKE2s) and not configurable, a property of the WireGuard
   protocol. Use the OpenVPN path where CNSA alignment matters.
