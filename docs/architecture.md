@@ -27,16 +27,61 @@ Diagram map:
 Clients tunnel into culvert, which routes their traffic to the site networks.
 
 ```mermaid
+---
+config:
+  theme: base
+  look: neo
+  fontFamily: Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif
+  flowchart:
+    curve: linear
+    nodeSpacing: 40
+    rankSpacing: 64
+    padding: 18
+    wrappingWidth: 280
+    htmlLabels: true
+  elk:
+    preset: modelOrder
+  themeVariables:
+    fontSize: 15px
+    lineColor: "#64748B"
+    primaryTextColor: "#0F172A"
+    clusterBorder: "#0072B2"
+    edgeLabelBackground: "#FFFFFF"
+  themeCSS: >-
+    p{margin:0}
+    .node[data-look] rect,.node[data-look] path,.node[data-look] polygon,.node[data-look] .outer-path{filter:drop-shadow(0 1px 2px rgba(15,23,42,.10)) drop-shadow(0 6px 14px rgba(15,23,42,.10))}
+    .node rect{rx:10px;ry:10px}
+    .cluster rect{rx:16px;ry:16px}
+    .node .label div{min-width:150px}
+    .node.decision .label div{min-width:0}
+    .cluster[data-look] rect{filter:none}
+    .nodeLabel{line-height:1.35}
+    .nodeLabel b{font-weight:600;font-size:15px;letter-spacing:-0.01em}
+    .nodeLabel span{font-size:12.5px;font-weight:400;color:#334155}
+    .cluster-label span.nodeLabel{display:inline-block;background:#FFFFFF;color:#0B2A3F;border:1.5px solid #0072B2;border-radius:999px;padding:2px 12px;font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    .flowchart-link{stroke-width:1.75px}
+    .labelBkg{background:transparent!important}
+    span.edgeLabel{display:inline-block;background:#FFFFFF!important;color:#1E293B;border:1px solid #94A3B8;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:500}
+    span.edgeLabel p{background:transparent!important}
+    .label-icon{width:20px;height:20px;vertical-align:-4px;margin-right:6px}
+    .ingest .label-icon{color:#0E8A7D}
+    .xform .label-icon{color:#7B4FB0}
+    .load .label-icon{color:#0072B2}
+    .bus .label-icon{color:#A8517F}
+    .store .label-icon{color:#00785A}
+    .ui .label-icon{color:#D9480F}
+    .ext .label-icon{color:#64748B}
+---
 flowchart LR
     accTitle: L1 Context -- Culvert
     accDescr: VPN clients open tunnels to culvert, which routes their traffic to site networks. An external PKI can supply certificates, an OIDC provider signs users in, and a metrics collector receives metrics.
 
-    clients["VPN clients"]
-    pki["External PKI"]
-    culvert[["Culvert"]]
-    networks["Site networks"]
-    idp["OIDC provider"]
-    collector["Metrics collector"]
+    clients("<b>VPN clients</b>")
+    pki("<b>External PKI</b>")
+    culvert[["<b>Culvert</b><br/><span>one container, OpenVPN and WireGuard</span>"]]
+    networks("<b>Site networks</b>")
+    idp("<b>OIDC provider</b>")
+    collector("<b>Metrics collector</b>")
 
     clients -->|tunnels| culvert
     pki -.->|certificates| culvert
@@ -44,11 +89,19 @@ flowchart LR
     culvert -.->|sign-in| idp
     culvert -.->|metrics| collector
 
-    classDef default fill:#F8FAFC,stroke:#64748B,stroke-width:1px,color:#0F172A
-    classDef core fill:#DCEBF7,stroke:#0072B2,stroke-width:2px,color:#0B2A3F
-    classDef ext fill:#EEF0F2,stroke:#6B7280,stroke-width:1px,stroke-dasharray:4 3,color:#1F2937
     class clients,pki,networks,idp,collector ext
-    class culvert core
+    class culvert control
+  classDef ext fill:#F4F6F8,stroke:#94A3B8,stroke-width:1.5px,stroke-dasharray:5 4,color:#0F172A
+  classDef ingest fill:#FFFFFF,stroke:#0E8A7D,stroke-width:3px,color:#0F172A
+  classDef xform fill:#FFFFFF,stroke:#7B4FB0,stroke-width:3px,color:#0F172A
+  classDef load fill:#FFFFFF,stroke:#0072B2,stroke-width:3px,color:#0F172A
+  classDef bus fill:#FFFFFF,stroke:#A8517F,stroke-width:3px,color:#0F172A
+  classDef store fill:#FFFFFF,stroke:#00785A,stroke-width:3px,color:#0F172A
+  classDef ui fill:#FFFFFF,stroke:#D9480F,stroke-width:3px,color:#0F172A
+  classDef decision fill:#FFFFFF,stroke:#9A6700,stroke-width:3px,color:#0F172A
+  classDef error fill:#FFFFFF,stroke:#C2410C,stroke-width:3px,color:#0F172A
+  classDef control fill:#FFFFFF,stroke:#334155,stroke-width:3px,color:#0F172A
+  classDef part fill:#FFFFFF,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
 ```
 
 *Figure 1. L1 Context -- Culvert. Dashed boxes are external, and dotted arrows are opt-in.* Up: top of culvert. Down: [L3 Components -- Culvert](#l1-context-and-l3-components).
@@ -56,23 +109,68 @@ flowchart LR
 stunnel fronts OpenVPN and wstunnel fronts WireGuard.
 
 ```mermaid
+---
+config:
+  theme: base
+  look: neo
+  fontFamily: Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif
+  flowchart:
+    curve: linear
+    nodeSpacing: 40
+    rankSpacing: 64
+    padding: 18
+    wrappingWidth: 280
+    htmlLabels: true
+  elk:
+    preset: modelOrder
+  themeVariables:
+    fontSize: 15px
+    lineColor: "#64748B"
+    primaryTextColor: "#0F172A"
+    clusterBorder: "#0072B2"
+    edgeLabelBackground: "#FFFFFF"
+  themeCSS: >-
+    p{margin:0}
+    .node[data-look] rect,.node[data-look] path,.node[data-look] polygon,.node[data-look] .outer-path{filter:drop-shadow(0 1px 2px rgba(15,23,42,.10)) drop-shadow(0 6px 14px rgba(15,23,42,.10))}
+    .node rect{rx:10px;ry:10px}
+    .cluster rect{rx:16px;ry:16px}
+    .node .label div{min-width:150px}
+    .node.decision .label div{min-width:0}
+    .cluster[data-look] rect{filter:none}
+    .nodeLabel{line-height:1.35}
+    .nodeLabel b{font-weight:600;font-size:15px;letter-spacing:-0.01em}
+    .nodeLabel span{font-size:12.5px;font-weight:400;color:#334155}
+    .cluster-label span.nodeLabel{display:inline-block;background:#FFFFFF;color:#0B2A3F;border:1.5px solid #0072B2;border-radius:999px;padding:2px 12px;font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    .flowchart-link{stroke-width:1.75px}
+    .labelBkg{background:transparent!important}
+    span.edgeLabel{display:inline-block;background:#FFFFFF!important;color:#1E293B;border:1px solid #94A3B8;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:500}
+    span.edgeLabel p{background:transparent!important}
+    .label-icon{width:20px;height:20px;vertical-align:-4px;margin-right:6px}
+    .ingest .label-icon{color:#0E8A7D}
+    .xform .label-icon{color:#7B4FB0}
+    .load .label-icon{color:#0072B2}
+    .bus .label-icon{color:#A8517F}
+    .store .label-icon{color:#00785A}
+    .ui .label-icon{color:#D9480F}
+    .ext .label-icon{color:#64748B}
+---
 flowchart LR
     accTitle: L3 Components -- Culvert
     accDescr: Clients reach OpenVPN directly or through stunnel, and WireGuard directly or through wstunnel. OpenVPN hands sign-in to openvpn-auth-oauth2. One listener serves health and metrics.
 
-    clients["VPN clients"]
-    pki["External PKI"]
+    clients("<b>VPN clients</b>")
+    pki("<b>External PKI</b>")
 
     subgraph culvert["Culvert"]
         direction LR
-        stunnel["stunnel"] --> openvpn["OpenVPN"] --> oauth2["openvpn-auth-oauth2"]
-        wstunnel["wstunnel"] --> wireguard["WireGuard wg0"]
-        observability["Health and<br/>metrics"]
+        stunnel("<b>stunnel</b><br/><span>TLS in front of OpenVPN</span>") --> openvpn("<b>OpenVPN</b>") --> oauth2("<b>openvpn-auth-oauth2</b><br/><span>OIDC sign-in</span>")
+        wstunnel("<b>wstunnel</b><br/><span>TLS in front of WireGuard</span>") --> wireguard("<b>WireGuard wg0</b>")
+        observability("<b>Health and metrics</b><br/><span>one listener</span>")
     end
 
-    networks["Site networks"]
-    idp["OIDC provider"]
-    collector["Metrics collector"]
+    networks("<b>Site networks</b>")
+    idp("<b>OIDC provider</b>")
+    collector("<b>Metrics collector</b>")
 
     clients -->|tunnels| culvert
     pki -.->|certificates| culvert
@@ -80,11 +178,20 @@ flowchart LR
     culvert -.->|sign-in| idp
     culvert -.->|metrics| collector
 
-    classDef default fill:#F8FAFC,stroke:#64748B,stroke-width:1px,color:#0F172A
-    classDef ext fill:#EEF0F2,stroke:#6B7280,stroke-width:1px,stroke-dasharray:4 3,color:#1F2937
-    classDef group fill:none,stroke:#64748B,stroke-width:1px,stroke-dasharray:2 4
     class clients,pki,networks,idp,collector ext
-    class culvert group
+    class stunnel,openvpn,oauth2,wstunnel,wireguard,observability part
+  classDef ext fill:#F4F6F8,stroke:#94A3B8,stroke-width:1.5px,stroke-dasharray:5 4,color:#0F172A
+  classDef ingest fill:#FFFFFF,stroke:#0E8A7D,stroke-width:3px,color:#0F172A
+  classDef xform fill:#FFFFFF,stroke:#7B4FB0,stroke-width:3px,color:#0F172A
+  classDef load fill:#FFFFFF,stroke:#0072B2,stroke-width:3px,color:#0F172A
+  classDef bus fill:#FFFFFF,stroke:#A8517F,stroke-width:3px,color:#0F172A
+  classDef store fill:#FFFFFF,stroke:#00785A,stroke-width:3px,color:#0F172A
+  classDef ui fill:#FFFFFF,stroke:#D9480F,stroke-width:3px,color:#0F172A
+  classDef decision fill:#FFFFFF,stroke:#9A6700,stroke-width:3px,color:#0F172A
+  classDef error fill:#FFFFFF,stroke:#C2410C,stroke-width:3px,color:#0F172A
+  classDef control fill:#FFFFFF,stroke:#334155,stroke-width:3px,color:#0F172A
+  classDef part fill:#FFFFFF,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+  style culvert fill:none,stroke:#0072B2,stroke-width:1.5px,stroke-dasharray:6 4
 ```
 
 *Figure 2. L3 Components -- Culvert. Dashed boxes are external, and dotted arrows are opt-in.* Up: [L1 Context -- Culvert](#l1-context-and-l3-components). Down: [L4 Detail -- Startup sequence](#one-entrypoint-one-ordered-sequence).
@@ -140,27 +247,84 @@ order.
 Network and firewall come up before either VPN.
 
 ```mermaid
+---
+config:
+  theme: base
+  look: neo
+  fontFamily: Inter, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif
+  flowchart:
+    curve: linear
+    nodeSpacing: 40
+    rankSpacing: 64
+    padding: 18
+    wrappingWidth: 280
+    htmlLabels: true
+  elk:
+    preset: modelOrder
+  themeVariables:
+    fontSize: 15px
+    lineColor: "#64748B"
+    primaryTextColor: "#0F172A"
+    clusterBorder: "#0072B2"
+    edgeLabelBackground: "#FFFFFF"
+  themeCSS: >-
+    p{margin:0}
+    .node[data-look] rect,.node[data-look] path,.node[data-look] polygon,.node[data-look] .outer-path{filter:drop-shadow(0 1px 2px rgba(15,23,42,.10)) drop-shadow(0 6px 14px rgba(15,23,42,.10))}
+    .node rect{rx:10px;ry:10px}
+    .cluster rect{rx:16px;ry:16px}
+    .node .label div{min-width:150px}
+    .node.decision .label div{min-width:0}
+    .cluster[data-look] rect{filter:none}
+    .nodeLabel{line-height:1.35}
+    .nodeLabel b{font-weight:600;font-size:15px;letter-spacing:-0.01em}
+    .nodeLabel span{font-size:12.5px;font-weight:400;color:#334155}
+    .cluster-label span.nodeLabel{display:inline-block;background:#FFFFFF;color:#0B2A3F;border:1.5px solid #0072B2;border-radius:999px;padding:2px 12px;font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    .flowchart-link{stroke-width:1.75px}
+    .labelBkg{background:transparent!important}
+    span.edgeLabel{display:inline-block;background:#FFFFFF!important;color:#1E293B;border:1px solid #94A3B8;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:500}
+    span.edgeLabel p{background:transparent!important}
+    .label-icon{width:20px;height:20px;vertical-align:-4px;margin-right:6px}
+    .ingest .label-icon{color:#0E8A7D}
+    .xform .label-icon{color:#7B4FB0}
+    .load .label-icon{color:#0072B2}
+    .bus .label-icon{color:#A8517F}
+    .store .label-icon{color:#00785A}
+    .ui .label-icon{color:#D9480F}
+    .ext .label-icon{color:#64748B}
+---
 flowchart TB
     accTitle: L4 Detail -- Startup sequence
     accDescr: Three stages run in order. Prepare loads config and sets up directories, log rotation and the network. Firewall and protocols installs routing control and the forward guards, then sets up OpenVPN and WireGuard. Serve starts observability and any CRL refresh or client download, then runs the OpenVPN listeners, or waits for signals when WireGuard runs alone.
 
     subgraph s1["1 Prepare"]
         direction LR
-        config["Load config"] --> directories["Directories"] --> logrotation["Log rotation"] --> network["Network"]
+        config("<b>Load config</b>") --> directories("<b>Directories</b>") --> logrotation("<b>Log rotation</b>") --> network("<b>Network</b>")
     end
     subgraph s2["2 Firewall and protocols"]
         direction LR
-        routing["Routing control"] --> guards["Forward guards"] --> ovpnsetup["OpenVPN setup"] --> wgsetup["WireGuard setup"]
+        routing("<b>Routing control</b>") --> guards("<b>Forward guards</b>") --> ovpnsetup("<b>OpenVPN setup</b>") --> wgsetup("<b>WireGuard setup</b>")
     end
     subgraph s3["3 Serve"]
         direction LR
-        observe["Observability"] --> crl["CRL refresh"] --> download["Client download"] --> block(["Run OpenVPN<br/>or wait"])
+        observe("<b>Observability</b>") --> crl("<b>CRL refresh</b>") --> download("<b>Client download</b>") --> block(["<b>Run OpenVPN</b><br/><span>or wait</span>"])
     end
     s1 --> s2 --> s3
 
-    classDef default fill:#F8FAFC,stroke:#64748B,stroke-width:1px,color:#0F172A
-    classDef group fill:none,stroke:#64748B,stroke-width:1px,stroke-dasharray:2 4
-    class s1,s2,s3 group
+    class config,directories,logrotation,network,routing,guards,ovpnsetup,wgsetup,observe,crl,download,block part
+  classDef ext fill:#F4F6F8,stroke:#94A3B8,stroke-width:1.5px,stroke-dasharray:5 4,color:#0F172A
+  classDef ingest fill:#FFFFFF,stroke:#0E8A7D,stroke-width:3px,color:#0F172A
+  classDef xform fill:#FFFFFF,stroke:#7B4FB0,stroke-width:3px,color:#0F172A
+  classDef load fill:#FFFFFF,stroke:#0072B2,stroke-width:3px,color:#0F172A
+  classDef bus fill:#FFFFFF,stroke:#A8517F,stroke-width:3px,color:#0F172A
+  classDef store fill:#FFFFFF,stroke:#00785A,stroke-width:3px,color:#0F172A
+  classDef ui fill:#FFFFFF,stroke:#D9480F,stroke-width:3px,color:#0F172A
+  classDef decision fill:#FFFFFF,stroke:#9A6700,stroke-width:3px,color:#0F172A
+  classDef error fill:#FFFFFF,stroke:#C2410C,stroke-width:3px,color:#0F172A
+  classDef control fill:#FFFFFF,stroke:#334155,stroke-width:3px,color:#0F172A
+  classDef part fill:#FFFFFF,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+  style s1 fill:none,stroke:#0072B2,stroke-width:1.5px,stroke-dasharray:6 4
+  style s2 fill:none,stroke:#0072B2,stroke-width:1.5px,stroke-dasharray:6 4
+  style s3 fill:none,stroke:#0072B2,stroke-width:1.5px,stroke-dasharray:6 4
 ```
 
 *Figure 3. L4 Detail -- Startup sequence. Read each stage left to right, then down.* Up: [L3 Components -- Culvert](#l1-context-and-l3-components).
