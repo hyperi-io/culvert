@@ -133,7 +133,7 @@ flowchart TB
   style down fill:none,stroke:#0072B2,stroke-width:1.5px,stroke-dasharray:6 4
 ```
 
-*Figure 1. L4 Detail -- Edge fleet traffic. Both flows ride the tunnels the appliances opened.* Up: [L1 Context -- Culvert](architecture.md#l1-context-and-l3-components).
+*Figure 1. L4 Detail -- Edge fleet traffic. Both flows ride the tunnels the appliances opened.* Up: [L3 Components -- culvert](architecture.md).
 
 CGNAT addressing is the second. Because the operator controls BOTH ends (the appliances and the
 receiver), the tunnel is `100.64.0.0/24`, inside the `100.64.0.0/10` (RFC 6598,
