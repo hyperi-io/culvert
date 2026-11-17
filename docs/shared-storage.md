@@ -6,7 +6,7 @@
 docker compose -f docker-compose.yaml -f docker-compose.shared.yaml up -d
 ```
 
-The instances share the CA, the server certificate, `tc.key` and `crl.pem` under the PKI directory. Local mode keeps `tc.key` there, so every instance holds the same one. External PKI needs `CULVERT_SECRETS_TC_KEY_PATH`, or a client issued by one instance is rejected by the others ([architecture.md](architecture.md#pki-two-modes-and-local-disk-is-the-source-of-truth)).
+The instances share the CA, the server certificate, `tc.key` and `crl.pem` under the PKI directory. Local mode keeps `tc.key` there, so every instance holds the same one. External PKI needs `CULVERT_SECRETS_TC_KEY_PATH`, or a client issued by one instance is rejected by the others ([PKI invariants](../CONTRIBUTING.md#pki-invariants)).
 
 The code has no answer to these limits:
 

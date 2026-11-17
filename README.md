@@ -84,7 +84,7 @@ Two metrics earn an alert. `vpn_crl_seconds_until_expiry` goes negative once the
 
 ## Documentation, help and licence
 
-- [docs/architecture.md](docs/architecture.md): the diagrams of what culvert talks to and what runs inside it, what is in the image, the entrypoint sequence, the two PKI modes, the iptables chains and the invariants.
+- [docs/architecture.md](docs/architecture.md): what runs inside culvert and what it talks to, what it depends on, and why it's one container.
 - [docs/addressing.md](docs/addressing.md): why the tunnels default to `10.8.0.0/22`, and when to use the CGNAT range.
 - [docs/cryptography.md](docs/cryptography.md): the CNSA 2.0 classical suite, and what is not there yet.
 - [docs/performance.md](docs/performance.md): throughput, DCO and the cipher choice.

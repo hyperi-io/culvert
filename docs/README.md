@@ -35,9 +35,9 @@ covers what it changes.
 
 ## Understand a decision
 
-- [architecture.md](architecture.md) - what is in the image, the startup order,
-  the two iptables chains and why their order is what it is, and the PKI
-  invariants. Start here before changing any of them.
+- [architecture.md](architecture.md) - what runs inside culvert, what it
+  depends on, and why it's one container. The startup order, the iptables
+  ordering and the PKI invariants are in CONTRIBUTING.md's Context section.
 - [addressing.md](addressing.md) - why the tunnels default to `10.8.0.0/22`,
   and when to move to the CGNAT range instead.
 - [performance.md](performance.md) - the cipher stance (AES-256-GCM the
