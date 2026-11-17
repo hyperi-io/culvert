@@ -153,7 +153,7 @@ flowchart TB
 
 ## Diagram map
 
-- [Figure 1. L3 Components -- culvert](#culvert-architecture)
+- Figure 1. L3 Components -- culvert, at the top of this page
   - [L4 Detail -- Edge fleet traffic](use-case-edge-fleet.md#reverse-admin-and-cgnat-addressing)
   - [L4 Detail -- Startup sequence](../CONTRIBUTING.md#startup-order), for contributors
 
