@@ -1,14 +1,12 @@
 # Corporate access
 
+Status: OIDC sign-in is a beta, off by default behind `CULVERT_OAUTH2_ENABLED` (default `false`), and this profile turns it on. Unit tests cover the openvpn-auth-oauth2 config culvert writes, and no automated test signs in against an IdP. Tracked in <https://github.com/hyperi-io/culvert/issues/135>.
+
 Per-user certificates plus human SSO against your identity provider,
 group gating, and a TCP fallback for hostile guest networks. This is the
 `corporate` profile. Every connection then needs BOTH a valid client
 certificate AND a live IdP login - the certificate proves the device,
 the OIDC login proves the person.
-
-OIDC sign-in is off by default (`CULVERT_OAUTH2_ENABLED`), and this profile
-turns it on. Unit tests cover the openvpn-auth-oauth2 config culvert writes, and no automated test signs
-in against an IdP.
 
 `CULVERT_PROFILE=corporate` turns on:
 
