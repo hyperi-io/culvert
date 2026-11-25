@@ -3,6 +3,16 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.31](https://github.com/hyperi-io/culvert/compare/v2.1.30...v2.1.31) (2026-11-25)
+
+### Bug Fixes
+
+* **deploy:** load ovpn DCO and pass deployment settings ([#126](https://github.com/hyperi-io/culvert/issues/126)) ([2b8f0a3](https://github.com/hyperi-io/culvert/commit/2b8f0a3be90910e0a84483e779052c75d1586a69))
+* **deps:** take opentelemetry-api 1.45.2 for CVE-2026-126360 ([f6187e0](https://github.com/hyperi-io/culvert/commit/f6187e06bedc910af18b6a71721e8d976f2d8f00))
+* **deps:** update nickfedor/watchtower Docker tag to v1.24.0 ([20700d0](https://github.com/hyperi-io/culvert/commit/20700d0976be6f616146d732390bb90d47054a1a))
+* **deps:** update ubuntu:26.04 Docker digest to 6a06111 ([#112](https://github.com/hyperi-io/culvert/issues/112)) ([1820208](https://github.com/hyperi-io/culvert/commit/1820208a5652944b95cf42743c70a5b37d4ec7f4))
+* **licences:** ship loguru's licence text ([#113](https://github.com/hyperi-io/culvert/issues/113)) ([194c384](https://github.com/hyperi-io/culvert/commit/194c384ee1a41dd7a83605832187db7ede3d9fea))
+
 ## [2.1.30](https://github.com/hyperi-io/culvert/compare/v2.1.29...v2.1.30) (2026-11-01)
 
 ### Bug Fixes
