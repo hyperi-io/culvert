@@ -46,7 +46,6 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 log_section() { echo -e "\n${CYAN}=== $* ===${NC}"; }
 
-# Check root
 if [[ $EUID -ne 0 ]]; then
     log_error "This script must be run as root"
     exit 1

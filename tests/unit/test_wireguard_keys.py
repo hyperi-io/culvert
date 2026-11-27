@@ -112,12 +112,12 @@ class TestLoadOrGenerateClientKeys:
         assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
 
     def test_reuses_existing_key_without_regenerating(self, pki_dir: Path) -> None:
-        """A stored key is reused; no new keypair is minted (identity retained)."""
+        """A stored key is reused. No new keypair is minted (identity retained)."""
         peers = self._peers(pki_dir)
         peers.mkdir(parents=True)
         (peers / "alice.key").write_text(FAKE_PRIVATE + "\n")
 
-        # Only the derive-public call (wg pubkey) should run; never wg genkey.
+        # Only the derive-public call (wg pubkey) should run. Never wg genkey.
         with patch("lib.wireguard.subprocess.check_output") as mock_co:
             mock_co.return_value = FAKE_PUBLIC.encode()
             private, public = load_or_generate_client_keys(pki_dir, "alice")

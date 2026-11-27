@@ -159,7 +159,7 @@ def compose_stack():
     )
 
     # Generate client configs for all protocols
-    # Try full generation first; if cert already exists, use --config-only
+    # Try full generation first. If cert already exists, use --config-only
     result = subprocess.run(
         [
             "docker",
@@ -200,7 +200,7 @@ def compose_stack():
 
     # No wg0 reload here on purpose. generate-client writes the server config to
     # the path the server uses and pushes the peer into the running interface
-    # itself; doing it again from the test would hide a regression in that.
+    # itself. Doing it again from the test would hide a regression in that.
 
     # Small delay for configs to sync via shared volume
     time.sleep(1)
@@ -334,7 +334,7 @@ def wireguard_full_connection():
 def openvpn_shared_pair_connection():
     """Connect BOTH client hosts with the SAME certificate, then disconnect.
 
-    The same .ovpn on two hosts at once is what duplicate-cn permits; without it
+    The same .ovpn on two hosts at once is what duplicate-cn permits. Without it
     the server evicts the first session when the second presents the same CN.
     """
     from helpers import CLIENT_B_CONTAINER, connect_openvpn, disconnect_openvpn

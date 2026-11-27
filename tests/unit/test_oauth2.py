@@ -126,9 +126,56 @@ class TestOAuth2ConfigSchema:
         assert config["oauth2"]["validate"] == {"groups": ["vpn-users", "admins"]}
         assert config["openvpn"]["addr"] == "unix:///run/vpn/management-udp.sock"
 
+    @pytest.mark.parametrize(
+        ("groups", "expression", "ipaddr", "validate", "check"),
+        [
+            pytest.param("", "", False, None, None, id="neither"),
+            pytest.param(
+                "",
+                " openvpn.commonName == user.username ",
+                False,
+                {"expression": "openvpn.commonName == user.username"},
+                None,
+                id="rule-only",
+            ),
+            pytest.param(
+                "vpn-users",
+                "openvpn.commonName == user.username",
+                True,
+                {
+                    "groups": ["vpn-users"],
+                    "expression": "openvpn.commonName == user.username",
+                },
+                {"ipaddr": True},
+                id="groups-rule-and-ipaddr",
+            ),
+            pytest.param("", "   ", True, None, {"ipaddr": True}, id="blank-rule"),
+        ],
+    )
+    def test_login_rule_and_ip_check_reach_their_upstream_keys(
+        self, groups, expression, ipaddr, validate, check
+    ):
+        """oauth2.validate.expression and http.check.ipaddr, as 2.3.3 names them.
+
+        Both were loaded by the 2.3.3 binary, and a bad field in the rule stopped it
+        at startup with a CEL compile error.
+        """
+        cfg = Config()
+        cfg.server_cn = SERVER_CN
+        cfg.oauth2_validate_groups = groups
+        cfg.oauth2_validate_expression = expression
+        cfg.oauth2_check_ipaddr = ipaddr
+
+        config = oauth2._oauth2_config(
+            cfg, 9000, "/run/vpn/management-udp.sock", "h" * 32, "m" * 32
+        )
+
+        assert config["oauth2"].get("validate") == validate
+        assert config["http"].get("check") == check
+
 
 def _capture(monkeypatch, level: str) -> list[str]:
-    """Collect lib.oauth2's log lines at one level; loguru does not reach caplog."""
+    """Collect lib.oauth2's log lines at one level. Loguru does not reach caplog."""
     captured: list[str] = []
     monkeypatch.setattr(
         oauth2.logger, level, lambda msg, *a, **k: captured.append(str(msg))

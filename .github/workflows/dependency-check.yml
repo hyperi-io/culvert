@@ -123,8 +123,8 @@ jobs:
           fi
 
           sed -i "s/ARG OPENVPN_AUTH_OAUTH2_VERSION=\"${CURRENT}\"/ARG OPENVPN_AUTH_OAUTH2_VERSION=\"${VERSION}\"/" Dockerfile
-          sed -i "s/^ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64=.*/ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64=\"${SHA_AMD64}\"/" Dockerfile
-          sed -i "s/^ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64=.*/ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64=\"${SHA_ARM64}\"/" Dockerfile
+          sed -i "s/^ARG OAUTH2_DEB_SHA256_AMD64=.*/ARG OAUTH2_DEB_SHA256_AMD64=\"${SHA_AMD64}\"/" Dockerfile
+          sed -i "s/^ARG OAUTH2_DEB_SHA256_ARM64=.*/ARG OAUTH2_DEB_SHA256_ARM64=\"${SHA_ARM64}\"/" Dockerfile
 
           # Fail here, not in a later build, when either substitution missed.
           grep -q "${SHA_AMD64}" Dockerfile

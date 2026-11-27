@@ -29,8 +29,10 @@ quality:
         - S607
       reason: >-
         The VPN server drives openvpn, wg, iptables, easyrsa and openssl by
-        design. Every call passes a list argv with no shell (nothing trips
-        S602), and the operator-facing commands exec fixed /usr/local/bin paths.
+        design. scripts/lib/process.run() takes an argv list and refuses a
+        string, so no config value reaches a shell, and the operator-facing
+        commands exec fixed /usr/local/bin paths. wg_post_up and wg_post_down
+        are the exception by design: wg-quick runs them as shell commands.
   python:
     ruff: blocking
     ruff_security: blocking

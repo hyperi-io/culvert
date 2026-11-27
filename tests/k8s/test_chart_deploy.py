@@ -64,7 +64,7 @@ class TestChartInstalls:
         )
 
     def test_runs_as_root_with_net_admin(self, deployed):
-        """The VPN data plane needs both; the contract names root and the caps."""
+        """The VPN data plane needs both. The contract names root and the caps."""
         result = deployed(
             "get",
             "pod",

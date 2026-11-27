@@ -75,7 +75,7 @@ class TestObservabilityEndpoints:
         assert status == 404
 
     def test_startup_state_readable_without_a_route(self, obs_server):
-        """Startup has no endpoint of its own; the state lives on the manager."""
+        """Startup has no endpoint of its own. The state lives on the manager."""
         assert health.is_started() is False
         health.set_started()
         assert health.is_started() is True

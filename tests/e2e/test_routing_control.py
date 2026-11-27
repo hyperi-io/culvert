@@ -56,7 +56,7 @@ def _compose(*args: str) -> list[str]:
 
 
 def _tun_ip(container: str, timeout: int = 40) -> str:
-    """Poll until the container's tun0 has an IPv4 address; return it."""
+    """Poll until the container's tun0 has an IPv4 address. Return it."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = docker_exec(

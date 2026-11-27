@@ -51,7 +51,6 @@ class TestConfigureStunnel:
         """No config if TLS cert doesn't exist."""
         server_dir = tmp_path / "server"
         server_dir.mkdir()
-        # Create template
         template = server_dir / "stunnel-server.conf.template"
         template.write_text(
             "cert = ${STUNNEL_CERT_PATH}\n"

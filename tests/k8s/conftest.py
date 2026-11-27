@@ -231,7 +231,7 @@ def helm_values(tmp_path_factory) -> list[str]:
 
     # A split-tunnel client routes only what the server pushes. Pushing the pod
     # CIDR is what lets it reach the target pod through the tunnel instead of
-    # around it; the full-tunnel configs do not need it and are unaffected.
+    # around it. The full-tunnel configs do not need it and are unaffected.
     pod_cidr = os.environ.get("CULVERT_K8S_POD_CIDR", "").strip()
     if pod_cidr:
         args += ["--set", f"extraEnv.CULVERT_PUSH_ROUTES={pod_cidr}"]

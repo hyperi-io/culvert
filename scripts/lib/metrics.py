@@ -211,12 +211,14 @@ def _collect_wg_peer_count() -> int:
         if result.returncode != 0:
             return 0
 
+        from lib.wireguard import PEER_ACTIVE_SECONDS
+
         now = int(time.time())
         handshakes = parse_wg_handshakes(result.stdout)
         return sum(
             1
             for hs in handshakes.values()
-            if hs.timestamp > 0 and (now - hs.timestamp) < 180
+            if hs.timestamp > 0 and (now - hs.timestamp) <= PEER_ACTIVE_SECONDS
         )
     except Exception:
         return 0
@@ -267,7 +269,7 @@ _g_max_clients = None
 _g_crl_expiry = None
 _c_wg_endpoint_flaps = None
 
-# The MeterProvider pushing the runtime families; None unless OTel push is on.
+# The MeterProvider pushing the runtime families, None unless OTel push is on.
 _runtime_provider = None
 
 # Last-seen cumulative byte totals. The OpenVPN status files and
@@ -708,9 +710,9 @@ class ScrapeAdapter:
     each scrape, so refreshing here keeps every scrape current rather
     than serving whatever the 15s poll last left behind.
 
-    Those two method names are the interface scalo's server calls and stay as
-    they are; scalo's own manager exposes the same values as the .metrics and
-    .content_type properties, and deprecates its get_* accessors.
+    Those two method names are the interface scalo's server calls, so they stay
+    although scalo's own manager has the same values as the .metrics and
+    .content_type properties and deprecates its get_* accessors.
     """
 
     def get_metrics(self) -> bytes:  # noqa: V105 - scalo's observability server calls it
@@ -750,7 +752,7 @@ def init_metrics(
     background update loop, and returns the adapter the observability
     port serves /metrics from.
 
-    pki_dir enables the CRL expiry gauge; empty leaves it unreported.
+    pki_dir enables the CRL expiry gauge, and empty leaves it unreported.
     """
     global _max_clients, _protocol, _pki_dir
     _max_clients = max_clients

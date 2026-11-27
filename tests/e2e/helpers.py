@@ -333,7 +333,7 @@ def tls_handshake(port: int, host: str = SERVER_IP, timeout: int = 10) -> str:
 
     Proves the listener really is speaking TLS, not just accepting bytes on a
     web port. Returns stdout+stderr so the caller can assert on the negotiated
-    protocol; an empty string means the handshake did not complete.
+    protocol. An empty string means the handshake did not complete.
     """
     result = docker_exec(
         CLIENT_CONTAINER,

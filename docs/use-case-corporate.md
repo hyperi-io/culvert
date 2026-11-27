@@ -5,8 +5,10 @@ Status: OIDC sign-in is a beta, off by default behind `CULVERT_OAUTH2_ENABLED` (
 Per-user certificates plus human SSO against your identity provider,
 group gating, and a TCP fallback for hostile guest networks. This is the
 `corporate` profile. Every connection then needs BOTH a valid client
-certificate AND a live IdP login - the certificate proves the device,
-the OIDC login proves the person.
+certificate AND a live IdP login by the user that certificate was issued to.
+The certificate proves the device, the OIDC login proves the person, and the
+profile's login rule refuses a login whose IdP username is not the
+certificate's CN.
 
 `CULVERT_PROFILE=corporate` turns on:
 
@@ -14,6 +16,9 @@ the OIDC login proves the person.
   networks routinely drop UDP)
 - OIDC SSO (`oauth2_enabled`)
 - group gating (`oauth2_validate_groups`, default `vpn-users`)
+- a login rule (`oauth2_validate_expression`) that the IdP's
+  `preferred_username` is the certificate's CN, so one person's login cannot
+  carry another person's certificate
 - full tunnel (common for compliance - all client traffic inspected and
   routed via the VPN, and `CULVERT_FULL_TUNNEL=false` flips it to split)
 - a local CA to start, called `Acme VPN CA` from the profile's placeholder
@@ -74,7 +79,8 @@ profile (UDP + TCP) you need `9000` and `9002`, and publishing the whole
 
 ## 4. Per-user lifecycle
 
-One certificate per person, not one shared config:
+One certificate per person, not one shared config, named for the person's IdP
+username (`preferred_username` on most IdPs):
 
 ```bash
 # issue
@@ -83,6 +89,29 @@ docker exec -it <container> generate-client --name jsmith
 # offboard
 docker exec -it <container> revoke-client jsmith
 ```
+
+The profile's rule is:
+
+```text
+auth.mode == 'non-interactive' || (has(token.claims.preferred_username) && openvpn.commonName == user.username)
+```
+
+openvpn-auth-oauth2 checks it at sign-in. A login whose ID token has no
+`preferred_username` is refused, because the username would otherwise fall back
+to the certificate's CN and match itself. A token refresh keeps the session the
+sign-in bound, so it skips the comparison.
+
+- Client names take letters, digits, `-` and `_` only. Where IdP usernames
+  carry `@` or `.`, such as `jsmith@example.com`, map them in your own rule,
+  replacing the last comparison with
+  `openvpn.commonName == user.username.split('@')[0].replace('.', '-')`.
+- An IdP that sends no `preferred_username` needs a rule on a claim it does
+  send, e.g. `has(token.claims.email) && ...`.
+- `CULVERT_OAUTH2_CHECK_IPADDR=true` also refuses a login from a browser on a
+  different IP from the VPN client. It is off by default, because a phone that
+  signs in over IPv6 and tunnels over IPv4 fails it.
+- `CULVERT_OAUTH2_VALIDATE_EXPRESSION=` (set and empty) drops the rule, so any
+  user in the group can sign in with any valid certificate.
 
 `revoke-client` revokes the certificate, regenerates the CRL, sends `kill`
 for the client on each listener's management socket, and removes the client's

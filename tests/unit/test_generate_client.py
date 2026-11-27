@@ -145,7 +145,7 @@ class TestOpenVpnConfigs:
         assert f"verify-x509-name {SERVER_CN} name" in text
 
     def test_certificate_text_dump_is_not_embedded(self, run):
-        """Only the PEM block goes in; the dump above it is not a certificate."""
+        """Only the PEM block goes in. The dump above it is not a certificate."""
         out = run("--protocol", "openvpn", "--config-only", "--name", CLIENT)
         text = (out / f"{CLIENT}-udp-split.ovpn").read_text(encoding="utf-8")
         assert "Certificate:" not in text
@@ -262,7 +262,7 @@ class TestProxyMode:
         assert "protocolUsername = CHANGE_ME" in stunnel
 
     def test_proxy_run_keeps_the_direct_stunnel_config(self, run):
-        """Both are built from the same branch; a shared name lost the direct one."""
+        """Both are built from the same branch. A shared name lost the direct one."""
         out = run(
             "--protocol",
             "openvpn",

@@ -11,9 +11,11 @@ import subprocess
 import pytest
 from lib import network
 from lib.network import (
+    Destination,
     _csv_cidrs,
     _prefixlen,
     _vpn_interfaces,
+    parse_destination,
     setup_routing_control,
 )
 
@@ -38,17 +40,68 @@ class FakeCfg:
         self.block_link_local = block_link_local
 
 
-class TestPrefixlen:
+@pytest.mark.parametrize(
+    ("netmask", "prefix"),
+    [("255.255.255.0", 24), ("255.255.0.0", 16), ("255.255.240.0", 20)],
+)
+def test_prefixlen_follows_the_netmask(netmask, prefix):
     """Netmask -> prefix length derivation used by the NAT rules."""
+    assert _prefixlen("10.8.0.0", netmask) == prefix
 
-    def test_slash_24(self):
-        assert _prefixlen("10.8.0.0", "255.255.255.0") == 24
 
-    def test_slash_16(self):
-        assert _prefixlen("10.8.0.0", "255.255.0.0") == 16
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        ("10.20.0.0/16", Destination("10.20.0.0/16")),
+        (" 10.20.0.0/16 ", Destination("10.20.0.0/16")),
+        ("10.20.5.0/16", Destination("10.20.0.0/16")),
+        ("10.20.0.7", Destination("10.20.0.7/32")),
+        ("198.19.0.0/16:8080/tcp", Destination("198.19.0.0/16", 8080, "tcp")),
+        ("198.19.0.10:53/udp", Destination("198.19.0.10/32", 53, "udp")),
+        ("10.0.0.0/8:65535/tcp", Destination("10.0.0.0/8", 65535, "tcp")),
+    ],
+)
+def test_destination_forms_that_parse(entry, expected):
+    """A bare CIDR means every port, and CIDR:PORT/PROTO narrows it to one."""
+    assert parse_destination(entry) == expected
 
-    def test_slash_20(self):
-        assert _prefixlen("10.8.0.0", "255.255.240.0") == 20
+
+@pytest.mark.parametrize(
+    ("entry", "reason"),
+    [
+        ("10.20.0.0/16:8080", "CIDR:PORT/PROTO"),
+        ("10.20.0.0/16:8080/sctp", "CIDR:PORT/PROTO"),
+        ("10.20.0.0/16:/tcp", "CIDR:PORT/PROTO"),
+        ("10.20.0.0/16:0/tcp", "outside 1-65535"),
+        ("10.20.0.0/16:65536/tcp", "outside 1-65535"),
+        ("not-a-cidr", "IPv4 CIDR"),
+        ("10.20.0.0/33", "IPv4 CIDR"),
+        ("10.20.0.0/16; id", "CIDR:PORT/PROTO"),
+        ("10.20.0.0/16:8080/tcp -j ACCEPT", "CIDR:PORT/PROTO"),
+        ("fd00::/8", "CIDR:PORT/PROTO"),
+    ],
+)
+def test_destination_forms_that_are_refused(entry, reason):
+    """A port needs its protocol, and nothing else rides along into iptables."""
+    with pytest.raises(ValueError, match=reason):
+        parse_destination(entry)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "iface"),
+    [
+        ("1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0\n    cache\n", "eth0"),
+        ("1.1.1.1 dev ens5 src 172.31.0.9 uid 0\n    cache\n", "ens5"),
+        ("", "eth0"),
+        ("RTNETLINK answers: Network is unreachable\n", "eth0"),
+    ],
+)
+def test_outbound_interface_is_the_word_after_dev(monkeypatch, stdout, iface):
+    """An on-link route has no via, so the interface is found by name, not position."""
+
+    result = subprocess.CompletedProcess(["ip"], 0, stdout=stdout)
+    monkeypatch.setattr(network, "run", lambda cmd, **kw: result)
+    assert network._outbound_interface() == iface
 
 
 class TestCsvCidrs:
@@ -101,10 +154,10 @@ class TestNatRules:
         calls = []
 
         class FakeResult:
-            stdout = "eth0\n"
+            stdout = "1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0\n    cache\n"
 
         def fake_run(cmd, **kw):
-            calls.append(cmd)
+            calls.append(" ".join(cmd))
             return FakeResult()
 
         monkeypatch.setattr(network, "run", fake_run)
@@ -152,7 +205,9 @@ class TestRoutingControl:
 
     def _capture(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(network, "run", lambda cmd, **kw: calls.append(cmd))
+        monkeypatch.setattr(
+            network, "run", lambda cmd, **kw: calls.append(" ".join(cmd))
+        )
         return calls
 
     def test_disabled_emits_nothing(self, monkeypatch):
@@ -207,7 +262,7 @@ class TestRoutingControl:
         assert "iptables -A CULVERT_FWD -o wg0 -s 10.10.0.0/16 -j ACCEPT" in calls
         assert "iptables -A CULVERT_FWD -o wg0 -j DROP" in calls
         # reverse-admin REPLIES (established) excluded from NAT so they keep
-        # their real tunnel source (inserted at POSTROUTING position 1); a
+        # their real tunnel source (inserted at POSTROUTING position 1), and a
         # client INITIATING to the admin CIDR is still masqueraded
         assert (
             "iptables -t nat -I POSTROUTING 1 -m conntrack"
@@ -232,6 +287,43 @@ class TestRoutingControl:
         assert drop in calls
         assert calls.index(a1) < calls.index(drop)
         assert calls.index(a2) < calls.index(drop)
+
+    def test_a_port_entry_opens_that_port_alone(self, monkeypatch):
+        """The receiver's 8080 is reachable, and 4317 on the same CIDR is not."""
+        calls = self._capture(monkeypatch)
+        setup_routing_control(
+            FakeCfg(
+                protocol="both",
+                allowed_destinations="198.19.0.0/16:8080/tcp, 10.20.0.0/24",
+            )
+        )
+        rules = [c for c in calls if c.startswith("iptables -A CULVERT_FWD -i")]
+        assert rules[-6:] == [
+            "iptables -A CULVERT_FWD -i tun+ -d 198.19.0.0/16 -p tcp --dport 8080"
+            " -j ACCEPT",
+            "iptables -A CULVERT_FWD -i wg0 -d 198.19.0.0/16 -p tcp --dport 8080"
+            " -j ACCEPT",
+            "iptables -A CULVERT_FWD -i tun+ -d 10.20.0.0/24 -j ACCEPT",
+            "iptables -A CULVERT_FWD -i wg0 -d 10.20.0.0/24 -j ACCEPT",
+            "iptables -A CULVERT_FWD -i tun+ -j DROP",
+            "iptables -A CULVERT_FWD -i wg0 -j DROP",
+        ]
+        assert not any("4317" in c for c in calls)
+
+    def test_every_rule_is_an_argv_list(self, monkeypatch):
+        """No rule is a string a shell would split, whatever the config holds."""
+        seen = []
+        monkeypatch.setattr(network, "run", lambda cmd, **kw: seen.append(cmd))
+        setup_routing_control(
+            FakeCfg(
+                protocol="both",
+                allowed_destinations="198.19.0.0/16:8080/tcp",
+                downstream_admin_cidrs="10.10.0.0/16",
+            )
+        )
+        network.setup_forward_guards(FakeCfg(protocol="both"))
+        assert seen
+        assert all(isinstance(cmd, list) and cmd[0] == "iptables" for cmd in seen)
 
     def test_forward_jump_removed_before_chain_is_flushed(self, monkeypatch):
         """Detach FORWARD first, so a failed rebuild cannot leave traffic free.
@@ -266,8 +358,9 @@ class TestRoutingControlFailsClosed:
         calls = []
 
         def fake_run(cmd, **kw):
-            calls.append(cmd)
-            if fragment in cmd and kw.get("check", True):
+            line = " ".join(cmd)
+            calls.append(line)
+            if fragment in line and kw.get("check", True):
                 raise subprocess.CalledProcessError(1, cmd)
 
         monkeypatch.setattr(network, "run", fake_run)
@@ -308,7 +401,9 @@ class TestLinkLocalGuard:
 
     def _capture(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(network, "run", lambda cmd, **kw: calls.append(cmd))
+        monkeypatch.setattr(
+            network, "run", lambda cmd, **kw: calls.append(" ".join(cmd))
+        )
         return calls
 
     def test_link_local_is_dropped_for_each_tunnel_interface(self, monkeypatch):

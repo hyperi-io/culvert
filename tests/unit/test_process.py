@@ -79,36 +79,53 @@ class TestWriteSecret:
 
 
 class TestRun:
-    """Tests for the run() shell command helper."""
+    """Tests for the run() command helper."""
 
-    def test_runs_string_command(self):
-        """String commands are wrapped in sh -c."""
-        result = run("echo hello", capture=True)
-        assert result.stdout.strip() == "hello"
+    @pytest.mark.parametrize("cmd", ["echo hello", "iptables -N CULVERT_FWD; id", ""])
+    def test_a_shell_string_is_refused(self, cmd):
+        """Only a shell could split a string, and run() never starts one."""
+        with pytest.raises(TypeError, match="argv list"):
+            run(cmd)
 
     def test_runs_list_command(self):
         """List commands are passed directly."""
         result = run(["echo", "world"], capture=True)
         assert result.stdout.strip() == "world"
 
-    def test_raises_on_failure_by_default(self):
-        """check=True raises CalledProcessError."""
-        with pytest.raises(subprocess.CalledProcessError):
-            run("false", check=True)
+    def test_shell_syntax_in_an_argument_stays_literal(self, tmp_path):
+        """A config value holding `;` or `$( )` reaches the program as one argument."""
+        marker = tmp_path / "ran"
+        result = run(["echo", f"10.8.3.0/24; touch {marker}"], capture=True)
+        assert result.stdout.strip() == f"10.8.3.0/24; touch {marker}"
+        assert not marker.exists()
 
-    def test_no_raise_with_check_false(self):
-        """check=False returns non-zero without exception."""
-        result = run("false", check=False)
-        assert result.returncode != 0
+    def test_runs_in_cwd_with_env(self, tmp_path):
+        """cwd and env reach the child, as Easy-RSA's calls need."""
+        result = run(
+            ["sh", "-c", 'echo "$PWD $PROBE"'],
+            capture=True,
+            cwd=tmp_path,
+            env={"PROBE": "set", "PATH": "/usr/bin:/bin"},
+        )
+        assert result.stdout.strip() == f"{tmp_path} set"
+
+    @pytest.mark.parametrize(("check", "raises"), [(True, True), (False, False)])
+    def test_check_decides_whether_failure_raises(self, check, raises):
+        """check=True raises CalledProcessError, check=False returns the code."""
+        if raises:
+            with pytest.raises(subprocess.CalledProcessError):
+                run(["false"], check=check)
+        else:
+            assert run(["false"], check=check).returncode != 0
 
     def test_capture_false_returns_no_output(self):
         """Without capture, stdout is None."""
-        result = run("echo test", capture=False)
+        result = run(["true"], capture=False)
         assert result.stdout is None
 
     def test_captures_stderr(self):
         """Captures stderr from failing commands."""
-        result = run("echo err >&2 && false", check=False, capture=True)
+        result = run(["sh", "-c", "echo err >&2; false"], check=False, capture=True)
         assert "err" in result.stderr
 
 

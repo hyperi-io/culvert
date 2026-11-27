@@ -36,7 +36,7 @@ class ClientDownloadHandler(BaseHandler):
 
     These configs embed client private keys, so every route except /health
     requires a bearer token. This server speaks plain HTTP unless started with
-    a TLS cert/key; otherwise bind it to loopback and front it with a proxy
+    a TLS cert/key. Otherwise bind it to loopback and front it with a proxy
     that terminates TLS.
     """
 
@@ -310,7 +310,7 @@ def start_client_download_server(
     """Start client download server in a background thread.
 
     Fails closed: refuses to start without a bearer token, since the served
-    client configs embed client private keys. Binds to loopback by default; wraps
+    client configs embed client private keys. Binds to loopback by default. Wraps
     the socket in TLS when a cert/key pair is supplied, and refuses a lone cert
     or key rather than fall back to plain HTTP.
 

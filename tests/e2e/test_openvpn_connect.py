@@ -126,7 +126,7 @@ class TestLinkLocalIsBlocked:
         wait_for_tunnel("tun0", timeout=30)
         before = self._drop_count()
 
-        # Force it down the tunnel; a split tunnel would not route it there.
+        # Force it down the tunnel. A split tunnel would not route it there.
         docker_exec(
             CLIENT_CONTAINER, "ip route add 169.254.169.254/32 dev tun0", check=False
         )

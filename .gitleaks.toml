@@ -10,7 +10,8 @@ paths = [
 ]
 
 # Public release checksums, which generic-api-key matches as 64 hex characters.
+# OPENVPN_AUTH_OAUTH2 stays for the commits that still carry that name.
 regexTarget = "line"
 regexes = [
-    '''ARG (OPENVPN_AUTH_OAUTH2|WSTUNNEL)_SHA256_(AMD64|ARM64)=''',
+    '''ARG (OPENVPN_AUTH_OAUTH2|OAUTH2_DEB|WSTUNNEL)_SHA256_(AMD64|ARM64)=''',
 ]

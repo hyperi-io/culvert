@@ -108,9 +108,8 @@ teardown_file() {
 @test "proxy OpenVPN config does not carry an http-proxy directive" {
     container_exec generate-client --name proxytest7b --proxy proxy:8080
 
-    # It used to. OpenVPN's remote here is the LOCAL stunnel, so an http-proxy
-    # line asked the corporate proxy to CONNECT to 127.0.0.1 - which no proxy
-    # will do. The config looked plausible and could never have worked.
+    # OpenVPN's remote here is the LOCAL stunnel, so an http-proxy line would
+    # ask the corporate proxy to CONNECT to 127.0.0.1, which no proxy will do.
     config=$(container_exec cat /etc/vpn/clients/proxytest7b-proxy-split.ovpn)
     if echo "${config}" | grep -q "^http-proxy"; then
         return 1
