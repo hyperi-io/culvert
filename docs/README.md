@@ -8,14 +8,17 @@ Docs are grouped by what you are trying to do, not by feature.
 ## Connect a client
 
 - [vpn-client-setup.md](vpn-client-setup.md) - installing and connecting on
-  macOS, Linux, Windows, iOS and Android, for both protocols and for the
-  HTTPS-tunnelled variants. This one also ships inside the image at
+  macOS, Linux and Windows, plus the WireGuard mobile apps, for both protocols and for the
+  HTTPS-tunnelled variants. This page ships inside the image as well, at
   `/etc/vpn/docs/`, so it is available on the server itself.
 
-## Deploy a shape
+## Pick a deployment
 
-Each of these is a full walkthrough - deploy, issue a client, operate it -
-for one of the opinionated `CULVERT_PROFILE=` presets.
+Each of these is a full walkthrough - deploy, issue a client, operate it.
+Home, corporate, travel and edge-fleet each match a `CULVERT_PROFILE=` preset,
+and kubernetes is a deployment, not a profile. The `mobile` preset
+(`profiles/mobile.yaml`) has no walkthrough: [performance.md](performance.md)
+covers what it changes.
 
 - [use-case-home.md](use-case-home.md) - home LAN or a lab VM. OpenVPN UDP,
   split tunnel, local PKI.
@@ -27,29 +30,31 @@ for one of the opinionated `CULVERT_PROFILE=` presets.
   one replica: install values, the PKI volume, external PKI, probes, metrics.
 - [use-case-edge-fleet.md](use-case-edge-fleet.md) - an appliance fleet into a
   central receiver, with reverse admin back down the tunnels.
+- [shared-storage.md](shared-storage.md) - several OpenVPN instances on one
+  PKI volume, and what is not safe to do at once.
 
 ## Understand a decision
 
-- [architecture.md](architecture.md) - what is in the image, the startup order,
-  the two iptables chains and why their order is what it is, and the PKI
-  invariants. Start here before changing any of them.
+- [architecture.md](architecture.md) - what runs inside culvert, what it
+  depends on, and why it's one container. The startup order, the iptables
+  ordering and the PKI invariants are in CONTRIBUTING.md's Context section.
 - [addressing.md](addressing.md) - why the tunnels default to `10.8.0.0/22`,
   and when to move to the CGNAT range instead.
 - [performance.md](performance.md) - the cipher stance (AES-256-GCM the
   compliance default, ChaCha20 offered), what the tuning profiles change, and
   the host-side throughput levers (DCO, sysctl).
+- [cryptography.md](cryptography.md) - the CNSA 2.0 classical suite the
+  OpenVPN path ships, and what is not there yet (ML-KEM, ML-DSA).
 
-## Look something up
+## For developers
 
 - [supply-chain.md](supply-chain.md) - where every third-party binary comes
   from, what the build verifies, and what it does not.
 - [ci-environment.md](ci-environment.md) - the secrets and variables CI needs.
-- [scalo-reference.md](scalo-reference.md) - the scalo calls culvert actually
-  makes. The [scalo repo](https://github.com/hyperi-io/scalo-py) is the API
-  source of truth.
-
-## Conventions
+- [scalo-reference.md](scalo-reference.md) - the scalo calls culvert makes.
+  The [scalo repo](https://github.com/hyperi-io/scalo-py) is the API source of
+  truth.
 
 Filenames are lowercase-kebab because slugs are case-sensitive and static-site
-generators lowercase them. Each doc covers one reader mode - follow a path, or
-look a fact up - and says which at the top.
+generators lowercase them. Each doc covers one reader mode: follow a path, or
+look a fact up.

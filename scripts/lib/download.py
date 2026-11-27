@@ -340,8 +340,7 @@ def start_client_download_server(
     scheme = "http"
     if tls_cert and tls_key:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        # PROTOCOL_TLS_SERVER inherits its floor from the platform OpenSSL -
-        # TLS 1.2 on the build this ships against, and not a promise. This
+        # PROTOCOL_TLS_SERVER inherits its floor from the platform OpenSSL. This
         # endpoint serves client configs with the private key in them and
         # the rest of culvert is TLS 1.3 only, so state the floor here rather
         # than inherit whatever the base image happens to default to.

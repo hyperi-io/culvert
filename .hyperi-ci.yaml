@@ -4,11 +4,6 @@
 
 language: python
 
-# Category 4, general OSS: public repo, Apache-2.0, publishes its container to
-# a public registry. Declared rather than inferred - the repo prefix is a hint
-# and nothing more, and every tool that cares about licence, visibility or
-# publishing reads this. It matches what is already true: public since
-# 2026-08-03, Apache-2.0 in LICENSE, and ghcr.io/hyperi-io/culvert public.
 classification: oss
 
 quality:
@@ -39,11 +34,8 @@ quality:
   python:
     ruff: blocking
     ruff_security: blocking
-    # ty (Astral type checker): scripts/ shipped code is clean; tests/ still
-    # has a few dynamic-pattern diagnostics, so kept non-blocking for now.
-    # Promote to `blocking` once tests/ typing is addressed.
+    # Non-blocking until tests/ is clean under ty.
     ty: warn
-    # At zero findings over scripts/ and tests/, so new dead code fails the build.
     vulture: blocking
 
 test:
@@ -59,26 +51,18 @@ test:
       enabled: false
     e2e:
       enabled: false
-      # E2E tests need Docker + TUN devices and a running dual-container stack.
-      # Run locally with: pytest tests/e2e/ -m e2e -v
+      # Needs Docker and TUN: tests/README.md.
     k8s:
       enabled: false
-      # Cluster tests install the Helm chart on a real cluster, so they need a
-      # kubeconfig and site-specific settings that deliberately live outside
-      # this repo (tests/k8s/.env, gitignored). They skip without it.
-      # Run against your own cluster with: pytest tests/k8s/ -m k8s -v
+      # Needs a real cluster and tests/k8s/.env: tests/README.md.
 
 release:
   enabled: true
   channel: release
-  # culvert ships ONLY its GHCR container - it is not a Python package.
-  # Opt out of the default PyPI publish while keeping the container.
+  # A container image, not a Python package.
   destinations:
     python: false
-  # The thin chart, assembled from the committed contract on the scalo-service
-  # library chart, with version and appVersion taken from the release. culvert
-  # has no CLI to emit the contract at release time, so
-  # scripts/generate-deploy-artefacts.py writes it and a unit test holds it there.
+  # The contract is committed because culvert has no CLI to emit it: docs/architecture.md.
   helm:
     enabled: true
     contract: deploy/deployment-contract.json
@@ -89,17 +73,11 @@ release:
     platforms:
       - linux/amd64
       - linux/arm64
-    # Passed through to `docker build --build-arg`. VERSION and COMMIT feed the
-    # Dockerfile's `ARG VERSION` and `ARG COMMIT`, which otherwise default to
-    # "dev" and empty. They are baked into /etc/vpn/VERSION and /etc/vpn/COMMIT,
-    # which the info gauge reads for its version and commit labels.
+    # Baked into /etc/vpn/VERSION and /etc/vpn/COMMIT for the info gauge's labels.
     build_args:
       VERSION: "{version}"
       COMMIT: "{sha}"
-    # GHCR and most registry UIs show org.opencontainers.image.description on
-    # the package page. This label replaces the pyproject description hyperi-ci
-    # would otherwise use, and because it arrives as `docker build --label`, a
-    # LABEL in the Dockerfile cannot override it.
+    # The registry page description. As a `--label` it beats the Dockerfile's LABEL.
     labels:
       org.opencontainers.image.description: >-
         The VPN server that installs like a container, because it is one.

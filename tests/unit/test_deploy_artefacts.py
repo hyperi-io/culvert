@@ -22,6 +22,7 @@ from pathlib import Path, PurePosixPath
 
 import doc_values
 import pytest
+import yaml
 from lib.config import Config
 from lib.deployment import deployment_contract
 
@@ -448,3 +449,44 @@ class TestSecretEnvVarsAreRead:
         read = marker in dataclasses.asdict(Config.from_settings()).values()
         # The message carries the env var and group names only, never a value.
         assert read, f"{env_var} (secret group {group}) is not read by Config"
+
+
+def _compose_environment() -> list[str]:
+    """The service environment entries of the root docker-compose.yaml."""
+    compose = yaml.safe_load(
+        (REPO_ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+    )
+    return list(compose["services"]["openvpn"]["environment"])
+
+
+class TestComposeEnvironment:
+    """A compose user can only set what docker-compose.yaml passes through."""
+
+    @pytest.mark.parametrize(
+        ("env_var", "field"),
+        [
+            ("CULVERT_EXTERNAL_ENDPOINT", "external_endpoint"),
+            ("CULVERT_OTEL_ENABLED", "otel_enabled"),
+            ("CULVERT_OTEL_ENDPOINT", "otel_endpoint"),
+            ("CULVERT_OTEL_PROTOCOL", "otel_protocol"),
+            ("CULVERT_CLIENT_DOWNLOAD_BIND", "client_download_bind"),
+            ("CULVERT_CLIENT_DOWNLOAD_TLS_CERT", "client_download_tls_cert"),
+            ("CULVERT_CLIENT_DOWNLOAD_TLS_KEY", "client_download_tls_key"),
+        ],
+    )
+    def test_setting_is_passed_through_with_no_default(self, env_var, field):
+        """A bare name passes the host value only when set, so unset changes nothing."""
+        assert field in {f.name for f in dataclasses.fields(Config)}
+        assert env_var in _compose_environment()
+
+    def test_every_pass_through_names_a_config_field(self):
+        """A passed-through name that is no Config field is a setting that does nothing."""
+        # CULVERT_PROFILE picks the profile file before Config is built.
+        fields = {f.name for f in dataclasses.fields(Config)} | {"profile"}
+        unknown = [
+            entry
+            for entry in _compose_environment()
+            if (name := entry.split("=", 1)[0]).startswith("CULVERT_")
+            and name.removeprefix("CULVERT_").lower() not in fields
+        ]
+        assert not unknown, unknown

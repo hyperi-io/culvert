@@ -13,7 +13,7 @@ Thin orchestrator that delegates to focused modules under lib/.
 Handles container initialisation, PKI setup, and VPN server management.
 
 Environment Variables:
-    See README.md for full list of configuration options.
+    .env.example lists the configuration options.
 """
 
 import argparse
@@ -123,8 +123,8 @@ def run_server(cfg: Config) -> None:
         )
 
     # Start VPN processes (blocks). start_server flips started/ready once
-    # its listeners are launched; in WireGuard-only mode the kernel
-    # interface is already up, so flip here before waiting.
+    # its listeners are launched. In WireGuard-only mode the kernel
+    # interface is up at this point, so flip here before waiting.
     if cfg.protocol in ("openvpn", "both"):
         start_server(cfg, proc_manager)
     else:
@@ -162,7 +162,7 @@ def main() -> None:
         try:
             # Probe the observability port (health + metrics share it). Host
             # and port go to HTTPConnection separately, so no env value can
-            # redirect the probe off localhost; a non-numeric port fails it.
+            # redirect the probe off localhost. A non-numeric port fails it.
             addr = os.environ.get("CULVERT_METRICS_ADDR", "0.0.0.0:9090")
             health_port = int(addr.rsplit(":", 1)[-1]) if ":" in addr else 9090
             conn = http.client.HTTPConnection("localhost", health_port, timeout=3)

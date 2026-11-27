@@ -6,16 +6,11 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-# Culvert Test Client
-# Minimal client for testing VPN connectivity
-#
-# Build: docker build -f Dockerfile.test-client -t culvert-client .
-# Run:   docker run --rm -it --cap-add NET_ADMIN --device /dev/net/tun \
-#          -v ./clients:/etc/vpn/clients:ro \
-#          culvert-client /etc/vpn/clients/alice-split.ovpn
-#
-# Base image: Override with --build-arg UBUNTU_VERSION=xx.xx
-# Default: the same 26.04 LTS digest the server image pins.
+# Minimal OpenVPN client for connectivity checks. Run it with a client file:
+#   docker run --rm -it --cap-add NET_ADMIN --device /dev/net/tun \
+#     -v ./clients:/etc/vpn/clients:ro culvert-client /etc/vpn/clients/alice-udp-split.ovpn
+
+# The same base digest the server image pins.
 
 ARG UBUNTU_VERSION=26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 FROM ubuntu:${UBUNTU_VERSION}
@@ -25,10 +20,7 @@ LABEL description="OpenVPN test client for connectivity validation"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# OpenVPN client from the project's signed apt repo. The downloaded keyring must
-# carry EXACTLY ONE primary key and its fingerprint must be the pinned one, so
-# neither a substituted key nor a second key smuggled in alongside the real one
-# can reach /etc/apt/keyrings. Same check as the server image.
+# The server image's keyring check: docs/supply-chain.md.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \

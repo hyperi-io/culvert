@@ -2,7 +2,7 @@
 
 Reach your home LAN, or a throwaway VM, from the outside. OpenVPN over
 UDP, split tunnel, a self-generated local CA - nothing else. This is the
-`home` profile and the beginner path; it builds on the
+`home` profile and the beginner path, and it builds on the
 [README quick start](../README.md#quick-start).
 
 ## 1. Run the server
@@ -38,18 +38,18 @@ CULVERT_IMAGE=ghcr.io/hyperi-io/culvert:<version>@sha256:<digest> docker compose
 
 ## 2. Open UDP 1194 to the host
 
-The server is only reachable once the port reaches it:
+The server is reachable once the port reaches it:
 
-- **Home:** forward UDP `1194` on your router to the host running the
+- Home: forward UDP `1194` on your router to the host running the
   container.
-- **Cloud VM:** allow inbound UDP `1194` in the security group / firewall.
+- Cloud VM: allow inbound UDP `1194` in the security group / firewall.
 
 The observability port (`9090`) is published on loopback only - it is
 not part of what you expose.
 
 ## 3. Choose what the tunnel reaches
 
-The `home` profile is split tunnel: only the VPN subnet and the routes
+The `home` profile is split tunnel: the VPN subnet and the routes
 you push go down the tunnel, the rest of the client's traffic stays
 local. The profile pushes `192.168.1.0/24` as a starting point - set it
 to your actual LAN:
@@ -75,11 +75,12 @@ and when a home LAN could still clash - is in
 docker exec -it <container> generate-client --name laptop
 ```
 
-This writes a set of `.ovpn` files to the clients volume. For the home
-case the one you want is `laptop-udp-split.ovpn` (UDP, split tunnel);
-`laptop-udp-full.ovpn` is the full-tunnel variant. The TCP and HTTPS
-variants are for later cases and need their listeners enabled server
-side.
+This writes six `.ovpn` files, WireGuard configs under `laptop/` and
+`laptop.zip` with all of them to the clients volume. For the home case the one
+you want is `laptop-udp-split.ovpn` (UDP, split tunnel), and
+`laptop-udp-full.ovpn` is the full-tunnel variant. The TCP and HTTPS variants
+are for later cases and need their listeners enabled server side, and the
+WireGuard configs connect once `CULVERT_PROTOCOL` includes `wireguard`.
 
 To remove access again:
 
@@ -93,8 +94,6 @@ Copy `laptop-udp-split.ovpn` to the client and import it. Platform steps
 (OpenVPN Connect, Tunnelblick, the Linux CLI, always-on setups) are in
 [vpn-client-setup.md](vpn-client-setup.md).
 
-### Fetching the configs over HTTP
-
 If copying files off the volume is a nuisance, turn on the download server:
 
 ```bash
@@ -104,14 +103,16 @@ If copying files off the volume is a nuisance, turn on the download server:
 
 It lists and serves every `.ovpn`, WireGuard `.conf` and per-client `.zip` in
 the clients volume on port 8443, and each request needs the header
-`Authorization: Bearer <token>`. It binds to loopback unless
-`CULVERT_CLIENT_DOWNLOAD_BIND` says otherwise, and it speaks plain HTTP
-unless `CULVERT_CLIENT_DOWNLOAD_TLS_CERT` and `_TLS_KEY` are set, so
-put a TLS-terminating proxy in front before exposing it. With
-`CULVERT_PROTOCOL=both` the WireGuard configs and `laptop.zip` come from here
-too, with no `docker cp`.
+`Authorization: Bearer <token>`. It binds to the container's loopback unless
+`CULVERT_CLIENT_DOWNLOAD_BIND` says otherwise, so reaching it from the host
+takes `CULVERT_CLIENT_DOWNLOAD_BIND=0.0.0.0` and `-p 127.0.0.1:8443:8443/tcp`.
+It speaks plain HTTP unless `CULVERT_CLIENT_DOWNLOAD_TLS_CERT` and
+`CULVERT_CLIENT_DOWNLOAD_TLS_KEY` are set, so put a TLS-terminating proxy in
+front before exposing it further. The repo's compose file does not pass the
+bind address or the TLS pair through, so add them to its `environment:` list
+first.
 
-## See also
+Related pages:
 
 - [vpn-client-setup.md](vpn-client-setup.md) - installing and connecting
   the client
@@ -120,4 +121,4 @@ too, with no `docker cp`.
 - [use-case-corporate.md](use-case-corporate.md) - when you outgrow one
   shared config and want per-user certs plus SSO
 - [README quick start](../README.md#quick-start) and the
-  [profiles table](../README.md#deployment-profiles)
+  [profiles table](../README.md#configuration)

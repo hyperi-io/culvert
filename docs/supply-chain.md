@@ -1,84 +1,38 @@
 # Supply Chain
 
-All third-party binaries are pulled directly from their upstream
-GitHub releases during image build:
+Where every third-party piece of the image comes from, what the build checks, and what it does not. The `Dockerfile` pins and checks each one at build time:
 
 | Dependency | Source | Pinned version |
 |------------|--------|----------------|
-| Base image | `ubuntu:26.04` | pinned by `sha256` digest in `BASE_IMAGE` |
-| `openvpn-auth-oauth2` | [github.com/jkroepke/openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2) | `2.2.2`, `sha256`-verified per arch |
-| `wstunnel` | [github.com/erebe/wstunnel](https://github.com/erebe/wstunnel) | `10.7.1`, `sha256`-verified per arch |
-| `openvpn` (server) | [build.openvpn.net](https://build.openvpn.net) (official APT repo) | stable channel, 2.7.x+ |
-| `easy-rsa` | Ubuntu archive | System package (from digest-pinned base) |
-| `stunnel4` | Ubuntu archive | System package (from digest-pinned base) |
-| `scalo` (HyperI-own) | PyPI | image installs `==2.31.15` from the hash-pinned `requirements-docker.txt`; source range is `>=2.31.15,<3`; ships immediately (no cooldown); `uv.lock` pins the dev/CI tree with hashes |
+| Base image | `ubuntu` | tag and `sha256` digest in `BASE_IMAGE` |
+| `openvpn-auth-oauth2` | [github.com/jkroepke/openvpn-auth-oauth2](https://github.com/jkroepke/openvpn-auth-oauth2) release `.deb` | `OPENVPN_AUTH_OAUTH2_VERSION`, `sha256`-verified per arch |
+| `wstunnel` | [github.com/erebe/wstunnel](https://github.com/erebe/wstunnel) release tarball | `WSTUNNEL_VERSION`, `sha256`-verified per arch |
+| `openvpn` (server) | [build.openvpn.net](https://build.openvpn.net) (official APT repo) | stable channel, at least `OPENVPN_MIN_VERSION` |
+| `easy-rsa`, `stunnel4`, `iptables`, `wireguard-tools` | Ubuntu archive | not pinned: whatever the archive serves for the base image's release at build time |
+| Python packages, `scalo` included | PyPI | the exact versions and hashes in `requirements-docker.txt`, an export of `uv.lock` |
 
-External dependencies track "latest stable released at least 7 days ago"
--- the org `minimumReleaseAge` cooldown, a buffer against fresh-release
-regressions and the supply-chain attack window. HyperI-own packages
-(`scalo`) are exempt and track latest, per the supply-chain
-cooldown policy in the org standards.
+External dependencies track the latest stable release that is at least 7 days old: the `minimumReleaseAge` cooldown in the org Renovate preset, a buffer against fresh-release regressions and the supply-chain attack window. HyperI's packages (`scalo`) are exempt from the cooldown and track latest. `openvpn-auth-oauth2` moves through `dependency-check.yml`, which proposes the next version and both checksums as a PR.
 
-No private registries or mirrors are used for the public image. If you
-operate in an air-gapped environment, fork and add your own registry
-mirror logic.
+Published images are multi-arch manifests for `linux/amd64` and `linux/arm64`, set in `.hyperi-ci.yaml`. No private registries or mirrors are used for the public image. In an air-gapped environment, fork and add a registry mirror.
 
 ## What is verified at build time
 
-Each of these is enforced by the build, which fails closed if the check
-does not pass:
+The build fails closed when any of these does not hold:
 
-- **Base image** is pinned by `sha256` digest, not by tag.
-- **`openvpn-auth-oauth2` and `wstunnel`** are fetched over HTTPS from the
-  upstream GitHub release and checked against a `sha256` pinned per
-  architecture in the `Dockerfile`.
-- **The OpenVPN APT repository key** is checked to be EXACTLY one primary
-  key whose fingerprint is the pinned one. Requiring a single `pub` record
-  rather than grepping for ours means a compromised endpoint serving the
-  real key alongside an attacker's key is rejected rather than accepted.
-- **The installed OpenVPN version** is checked against
-  `ARG OPENVPN_MIN_VERSION` with `dpkg --compare-versions`. The server
-  config depends on 2.7 behaviour, so an older package aborts the build.
-- **Python dependencies** are installed from `requirements-docker.txt`,
-  which pins every package to an exact version with hashes.
+- The base image resolves through its `sha256` digest, so the tag beside it cannot move what is pulled.
+- `openvpn-auth-oauth2` and `wstunnel` are fetched over HTTPS from the upstream GitHub release and checked against a `sha256` pinned per architecture in the `Dockerfile`.
+- The OpenVPN APT repository key must be EXACTLY one primary key, with the pinned fingerprint. Requiring a single `pub` record rather than grepping for ours means a compromised endpoint serving the pinned key alongside an attacker's key is rejected.
+- The installed OpenVPN version is checked against `ARG OPENVPN_MIN_VERSION` with `dpkg --compare-versions`. The server config depends on 2.7 behaviour, so an older package aborts the build.
+- Python dependencies install from `requirements-docker.txt` with `--require-hashes`, so a package that differs from its recorded hash fails the build.
 
-**Not** verified: the image carries no provenance attestation. Nothing in
-the release pipeline generates one today, so there is no signature or
-SLSA statement to check a pulled image against - only the digest you
-pulled and the labels below. If you need attested provenance, build the
-image yourself from a tagged commit.
+What is NOT verified: the image is unsigned. Each platform has BuildKit's SLSA provenance attestation and no SBOM, and nothing signs either, so the provenance tells you how the image says it was built rather than proving it. If you need signed provenance, build the image yourself from a tagged commit and sign it.
 
-Check image labels for source and version:
+Read the provenance and the labels of a release:
 
 ```bash
-docker inspect ghcr.io/hyperi-io/culvert:latest \
-  --format '{{json .Config.Labels}}' | jq
+docker buildx imagetools inspect ghcr.io/hyperi-io/culvert:vX.Y.Z --format '{{json .Provenance}}'
+docker buildx imagetools inspect ghcr.io/hyperi-io/culvert:vX.Y.Z \
+  --format '{{json (index .Image "linux/amd64").Config.Labels}}'
 ```
 
-## Version Pinning
-
-All dependencies are version-pinned in `Dockerfile` ARGs, and the
-downloaded binaries are `sha256`-verified per architecture before
-install:
-
-```dockerfile
-ARG BASE_IMAGE="ubuntu:26.04@sha256:..."   # base image pinned by digest
-ARG OPENVPN_AUTH_OAUTH2_VERSION="2.2.2"    # + SHA256_AMD64 / SHA256_ARM64
-ARG WSTUNNEL_VERSION="10.7.1"              # + SHA256_AMD64 / SHA256_ARM64
-```
-
-## Updating Dependencies
-
-Bump a version ARG in `Dockerfile` and commit with a conventional-commit
-prefix (`fix:` for patch, `feat:` for minor). Merging to `main` validates the
-change but does not ship it - publishing is gated on a `Publish: true` trailer
-on the head commit (or a manual `workflow_dispatch` with `from-head=true`), at
-which point semantic-release cuts the version and pushes a new image. See
-[ci-environment.md](ci-environment.md) for the trigger table.
-
-For CVE-driven updates, prefer `sec:` as the commit type to flag the intent.
-
-## Multi-Architecture Support
-
-Published images are multi-arch manifests for `linux/amd64` and
-`linux/arm64`. Docker selects the correct architecture automatically.
+To update a dependency, bump a version ARG and its checksums in the `Dockerfile`, and commit with a conventional-commit prefix (`fix:` for patch, `feat:` for minor). A security fix is `fix(security):`. Merging to `main` validates the change but does not ship it: publishing needs a `Release: true` trailer on the head commit, or a manual `workflow_dispatch` with `from-head=true`. [ci-environment.md](ci-environment.md) has the trigger table.
