@@ -66,7 +66,7 @@ def configure_stunnel(cfg) -> None:
 
     # Create the stunnel log writable by the dropped-privilege stunnel user.
     # Match the logrotate target (0640 nobody nogroup) rather than leaving it
-    # world-writable; the chown is best-effort because it is not permitted
+    # world-writable. The chown is best-effort because it is not permitted
     # where stunnel does not actually run (e.g. unit tests not running as
     # root), and there the 0640 applies to the invoking user instead.
     stunnel_log = cfg.log_dir / "stunnel.log"

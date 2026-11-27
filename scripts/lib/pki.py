@@ -11,14 +11,13 @@
 Supports two modes:
 - local: Easy-RSA managed PKI (default)
 - external: Fetches certs from FileProvider, OpenBaoProvider, or AWSProvider
-  via scalo. Local files are the SSOT; remote providers are the
+  via scalo. Local files are the SSOT, and remote providers are the
   update mechanism.
 """
 
 import os
 import random
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -374,7 +373,7 @@ def init_pki(cfg) -> None:
 def generate_tc_key(pki_dir: Path) -> None:
     """Generate tls-crypt-v2 server key."""
     tc_key = pki_dir / "tc.key"
-    run(f"openvpn --genkey tls-crypt-v2-server {tc_key}")
+    run(["openvpn", "--genkey", "tls-crypt-v2-server", str(tc_key)])
     tc_key.chmod(0o600)
     logger.info("tls-crypt-v2 key generated")
 
@@ -429,20 +428,22 @@ def init_pki_local(cfg) -> None:
     (cfg.pki_dir / "private").mkdir(exist_ok=True)
     (cfg.pki_dir / "reqs").mkdir(exist_ok=True)
 
-    run(f"cd {easyrsa} && ./easyrsa build-ca nopass")
+    # Risk accepted: the CA key is stored unencrypted, because the CRL refresh
+    # signs with it unattended every crl_refresh_hours. External PKI
+    # (CULVERT_PKI_MODE=external) keeps the CA key off this server.
+    run(["./easyrsa", "build-ca", "nopass"], cwd=easyrsa)
 
     # Generate server cert
     os.environ["EASYRSA_REQ_CN"] = cfg.server_cn
-    run(f"cd {easyrsa} && ./easyrsa gen-req server nopass")
-    run(f"cd {easyrsa} && ./easyrsa sign-req server server")
+    run(["./easyrsa", "gen-req", "server", "nopass"], cwd=easyrsa)
+    run(["./easyrsa", "sign-req", "server", "server"], cwd=easyrsa)
 
     # Generate tls-crypt-v2 key
     generate_tc_key(cfg.pki_dir)
 
     # Generate CRL
-    run(f"cd {easyrsa} && ./easyrsa gen-crl")
+    run(["./easyrsa", "gen-crl"], cwd=easyrsa)
 
-    # Set permissions
     for key in (cfg.pki_dir / "private").glob("*.key"):
         key.chmod(0o600)
     (cfg.pki_dir / "ca.crt").chmod(0o644)
@@ -469,7 +470,7 @@ def crl_seconds_until_expiry(pki_dir) -> float | None:
         return None
 
     result = run(
-        f"openssl crl -in {crl_path} -noout -nextupdate",
+        ["openssl", "crl", "-in", str(crl_path), "-noout", "-nextupdate"],
         check=False,
         capture=True,
     )
@@ -480,7 +481,7 @@ def crl_seconds_until_expiry(pki_dir) -> float | None:
         if not line.startswith("nextUpdate="):
             continue
         # e.g. "nextUpdate=Aug  4 22:51:20 2026 GMT". openssl pads a
-        # single-digit day to two columns; strptime absorbs the run.
+        # single-digit day to two columns, and strptime absorbs the run.
         stamp = line.split("=", 1)[1].strip()
         if stamp.endswith(" GMT") or stamp.endswith(" UTC"):
             stamp = stamp[:-4]
@@ -520,7 +521,7 @@ def log_crl_expiry(cfg) -> float | None:
     if remaining <= 0:
         logger.error(
             "CRL has expired - OpenVPN is refusing every client, including"
-            " valid ones. Regenerate it with `update-crl`.",
+            " valid ones. Refresh it with `update-crl`.",
             days_since_expiry=abs(days),
         )
     elif remaining <= CRL_EXPIRY_ALARM_SECONDS:
@@ -539,16 +540,17 @@ def regenerate_local_crl(cfg) -> bool:
     Shared by the server's refresh loop, update-crl and revoke-client. Reads
     cfg.pki_dir and cfg.crl_days.
     """
-    easyrsa = shlex.quote(str(EASYRSA_DIR))
-    pki_dir = shlex.quote(str(cfg.pki_dir))
-    # Passed on every run: a process that did not initialise the PKI has no
-    # EASYRSA_CRL_DAYS, and Easy-RSA then falls back to its own 180 days.
-    crl_days = shlex.quote(str(cfg.crl_days))
+    env = {
+        **os.environ,
+        "EASYRSA": str(EASYRSA_DIR),
+        "EASYRSA_PKI": str(cfg.pki_dir),
+        "EASYRSA_BATCH": "1",
+        # Passed on every run: a process that did not initialise the PKI has no
+        # EASYRSA_CRL_DAYS, and Easy-RSA then falls back to its own 180 days.
+        "EASYRSA_CRL_DAYS": str(cfg.crl_days),
+    }
     result = run(
-        f"cd {easyrsa} && EASYRSA={easyrsa} EASYRSA_PKI={pki_dir} EASYRSA_BATCH=1"
-        f" EASYRSA_CRL_DAYS={crl_days} ./easyrsa gen-crl",
-        check=False,
-        capture=True,
+        ["./easyrsa", "gen-crl"], check=False, capture=True, cwd=EASYRSA_DIR, env=env
     )
     if result.returncode == 0:
         # gen-crl creates a missing crl.pem as 0600, which OpenVPN cannot read
@@ -600,9 +602,8 @@ def crl_refresher(cfg):
     """How to refresh the CRL for this PKI mode, or None when it cannot be.
 
     Local PKI regenerates from its own CA. External PKI re-fetches from the
-    provider, because the CA key is not here. Gating the refresher on local mode
-    - as it was - left external deployments serving the startup CRL forever, so
-    an upstream revocation took effect only on a restart, silently.
+    provider, because the CA key is not here, and without a refresher an
+    upstream revocation takes effect only on a restart.
 
     Returns (callable, description) or None.
     """

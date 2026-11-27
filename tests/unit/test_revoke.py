@@ -8,7 +8,7 @@
 
 """Revocation must never report a client revoked while it still has access.
 
-Two ways that used to happen, both covered here:
+Two ways that can happen, both covered here:
 
 - the live peer removal failing was caught alongside "wg is not installed" and
   logged as an inactive interface, after which the function returned True;
@@ -363,7 +363,7 @@ class TestWireGuardRevocationScope:
         ) == ["alice-wg-phone", "alice-wg-phone/wg-split.conf"]
 
     def test_revocation_without_a_server_key_still_removes_the_peer(self, cli, revoke):
-        """No server key means no config to rebuild; the peer still goes."""
+        """No server key means no config to rebuild. The peer still goes."""
         peer = _add_peer(revoke)
         cli("--protocol", "wireguard", "alice")
         assert not peer.exists()

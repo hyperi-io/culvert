@@ -43,7 +43,7 @@ WIREGUARD_NAMES = [
 
 
 def _issue(directory: Path, client: str) -> list[str]:
-    """Write every file generate-client can produce for client; return the paths."""
+    """Write every file generate-client can produce for client. Return the paths."""
     names = [f"{client}-{suffix}" for suffix in OPENVPN_SUFFIXES]
     names += [f"{client}/{name}" for name in WIREGUARD_NAMES]
     (directory / client).mkdir(exist_ok=True)

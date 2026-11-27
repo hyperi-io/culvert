@@ -280,7 +280,7 @@ class TestOperatorReport:
         assert row.reasons == ("wireguard.endpoint",)
 
     def test_an_unwritable_registry_does_not_fail_the_issue(self, pki: Path) -> None:
-        """The configs are already written; losing the record costs only the report."""
+        """The configs are already written. Losing the record costs only the report."""
         registry = pki / "client-config-state.json"
         registry.write_text(json.dumps({"version": 99}), encoding="utf-8")
 

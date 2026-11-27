@@ -6,10 +6,11 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""update-crl refuses to run without a CA, regenerates and reports the CRL.
+"""update-crl refuses to run without a CA, refreshes the CRL and reports it.
 
-Easy-RSA is not on a CI runner, so regeneration runs against the `easyrsa`
-stand-in from conftest, whose CRL is a record of how it was invoked.
+Easy-RSA is not on a CI runner, so local regeneration runs against the
+`easyrsa` stand-in from conftest, whose CRL is a record of how it was invoked.
+External PKI fetches through scalo's real file provider.
 """
 
 import importlib.util
@@ -138,3 +139,146 @@ class TestCrlExpiryReport:
         update_crl.PKI_DIR.mkdir()
         (update_crl.PKI_DIR / "crl.pem").write_text("not a crl\n", encoding="utf-8")
         assert update_crl.get_crl_expiry() == "unknown"
+
+
+class TestExternalPki:
+    """External PKI has no CA key here, so update-crl fetches the CRL instead."""
+
+    @pytest.fixture
+    def external(self, update_crl, monkeypatch, issue_cert, write_crl, tmp_path):
+        """A server on external PKI whose provider is a directory of real files."""
+        ca = issue_cert("culvert-test-ca", is_ca=True)
+        source = tmp_path / "source"
+        source.mkdir()
+        write_crl(source / "crl.pem", datetime.now(UTC) + timedelta(days=30), issuer=ca)
+        pki = update_crl.PKI_DIR
+        pki.mkdir()
+        (pki / "ca.crt").write_bytes(ca.cert_pem)
+        monkeypatch.setenv("CULVERT_PKI_MODE", "external")
+        monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "file")
+        monkeypatch.setenv("CULVERT_SECRETS_CRL_PATH", str(source / "crl.pem"))
+        return source, pki
+
+    def test_the_crl_is_fetched_not_regenerated(self, update_crl, external, easyrsa):
+        source, pki = external
+        update_crl.main()
+        assert (pki / "crl.pem").read_bytes() == (source / "crl.pem").read_bytes()
+        assert stat.S_IMODE((pki / "crl.pem").stat().st_mode) == 0o644
+
+    def test_no_new_revocation_leaves_the_server_running(
+        self, update_crl, monkeypatch, external, server, easyrsa
+    ):
+        """A reload drops every client, so it happens only for a new revocation."""
+        proc, marker = server
+        monkeypatch.setattr(update_crl, "SERVER_PID", proc.pid)
+        update_crl.main()
+        assert not marker.exists()
+        assert proc.poll() is None
+
+    def test_no_crl_path_exits_1(self, update_crl, external, monkeypatch, easyrsa):
+        _, pki = external
+        monkeypatch.delenv("CULVERT_SECRETS_CRL_PATH")
+        with pytest.raises(SystemExit) as exc_info:
+            update_crl.main()
+        assert exc_info.value.code == 1
+        assert not (pki / "crl.pem").exists()
+
+    def test_a_crl_from_another_ca_is_refused(
+        self, update_crl, external, issue_cert, write_crl, easyrsa
+    ):
+        """OpenVPN refuses every client against a CRL its CA did not sign."""
+        source, pki = external
+        other = issue_cert("someone-else", is_ca=True)
+        write_crl(
+            source / "crl.pem", datetime.now(UTC) + timedelta(days=9), issuer=other
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            update_crl.main()
+        assert exc_info.value.code == 1
+        assert not (pki / "crl.pem").exists()
+
+
+# A stand-in server: argv ends like the image's PID 1, and SIGHUP writes a marker.
+_SERVER = """
+import signal, sys, time
+from pathlib import Path
+signal.signal(signal.SIGHUP, lambda *_: Path(sys.argv[1]).write_text("hup"))
+print("ready", flush=True)
+time.sleep(30)
+"""
+
+
+@pytest.fixture
+def server(tmp_path):
+    """A real process named like culvert's entrypoint, which records a SIGHUP."""
+    import subprocess
+    import sys
+
+    marker = tmp_path / "hup"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _SERVER, str(marker), "/entrypoint.py", "server"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert proc.stdout is not None
+    assert proc.stdout.readline().strip() == "ready"
+    yield proc, marker
+    proc.kill()
+    proc.wait()
+
+
+def _wait_for(path: Path) -> bool:
+    import time
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if path.exists():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+class TestReloadOnNewRevocations:
+    """A CRL that revokes a live session's certificate ends it, as the refresh loop does."""
+
+    def test_the_culvert_server_is_reloaded(self, update_crl, server):
+        proc, marker = server
+        assert update_crl.reload_server(proc.pid) is True
+        assert _wait_for(marker)
+
+    def test_any_other_process_is_left_alone(self, update_crl, tmp_path):
+        import subprocess
+
+        other = subprocess.Popen(["sleep", "30"])
+        try:
+            assert update_crl.reload_server(other.pid) is False
+            assert other.poll() is None
+        finally:
+            other.kill()
+            other.wait()
+
+    def test_a_missing_pid_is_not_the_server(self, update_crl, tmp_path):
+        assert update_crl.reload_server(4242, proc=tmp_path) is False
+
+    def test_an_external_crl_with_a_new_revocation_reloads(
+        self, update_crl, monkeypatch, issue_cert, write_crl, tmp_path, server, easyrsa
+    ):
+        proc, marker = server
+        ca = issue_cert("culvert-test-ca", is_ca=True)
+        source = tmp_path / "source"
+        source.mkdir()
+        expiry = datetime.now(UTC) + timedelta(days=30)
+        write_crl(source / "crl.pem", expiry, issuer=ca, revoked=[4242])
+        pki = update_crl.PKI_DIR
+        pki.mkdir()
+        (pki / "ca.crt").write_bytes(ca.cert_pem)
+        write_crl(pki / "crl.pem", expiry, issuer=ca)
+        monkeypatch.setenv("CULVERT_PKI_MODE", "external")
+        monkeypatch.setenv("CULVERT_SECRETS_PROVIDER", "file")
+        monkeypatch.setenv("CULVERT_SECRETS_CRL_PATH", str(source / "crl.pem"))
+        monkeypatch.setattr(update_crl, "SERVER_PID", proc.pid)
+
+        update_crl.main()
+
+        assert (pki / "crl.pem").read_bytes() == (source / "crl.pem").read_bytes()
+        assert _wait_for(marker), "the server was not reloaded for the new revocation"

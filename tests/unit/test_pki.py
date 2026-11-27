@@ -421,10 +421,8 @@ class TestFetchExternalPki:
 class TestCrlRefresh:
     """The CRL has to keep moving, in BOTH PKI modes.
 
-    External PKI used to be excluded outright: the CRL was fetched once at
-    startup and never again, so a certificate revoked at the upstream CA kept
-    working until someone restarted the container - with the configured refresh
-    interval logged as though it were doing something.
+    An external CRL fetched once at startup and never again lets a certificate
+    revoked at the upstream CA keep working until the container restarts.
     """
 
     @pytest.fixture
@@ -526,7 +524,7 @@ class TestCrlRefresh:
 
     @staticmethod
     def _capture(monkeypatch, level):
-        """Collect lib.pki's log lines at one level; loguru does not reach caplog."""
+        """Collect lib.pki's log lines at one level. Loguru does not reach caplog."""
         import lib.pki
 
         captured = []
@@ -676,7 +674,7 @@ class TestRegenerateLocalCrl:
         assert self._record(cfg)["crl_days"] == "180"
 
     def test_a_new_crl_is_readable_by_openvpn(self, local_cfg, easyrsa):
-        """gen-crl creates crl.pem 0600; OpenVPN reads it as nobody."""
+        """gen-crl creates crl.pem 0600. OpenVPN reads it as nobody."""
         from lib.pki import regenerate_local_crl
 
         assert not (local_cfg.pki_dir / "crl.pem").exists()
@@ -826,7 +824,7 @@ class TestLocalPkiNeverDestroysKeyMaterial:
 
     @staticmethod
     def _run_init(monkeypatch, cfg) -> list[str]:
-        """Run init_pki_local with easy-rsa stubbed out; return its commands."""
+        """Run init_pki_local with easy-rsa stubbed out. Return its commands."""
         import lib.pki as pki_mod
 
         # The easy-rsa install path is hardcoded and absent off-container, so

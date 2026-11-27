@@ -164,7 +164,6 @@ def revoke_client(client_name: str, crl_days: int, missing_ok: bool = False) -> 
         logger.error(f"Failed to revoke certificate: {result.stderr}")
         sys.exit(1)
 
-    # Update CRL
     logger.info("Updating CRL...")
     # The failure, with Easy-RSA's stderr, is logged by the library.
     if not regenerate_local_crl(SimpleNamespace(pki_dir=PKI_DIR, crl_days=crl_days)):

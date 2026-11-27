@@ -127,7 +127,7 @@ def client_config_names(client_name: str, slot: int, https: bool) -> list[str]:
 
 
 def existing_peer_ids(pki_dir: Path, client_name: str) -> list[str]:
-    """Every peer identity currently on disk for a client, slot order.
+    """Every peer identity on disk for a client, in slot order.
 
     Revocation reads this rather than the configured slot count: lowering the
     count must not orphan peers that are still in the server config.
@@ -764,7 +764,6 @@ def start_wg_connection_monitor(cfg, interval: int = 15) -> None:
             time.sleep(interval)
 
             try:
-                # Get handshakes
                 hs_result = subprocess.run(
                     ["wg", "show", "wg0", "latest-handshakes"],
                     capture_output=True,

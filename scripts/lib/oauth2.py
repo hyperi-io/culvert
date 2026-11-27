@@ -14,6 +14,7 @@ configs, and configures OpenVPN management interfaces.
 """
 
 import re
+import secrets
 import sys
 from pathlib import Path
 
@@ -57,7 +58,6 @@ def validate_oauth2_tls_cert(cert_path: str, server_cn: str) -> None:
                     if "DNS:" in part:
                         cert_sans.append(part.split("DNS:")[-1].strip())
 
-    # Check match
     matched = False
 
     if cert_cn == server_cn:
@@ -87,7 +87,6 @@ def validate_oauth2_tls_cert(cert_path: str, server_cn: str) -> None:
         logger.error("TLS certificate/server CN mismatch")
         sys.exit(1)
 
-    # Check expiry
     result = run(
         ["openssl", "x509", "-in", cert_path, "-noout", "-checkend", "0"],
         check=False,
@@ -129,20 +128,23 @@ def setup_oauth2(cfg) -> None:
 
     validate_oauth2_tls_cert(cfg.oauth2_tls_cert, cfg.server_cn)
 
-    # Generate HTTP secret if not set
     http_secret = cfg.oauth2_http_secret
     if not http_secret:
         logger.warning("CULVERT_OAUTH2_HTTP_SECRET not set, generating random secret")
-        result = run("openssl rand -hex 16", capture=True)
-        http_secret = result.stdout.strip()
+        http_secret = secrets.token_hex(16)
 
     logger.info(f"  Issuer: {cfg.oauth2_issuer}")
     logger.info(f"  Client ID: {cfg.oauth2_client_id[:8]}...")
     logger.info(f"  TLS Cert: {cfg.oauth2_tls_cert}")
+    if cfg.oauth2_validate_expression.strip():
+        logger.info(f"  Login rule: {cfg.oauth2_validate_expression.strip()}")
+    else:
+        logger.warning(
+            "No CULVERT_OAUTH2_VALIDATE_EXPRESSION: any IdP user in the allowed"
+            " groups can sign in with any valid client certificate"
+        )
 
-    # Generate management password
-    result = run("openssl rand -hex 16", capture=True)
-    mgmt_password = result.stdout.strip()
+    mgmt_password = secrets.token_hex(16)
     write_secret("/etc/vpn/management.pwd", mgmt_password)
 
     Path("/etc/openvpn-auth-oauth2").mkdir(exist_ok=True)
@@ -232,6 +234,8 @@ def _oauth2_config(
     }
     if cfg.oauth2_template:
         http_section["template"] = cfg.oauth2_template
+    if cfg.oauth2_check_ipaddr:
+        http_section["check"] = {"ipaddr": True}
 
     oauth2_section: dict = {
         "issuer": cfg.oauth2_issuer,
@@ -241,12 +245,15 @@ def _oauth2_config(
         },
         "scopes": [s.strip() for s in cfg.oauth2_scopes.split(",") if s.strip()],
     }
+    validate: dict = {}
     if cfg.oauth2_validate_groups:
-        oauth2_section["validate"] = {
-            "groups": [
-                g.strip() for g in cfg.oauth2_validate_groups.split(",") if g.strip()
-            ]
-        }
+        validate["groups"] = [
+            g.strip() for g in cfg.oauth2_validate_groups.split(",") if g.strip()
+        ]
+    if cfg.oauth2_validate_expression.strip():
+        validate["expression"] = cfg.oauth2_validate_expression.strip()
+    if validate:
+        oauth2_section["validate"] = validate
 
     return {
         "http": http_section,

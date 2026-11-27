@@ -54,7 +54,7 @@ class TestWireGuard:
     def test_full_tunnel_connect_and_reach_target(self, wireguard_full_connection):
         """The full-tunnel config, which wg-quick routes a different way.
 
-        Split gets a plain route for the pushed prefixes; full gets an fwmark and
+        Split gets a plain route for the pushed prefixes. Full gets an fwmark and
         a policy rule, which is also the path that needs
         net.ipv4.conf.all.src_valid_mark - requested on the client in the compose
         file, because wg-quick's own attempt to set it fails inside a container.

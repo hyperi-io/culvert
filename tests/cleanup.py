@@ -43,7 +43,7 @@ def _load(name: str, path: Path) -> ModuleType:
     """Import a module from a path under a given name.
 
     Both tiers keep their cleanup in a file called conftest.py, so they cannot
-    both be imported as the top-level ``conftest``; each gets its own name here.
+    both be imported as the top-level ``conftest``. Each gets its own name here.
     """
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:

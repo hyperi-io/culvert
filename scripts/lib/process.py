@@ -9,7 +9,7 @@
 """Process management for culvert container.
 
 Provides ProcessManager for supervised child processes with graceful
-shutdown, plus the run() shell command helper and directory/
+shutdown, plus the run() command helper and directory/
 log rotation setup functions.
 """
 
@@ -38,11 +38,20 @@ RELOADS_ON_SIGHUP = frozenset({"stunnel"})
 
 
 def run(
-    cmd: str | list, check: bool = True, capture: bool = False
+    cmd: list[str],
+    check: bool = True,
+    capture: bool = False,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run a shell command."""
+    """Run a command from its argv, never through a shell.
+
+    Raises:
+        TypeError: cmd is a string, which only a shell could split.
+
+    """
     if isinstance(cmd, str):
-        cmd = ["sh", "-c", cmd]
+        raise TypeError(f"run() takes an argv list, not a shell string: {cmd!r}")
     return subprocess.run(
         cmd,
         check=check,
@@ -50,6 +59,8 @@ def run(
         text=True,
         encoding="utf-8",
         errors="replace",
+        cwd=cwd,
+        env=env,
     )
 
 
@@ -57,7 +68,7 @@ def write_secret(path: Path | str, content: str) -> None:
     """Write secret material with 0600 permissions from creation.
 
     A plain write_text()-then-chmod() leaves the file readable at the
-    default umask between the two calls; opening with mode 0o600 (and
+    default umask between the two calls. Opening with mode 0o600 (and
     fchmod for pre-existing files) closes that window.
     """
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

@@ -11,7 +11,7 @@
 
 Each run issues material for ONE named client: its own certificate and its
 own tls-crypt-v2 key, so a client can be revoked individually. Pass --name
-per user or per device; with OIDC SSO enabled, a live IdP login is required
+per user or per device. With OIDC SSO enabled, a live IdP login is required
 on top of the certificate.
 
 Tuned for OpenVPN 2.7+ with DCO, and for 4G/mobile links.
@@ -28,7 +28,7 @@ Outputs vary by --protocol flag:
   all:       both sets of files
 
 A client identity carries CULVERT_SHARED_CLIENT_SLOTS concurrent connections by
-default. OpenVPN allows that on one certificate; WireGuard cannot share a key,
+default. OpenVPN allows that on one certificate. WireGuard cannot share a key,
 so it gets one independent peer per slot.
 """
 
@@ -52,7 +52,7 @@ from lib.clients import (  # noqa: E402
     client_files,
     collides_with_proxy_stunnel,
 )
-from lib.pki import client_tc_key_path, validate_client_name  # noqa: E402
+from lib.pki import EASYRSA_DIR, client_tc_key_path, validate_client_name  # noqa: E402
 from lib.process import restore_files, snapshot_files, write_secret  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
@@ -153,7 +153,7 @@ def generate_certificate(
     env = os.environ.copy()
     env.update(
         {
-            "EASYRSA": "/usr/share/easy-rsa",
+            "EASYRSA": str(EASYRSA_DIR),
             "EASYRSA_PKI": str(pki_dir),
             "EASYRSA_BATCH": "1",
             "EASYRSA_CERT_EXPIRE": str(cert_days),
@@ -170,14 +170,14 @@ def generate_certificate(
     # Generate request and sign
     subprocess.run(
         ["./easyrsa", "gen-req", client_name, "nopass"],
-        cwd="/usr/share/easy-rsa",
+        cwd=EASYRSA_DIR,
         env=env,
         check=True,
         capture_output=True,
     )
     subprocess.run(
         ["./easyrsa", "sign-req", "client", client_name],
-        cwd="/usr/share/easy-rsa",
+        cwd=EASYRSA_DIR,
         env=env,
         check=True,
         capture_output=True,
@@ -543,7 +543,7 @@ def generate_wireguard_configs(
                 )
                 logger.info("Allocated WireGuard IP", peer=peer, ip=client_ip)
 
-                # Reuse the slot's keypair by default; mint only when it does not exist
+                # Reuse the slot's keypair by default. Mint only when it does not exist
                 # yet or rotate is requested. Regenerating it changes the server's
                 # accepted peer and silently breaks configs already issued to that slot.
                 if pubkeys:
@@ -885,12 +885,10 @@ Examples:
 
     # ---- OpenVPN ----
     if generate_openvpn:
-        # Check PKI
         if not (cfg.pki_dir / "ca.crt").exists():
             logger.error("PKI not initialized. Start the server first.")
             sys.exit(1)
 
-        # Handle certificate
         cert_path = cfg.pki_dir / "issued" / f"{client_name}.crt"
         key_path = cfg.pki_dir / "private" / f"{client_name}.key"
         if args.config_only:
@@ -1086,7 +1084,7 @@ Examples:
         logger.info("  WireGuard: Import .conf into WireGuard client app")
         if cfg.wg_https_tunnel_enabled:
             logger.info(
-                "  Over HTTPS: run wstunnel first, then activate the -wg-https- config"
+                "  Over HTTPS: run wstunnel first, then activate a wg-https config"
             )
 
 

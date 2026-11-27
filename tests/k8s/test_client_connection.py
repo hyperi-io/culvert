@@ -61,7 +61,7 @@ TIER_LABEL_KEY = "culvert-test-tier"
 # any tunnel and every connectivity assertion below would prove nothing. This
 # policy admits the culvert pods only, by the label helm_values puts on them.
 # Traffic that arrives through the tunnel is masqueraded to the server's pod IP,
-# so it passes; the client's own packets do not.
+# so it passes. The client's own packets do not.
 _TARGET_NETWORK_POLICY = {
     "apiVersion": "networking.k8s.io/v1",
     "kind": "NetworkPolicy",

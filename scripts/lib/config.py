@@ -165,11 +165,28 @@ def validate_cidr_routes(value: str, name: str) -> None:
             raise ValidationError(f"{name} contains invalid CIDR: '{route}'")
 
 
+def validate_destinations(value: str, name: str) -> None:
+    """Validate comma-separated allowed destinations: CIDR or CIDR:PORT/PROTO."""
+    from lib.network import parse_destinations
+
+    try:
+        parse_destinations(value)
+    except ValueError as exc:
+        raise ValidationError(f"{name} entry {exc}") from exc
+
+
+# OpenVPN's data-ciphers: names joined by ':', each optional behind a '?'.
+_DATA_CIPHERS = re.compile(r"\??[A-Za-z0-9-]+(?::\??[A-Za-z0-9-]+)*")
+
+# OpenVPN's own bounds for max-clients.
+MAX_CLIENTS_RANGE = range(1, 16_777_216)
+
+
 def validate_crl_days(value: int, invalid: str, name: str) -> None:
     """Validate the CRL lifetime: a positive whole number of days.
 
     `invalid` carries the original text when the raw setting could not be
-    parsed as an integer at all; `value` is then the silent 180 fallback.
+    parsed as an integer at all, and `value` is then the 180 fallback.
     """
     if invalid:
         raise ValidationError(f"{name}='{invalid}' must be a whole number of days")
@@ -206,7 +223,7 @@ class Config:
     # The address clients dial, when it is not the certificate name. server_cn
     # cannot serve both -- clients match it with verify-x509-name and stunnel
     # checkHost, so repointing it breaks every issued client. Empty means "same
-    # as server_cn"; accepts a hostname, an IPv4 literal or a bracketed IPv6.
+    # as server_cn". Takes a hostname, an IPv4 literal or a bracketed IPv6.
     external_endpoint: str = ""
 
     # OpenVPN data-channel cipher order (NCP negotiation). AES-256-GCM first is
@@ -234,7 +251,7 @@ class Config:
     protocol: str = "openvpn"
 
     # Tunnel addressing lives in 10.8.0.0/22, one /24 per listener. The
-    # edge-fleet preset moves to CGNAT slices instead; docs/addressing.md
+    # edge-fleet preset moves to CGNAT slices instead, and docs/addressing.md
     # covers when each applies. Cascade-overridable.
 
     # UDP Listener
@@ -273,7 +290,7 @@ class Config:
     # clients cannot reach each other (client_isolation, overridable),
     # nothing outside may initiate into the tunnels except
     # downstream_admin_cidrs, and if allowed_destinations is set clients
-    # may only initiate to those CIDRs.
+    # may only initiate to those entries, each a CIDR or CIDR:PORT/PROTO.
     routing_control_enabled: bool = False
     client_isolation: bool = True
     allowed_destinations: str = ""
@@ -289,11 +306,11 @@ class Config:
     # external PKI on AWS authenticates with those same instance credentials.
     block_link_local: bool = True
 
-    # Network Profile -- a descriptive label only; tuning is carried by the
+    # Network Profile -- a descriptive label only. Tuning is carried by the
     # profile YAML, not derived from this string.
     network_profile: str = "default"
 
-    # Performance -- plain baseline defaults; a profile YAML overrides via cascade
+    # Performance -- plain baseline defaults, which a profile YAML overrides
     sndbuf: int = 0
     rcvbuf: int = 0
     tun_mtu: int = 1500
@@ -332,6 +349,11 @@ class Config:
     oauth2_http_secret: str = ""
     oauth2_scopes: str = "openid,profile,email"
     oauth2_validate_groups: str = ""
+    # A CEL rule the login must pass, e.g. openvpn.commonName == user.username to
+    # tie the IdP user to the certificate. Empty leaves the two unrelated.
+    oauth2_validate_expression: str = ""
+    # Refuse a login whose browser IP differs from the VPN client's IP.
+    oauth2_check_ipaddr: bool = False
     oauth2_template: str = ""
     oauth2_assets_path: str = "/etc/openvpn-auth-oauth2/assets"
     oauth2_udp_port: int = 9000
@@ -357,7 +379,7 @@ class Config:
     otel_enabled: bool = False
     otel_endpoint: str = ""
     otel_protocol: str = "grpc"
-    # Kept for existing configs; TLS follows the endpoint scheme, http:// is plaintext.
+    # Kept for existing configs. TLS follows the endpoint scheme, http:// is plaintext.
     otel_insecure: bool = False
 
     crl_refresh_hours: int = 24
@@ -403,8 +425,7 @@ class Config:
 
     def __post_init__(self):
         """Apply network profile defaults and derived identity fields."""
-        # Derive ca_cn from org_name when not explicitly set.
-        # "Acme" -> "Acme VPN CA"; empty org_name -> "VPN CA".
+        # "Acme" -> "Acme VPN CA", and an empty org_name -> "VPN CA".
         if not self.ca_cn:
             if self.org_name:
                 self.ca_cn = f"{self.org_name} VPN CA"
@@ -415,11 +436,6 @@ class Config:
         # profile YAML (profiles/*.yaml or a user-supplied file). network_profile
         # is only a label. Values arrive already set via the settings cascade.
         logger.info(f"Network profile: {self.network_profile}")
-
-        # Per-listener OAuth2 inheritance: if no explicit per-listener
-        # setting, inherit from global oauth2_enabled
-        # (from_settings reads these explicitly, but for direct
-        # construction we apply inheritance here)
 
         # Calculate max_clients if not explicitly set
         if self.max_clients is None:
@@ -531,12 +547,12 @@ class Config:
         """Build Config from scalo settings cascade.
 
         Reads all fields from Dynaconf settings with CULVERT_ env prefix.
-        Parses 'auto' max_clients to None; explicit int values are kept.
+        An unset, empty or 'auto' max_clients is None, sized in __post_init__.
         """
         s = _get_settings()
 
         raw_max = s.get("max_clients", None)
-        if raw_max is None or str(raw_max).lower() == "auto":
+        if raw_max is None or str(raw_max).strip().lower() in ("", "auto"):
             max_clients = None
         else:
             max_clients = _settings_int(s, "max_clients", 0)
@@ -630,6 +646,8 @@ class Config:
             oauth2_http_secret=s.get("oauth2_http_secret", ""),
             oauth2_scopes=s.get("oauth2_scopes", "openid,profile,email"),
             oauth2_validate_groups=s.get("oauth2_validate_groups", ""),
+            oauth2_validate_expression=s.get("oauth2_validate_expression", ""),
+            oauth2_check_ipaddr=_settings_bool(s, "oauth2_check_ipaddr", False),
             oauth2_template=s.get("oauth2_template", ""),
             oauth2_assets_path=s.get(
                 "oauth2_assets_path",
@@ -687,7 +705,7 @@ class Config:
     def client_endpoint(self) -> str:
         """The address issued client configs dial.
 
-        Every address site reads this; the certificate-identity sites
+        Every address site reads this, and the certificate-identity sites
         (verify-x509-name, stunnel checkHost, EASYRSA_REQ_CN) keep reading
         server_cn.
         """
@@ -703,7 +721,7 @@ class Config:
         errors: list[str] = []
         warnings: list[str] = []
 
-        # Server CN -- hard requirement for OpenVPN; advisory for WireGuard-only.
+        # Server CN -- required for OpenVPN, advisory for WireGuard-only.
         # The WireGuard server runtime does not use server_cn, but generated
         # client configs still want it for the Endpoint line.
         if self.protocol in ("openvpn", "both"):
@@ -783,13 +801,43 @@ class Config:
         # Push routes + routing-control CIDR lists
         for name, value in [
             ("CULVERT_PUSH_ROUTES", self.push_routes),
-            ("CULVERT_ALLOWED_DESTINATIONS", self.allowed_destinations),
             ("CULVERT_DOWNSTREAM_ADMIN_CIDRS", self.downstream_admin_cidrs),
         ]:
             try:
                 validate_cidr_routes(value, name)
             except ValidationError as e:
                 errors.append(str(e))
+        try:
+            validate_destinations(
+                self.allowed_destinations, "CULVERT_ALLOWED_DESTINATIONS"
+            )
+        except ValidationError as e:
+            errors.append(str(e))
+
+        # Rendered into every OpenVPN server config, so a newline would add a directive.
+        if not _DATA_CIPHERS.fullmatch(self.data_ciphers):
+            errors.append(
+                f"CULVERT_DATA_CIPHERS={self.data_ciphers!r} must be cipher names"
+                " separated by ':', e.g. AES-256-GCM:CHACHA20-POLY1305"
+            )
+
+        if (
+            self.protocol in ("openvpn", "both")
+            and self.max_clients not in MAX_CLIENTS_RANGE
+        ):
+            errors.append(
+                f"CULVERT_MAX_CLIENTS={self.max_clients} must be 'auto' or between"
+                f" {MAX_CLIENTS_RANGE.start} and {MAX_CLIENTS_RANGE.stop - 1}"
+            )
+
+        # The NAT rule and wg0's Address are built from it in every WireGuard mode.
+        if self.protocol in ("wireguard", "both"):
+            try:
+                ipaddress.IPv4Network(self.wg_network, strict=False)
+            except ValueError:
+                errors.append(
+                    f"CULVERT_WG_NETWORK={self.wg_network!r} is not an IPv4 CIDR"
+                )
 
         if not self.routing_control_enabled and (
             self.allowed_destinations or self.downstream_admin_cidrs
@@ -844,7 +892,7 @@ class Config:
                 " CULVERT_CLIENT_DOWNLOAD_TLS_KEY must be set together"
             )
 
-        # wstunnel serves WSS with the same cert pair; without it the
+        # wstunnel serves WSS with the same cert pair. Without it the
         # wstunnel server exits at startup and the HTTPS-tunnel port is dead
         if self.wg_https_tunnel_enabled and self.protocol in (
             "wireguard",
@@ -910,15 +958,15 @@ class Config:
                         "CULVERT_SECRETS_AWS_REGION is required for aws provider"
                     )
 
-        # Shared client slots. Each WireGuard slot consumes one tunnel IP, so a
-        # raised count shrinks how many clients the pool can hold. Only a count
-        # above the shipped default warns: the default's cost is documented, and
-        # a warning every stock deployment emits is one nobody reads.
         if self.drain_seconds < 0:
             errors.append(
                 f"CULVERT_DRAIN_SECONDS={self.drain_seconds} must be 0 or more"
             )
 
+        # Shared client slots. Each WireGuard slot consumes one tunnel IP, so a
+        # raised count shrinks how many clients the pool can hold. Only a count
+        # above the shipped default warns: the default's cost is documented, and
+        # a warning every stock deployment emits is one nobody reads.
         if self.shared_client_slots < 1:
             errors.append(
                 f"CULVERT_SHARED_CLIENT_SLOTS={self.shared_client_slots}"
@@ -973,8 +1021,8 @@ class Config:
                     ("OpenVPN-HTTPS", self.https_network, self.https_netmask)
                 )
             for label, net, mask in candidates:
-                # Skip malformed netmasks - already reported above; can't
-                # overlap-check invalid input.
+                # Skip malformed netmasks - already reported above, and invalid
+                # input cannot be overlap-checked.
                 subnet = _subnet_or_none(net, mask)
                 if subnet is not None:
                     overlap_subnets.append((label, subnet))
@@ -1106,9 +1154,9 @@ def _settings_int(s, key: str, default: int) -> int:
 def _settings_crl_days(s) -> tuple[int, str]:
     """Read CULVERT_CRL_DAYS as (value, invalid_raw).
 
-    Unlike _settings_int, a non-numeric value does not silently become the
-    default: value falls back to 180 to keep crl_days a plain int, and
-    invalid_raw carries the original text for validate() to reject.
+    Unlike _settings_int, a non-numeric value does not stop the load: value
+    falls back to 180 to keep crl_days a plain int, and invalid_raw carries the
+    original text for validate() to reject.
     """
     val = s.get("crl_days", 180)
     if isinstance(val, int):

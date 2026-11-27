@@ -24,7 +24,7 @@ Two consumers read it:
   hands it the always-on ports only.
 
 This module imports ``scalo.deployment``, which is gated behind the
-``[deployment]`` extra (pydantic). It is a dev/CI-time import only; the culvert
+``[deployment]`` extra (pydantic). It is a dev/CI-time import only. The culvert
 runtime never imports it.
 """
 

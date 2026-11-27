@@ -85,7 +85,7 @@ class TestConfigDefaults:
         assert cfg.udp_enabled is True
 
     def test_default_tcp_disabled(self, clean_env):
-        """Default is OpenVPN UDP-only; TCP is opt-in."""
+        """Default is OpenVPN UDP-only. TCP is opt-in."""
         cfg = Config.from_settings()
         assert cfg.tcp_enabled is False
 
@@ -219,7 +219,7 @@ class TestDrainSeconds:
 
 
 class TestConfigNetworkProfiles:
-    """network_profile is a descriptive label; tuning is data in the YAML."""
+    """network_profile is a descriptive label. Tuning is data in the YAML."""
 
     def test_default_profile_buffers(self, clean_env):
         """Default profile uses 0 buffers (OS auto-tuning)."""
@@ -298,10 +298,14 @@ class TestConfigMaxClients:
         cfg = Config.from_settings()
         assert cfg.max_clients == 50
 
-    def test_max_clients_auto_string(self, clean_env, monkeypatch):
-        monkeypatch.setenv("CULVERT_MAX_CLIENTS", "auto")
+    @pytest.mark.parametrize("value", ["auto", " AUTO ", ""])
+    def test_max_clients_auto_string(self, clean_env, monkeypatch, value):
+        """An empty value is unset, as compose passes a bare name it has no value for.
+
+        Read as 0, it renders max-clients 0, and OpenVPN refuses to start.
+        """
+        monkeypatch.setenv("CULVERT_MAX_CLIENTS", value)
         cfg = Config.from_settings()
-        # 'auto' parsed to None, then __post_init__ calculates
         assert isinstance(cfg.max_clients, int)
         assert cfg.max_clients >= 10
 
@@ -466,6 +470,16 @@ class TestShippedProfiles:
         # Informed opt-in: ChaCha20 leads (leaves CNSA), AES-256-GCM still offered.
         assert cfg.data_ciphers == "CHACHA20-POLY1305:AES-256-GCM"
 
+    @pytest.mark.parametrize(
+        "ciphers", ["AES-256-GCM", "AES-256-GCM:?CHACHA20-POLY1305", "aes-256-gcm"]
+    )
+    def test_data_ciphers_forms_openvpn_takes(self, clean_env, monkeypatch, ciphers):
+        """A ? marks a cipher optional, which OpenVPN 2.7 accepts."""
+        monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
+        monkeypatch.setenv("CULVERT_DATA_CIPHERS", ciphers)
+        exited, errors = _validate_capturing(Config.from_settings())
+        assert not exited, errors
+
     def test_default_data_ciphers_is_the_compliant_default(self, clean_env):
         """With no profile, the cipher order stays CNSA-compliant (AES first)."""
         cfg = Config.from_settings()
@@ -486,6 +500,12 @@ class TestShippedProfiles:
         assert cfg.tcp_enabled is True
         assert cfg.oauth2_enabled is True
         assert cfg.oauth2_validate_groups == "vpn-users"
+        # The IdP login must be the person the certificate was issued to.
+        assert cfg.oauth2_validate_expression == (
+            "auth.mode == 'non-interactive' || (has(token.claims.preferred_username)"
+            " && openvpn.commonName == user.username)"
+        )
+        assert cfg.oauth2_check_ipaddr is False
 
     def test_travel(self, clean_env, monkeypatch):
         cfg = self._load(
@@ -840,7 +860,7 @@ class TestExternalEndpoint:
 
 
 class TestDnsDomainValidation:
-    """The routing prefix is tolerated; a malformed zone is not."""
+    """The routing prefix is tolerated, and a malformed zone is not."""
 
     @pytest.mark.parametrize("domain", ["corp.example.com", "~corp.example.com", ""])
     def test_accepts(self, clean_env, monkeypatch, domain):
@@ -880,9 +900,8 @@ class TestProtocolAwareValidation:
     def test_validate_detects_subnet_overlap(self, clean_env, monkeypatch):
         """protocol=both with overlapping OpenVPN/WG subnets fails validation.
 
-        Also proves the lib.wireguard import in validate() resolves (it was
-        previously a bare `from wireguard import` that raised ImportError and
-        silently skipped the overlap check).
+        Also proves the lib.wireguard import in validate() resolves: an
+        ImportError there skips the overlap check with only a warning.
         """
         import pytest
 
@@ -1003,7 +1022,10 @@ class TestRoutingControlConfig:
         monkeypatch.setenv("CULVERT_SERVER_CN", "vpn.example.com")
         monkeypatch.setenv("CULVERT_ROUTING_CONTROL_ENABLED", "true")
         monkeypatch.setenv("CULVERT_CLIENT_ISOLATION", "false")
-        monkeypatch.setenv("CULVERT_ALLOWED_DESTINATIONS", "100.96.0.0/16,10.20.0.0/24")
+        monkeypatch.setenv(
+            "CULVERT_ALLOWED_DESTINATIONS",
+            "100.96.0.0/16,10.20.0.0/24,198.19.0.0/16:8080/tcp",
+        )
         monkeypatch.setenv("CULVERT_DOWNSTREAM_ADMIN_CIDRS", "10.10.0.0/16")
         cfg = Config.from_settings()
         cfg.validate()
@@ -1142,6 +1164,45 @@ class TestServerSettingValidation:
                 {"CULVERT_UDP_ENABLED": "false"},
                 "At least one OpenVPN listener must be enabled",
                 id="no-listener",
+            ),
+            pytest.param(
+                {"CULVERT_DATA_CIPHERS": "AES-256-GCM\nscript-security 3"},
+                "CULVERT_DATA_CIPHERS=",
+                id="data-ciphers-newline",
+            ),
+            pytest.param(
+                {"CULVERT_DATA_CIPHERS": "AES-256-GCM CHACHA20-POLY1305"},
+                "CULVERT_DATA_CIPHERS=",
+                id="data-ciphers-space",
+            ),
+            pytest.param(
+                {"CULVERT_MAX_CLIENTS": "0"}, "CULVERT_MAX_CLIENTS=0", id="max-zero"
+            ),
+            pytest.param(
+                {"CULVERT_MAX_CLIENTS": "-3"}, "CULVERT_MAX_CLIENTS=-3", id="max-neg"
+            ),
+            pytest.param(
+                {"CULVERT_MAX_CLIENTS": "16777216"},
+                "CULVERT_MAX_CLIENTS=16777216",
+                id="max-over",
+            ),
+            pytest.param(
+                {
+                    "CULVERT_PROTOCOL": "wireguard",
+                    "CULVERT_WG_NETWORK": "10.8.3.0/24; id",
+                },
+                "CULVERT_WG_NETWORK='10.8.3.0/24; id' is not an IPv4 CIDR",
+                id="wg-network-shell",
+            ),
+            pytest.param(
+                {"CULVERT_PROTOCOL": "both", "CULVERT_WG_NETWORK": "fd00:8::/64"},
+                "CULVERT_WG_NETWORK='fd00:8::/64' is not an IPv4 CIDR",
+                id="wg-network-ipv6",
+            ),
+            pytest.param(
+                {"CULVERT_ALLOWED_DESTINATIONS": "10.20.0.0/16:8080"},
+                "CULVERT_ALLOWED_DESTINATIONS entry '10.20.0.0/16:8080'",
+                id="destination-port-without-protocol",
             ),
             pytest.param(
                 {

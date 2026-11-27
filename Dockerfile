@@ -33,9 +33,9 @@ LABEL openvpn.features="DCO,TLS1.3,AEAD,4G-optimized,OIDC-SSO"
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENVPN_MIN_VERSION="2.7.0"
 ARG OPENVPN_AUTH_OAUTH2_VERSION="2.3.3"
-# Public release checksums. BuildKit's SecretsUsedInArgOrEnv check flags these two only for the AUTH in their name.
-ARG OPENVPN_AUTH_OAUTH2_SHA256_AMD64="5c7c455a1edae10570d30f2b58e09722a4912b45cfb2a08200abd492a7aa00ae"
-ARG OPENVPN_AUTH_OAUTH2_SHA256_ARM64="be575565fac3af177f1c27a4cec1ebffd24a29bce23fe61023e80e5841c540c7"
+# Public release checksums, named without a bare AUTH so BuildKit's SecretsUsedInArgOrEnv check passes them.
+ARG OAUTH2_DEB_SHA256_AMD64="5c7c455a1edae10570d30f2b58e09722a4912b45cfb2a08200abd492a7aa00ae"
+ARG OAUTH2_DEB_SHA256_ARM64="be575565fac3af177f1c27a4cec1ebffd24a29bce23fe61023e80e5841c540c7"
 
 # openvpn from its signed apt repo, one pinned key and a version floor: docs/supply-chain.md.
 # The pinned key expires in 2030, so re-pin it when it rotates.
@@ -86,8 +86,8 @@ RUN apt-get update \
 # Source: https://github.com/jkroepke/openvpn-auth-oauth2
 RUN ARCH=$(dpkg --print-architecture) \
     && case "${ARCH}" in \
-         amd64) OAUTH2_SHA256="${OPENVPN_AUTH_OAUTH2_SHA256_AMD64}" ;; \
-         arm64) OAUTH2_SHA256="${OPENVPN_AUTH_OAUTH2_SHA256_ARM64}" ;; \
+         amd64) OAUTH2_SHA256="${OAUTH2_DEB_SHA256_AMD64}" ;; \
+         arm64) OAUTH2_SHA256="${OAUTH2_DEB_SHA256_ARM64}" ;; \
          *) echo "Unsupported architecture: ${ARCH}" >&2 && exit 1 ;; \
        esac \
     && DEB_FILE="openvpn-auth-oauth2_${OPENVPN_AUTH_OAUTH2_VERSION}_linux_${ARCH}.deb" \

@@ -7,17 +7,20 @@
 #  License:      Apache-2.0
 #  Copyright:    (c) 2026 HYPERI PTY LIMITED
 
-"""Update Certificate Revocation List.
+"""Refresh the Certificate Revocation List now, rather than at the next refresh.
 
-Run periodically (e.g., via cron or entrypoint) to ensure CRL doesn't expire.
+Local PKI regenerates the CRL from its CA. External PKI has no CA key here, so
+it re-fetches the CRL from CULVERT_SECRETS_CRL_PATH, as the server's refresh
+loop does.
 
 Usage: update-crl
 """
 
+import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 # Allow importing lib/ modules from scripts directory (container and dev paths)
 for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
@@ -26,7 +29,7 @@ for _scripts_path in ["/etc/vpn/scripts", str(Path(__file__).parent)]:
 
 import scalo.logger  # noqa: E402
 from lib.config import Config  # noqa: E402
-from lib.pki import regenerate_local_crl  # noqa: E402
+from lib.pki import crl_refresher, revoked_serials  # noqa: E402
 from scalo.logger import logger  # noqa: E402
 
 # ===============================================================================
@@ -34,6 +37,9 @@ from scalo.logger import logger  # noqa: E402
 # ===============================================================================
 
 PKI_DIR = Path("/etc/vpn/pki")
+
+# The container's PID 1 is the server, whose SIGHUP handler reloads OpenVPN.
+SERVER_PID = 1
 
 
 # ===============================================================================
@@ -62,13 +68,53 @@ def get_crl_expiry() -> str:
     return "unknown"
 
 
-def update_crl(crl_days: int) -> None:
-    """Regenerate the CRL through the shared PKI library and report its expiry."""
-    logger.info("Updating CRL...")
+def reload_server(pid: int | None = None, proc: Path = Path("/proc")) -> bool:
+    """SIGHUP the culvert server at pid, so sessions on newly revoked certs end.
 
-    # The failure, with Easy-RSA's stderr, is logged by the library.
-    if not regenerate_local_crl(SimpleNamespace(pki_dir=PKI_DIR, crl_days=crl_days)):
+    OpenVPN checks the CRL at the next handshake, so a session already up runs
+    on until it renegotiates. The reload drops every connected client, as the
+    background refresh does. Returns False when pid is not the culvert server.
+    """
+    pid = SERVER_PID if pid is None else pid
+    try:
+        argv = (proc / str(pid) / "cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    if not any(arg.endswith(b"entrypoint.py") for arg in argv) or b"server" not in argv:
+        return False
+    os.kill(pid, signal.SIGHUP)
+    return True
+
+
+def update_crl(cfg) -> None:
+    """Refresh the CRL the way cfg's PKI mode allows, then report its expiry."""
+    refresher = crl_refresher(cfg)
+    if refresher is None:
+        logger.error(
+            "CULVERT_PKI_MODE=external with no CULVERT_SECRETS_CRL_PATH, so there"
+            " is no CRL to fetch. Set it to where your CA publishes the CRL."
+        )
         sys.exit(1)
+    refresh, how = refresher
+    logger.info(f"Updating CRL, {how}...")
+
+    before = revoked_serials(cfg.pki_dir)
+    # The library logs why a refresh failed.
+    if not refresh(cfg):
+        sys.exit(1)
+
+    newly = revoked_serials(cfg.pki_dir) - before
+    if newly:
+        if reload_server():
+            logger.info(
+                "CRL revokes new certificates, reloaded the server", count=len(newly)
+            )
+        else:
+            logger.warning(
+                "CRL revokes new certificates, and no culvert server is PID 1 to"
+                " reload. Their sessions last until they renegotiate.",
+                count=len(newly),
+            )
 
     crl_path = PKI_DIR / "crl.pem"
     expiry = get_crl_expiry()
@@ -84,7 +130,7 @@ def update_crl(crl_days: int) -> None:
 
 
 def main() -> None:
-    """Regenerate the CRL from the local PKI."""
+    """Refresh the CRL from the local CA or the external provider."""
     # culvert emits no spans, so no OTLP span exporter is started.
     scalo.logger.setup(otel_tracing=False)
 
@@ -96,7 +142,9 @@ def main() -> None:
         logger.error("CA certificate not found. Initialize PKI first.")
         sys.exit(1)
 
-    update_crl(Config.from_settings().crl_days)
+    cfg = Config.from_settings()
+    cfg.pki_dir = PKI_DIR
+    update_crl(cfg)
 
 
 if __name__ == "__main__":

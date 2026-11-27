@@ -86,8 +86,8 @@ main() {
     if [[ -z "${skip_e2e}" ]]; then
         log_header "End-to-End Tests"
 
-        # E2E runs against a self-contained docker-compose stack (the same
-        # path CI uses; see tests/e2e/conftest.py). Requires Docker.
+        # E2E runs against a self-contained docker-compose stack, the same
+        # path CI uses (tests/e2e/conftest.py). Requires Docker.
         if command -v docker >/dev/null 2>&1; then
             if (cd "${SCRIPT_DIR}/.." && pytest tests/e2e/ -m e2e ${verbose}); then
                 log_info "E2E tests: PASSED"

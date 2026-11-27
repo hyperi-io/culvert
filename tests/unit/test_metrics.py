@@ -46,7 +46,7 @@ RUNTIME_FAMILIES = {
 
 RUNTIME_COUNTERS = {name for name in RUNTIME_FAMILIES if name.endswith("_total")}
 
-# The names and label keys consumers query; changing either breaks them.
+# The names and label keys consumers query. Changing either breaks them.
 VPN_FAMILIES = {
     "vpn_bytes_received_total": set(),
     "vpn_bytes_sent_total": set(),
@@ -599,7 +599,7 @@ class TestRuntimeMetricsOverOtlp:
 
 
 # A child process, because the OTel API allows one global MeterProvider per
-# process; the hour-long interval and os._exit mean no exporter is ever dialled.
+# process. The hour-long interval and os._exit mean no exporter is ever dialled.
 OTEL_MODE_PROBE = """
 import json
 import os

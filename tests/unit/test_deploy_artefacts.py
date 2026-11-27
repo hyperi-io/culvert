@@ -472,6 +472,8 @@ class TestComposeEnvironment:
             ("CULVERT_CLIENT_DOWNLOAD_BIND", "client_download_bind"),
             ("CULVERT_CLIENT_DOWNLOAD_TLS_CERT", "client_download_tls_cert"),
             ("CULVERT_CLIENT_DOWNLOAD_TLS_KEY", "client_download_tls_key"),
+            ("CULVERT_OAUTH2_VALIDATE_EXPRESSION", "oauth2_validate_expression"),
+            ("CULVERT_OAUTH2_CHECK_IPADDR", "oauth2_check_ipaddr"),
         ],
     )
     def test_setting_is_passed_through_with_no_default(self, env_var, field):

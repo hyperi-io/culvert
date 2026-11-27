@@ -22,7 +22,7 @@ data-ciphers-fallback AES-256-GCM
 
 auth SHA384
 
-tls-groups secp384r1:X25519
+tls-groups SecP384r1MLKEM1024:X25519MLKEM768:secp384r1:X25519
 
 tls-crypt-v2 /etc/vpn/pki/tc.key
 

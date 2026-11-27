@@ -1,7 +1,7 @@
 # Example deployment profile -- copy and edit for your site.
 # Load with: CULVERT_PROFILE=example (or a full path).
 #
-# Profiles set site-specific defaults; explicit CULVERT_* env vars
+# Profiles set site-specific defaults. Explicit CULVERT_* env vars
 # always override profile values.
 org_name: Example Org
 server_cn: vpn.example.com

@@ -29,7 +29,7 @@ on:
         default: "auto"
         description: "from-head version: auto | patch | minor | X.Y.Z (exact)."
 
-# The union of what python-ci.yml's jobs request; the caller's grant caps them.
+# The union of what python-ci.yml's jobs request. The caller's grant caps them.
 permissions:
   contents: write
   issues: write

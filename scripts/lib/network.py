@@ -12,7 +12,9 @@ Handles iptables NAT rules, IP forwarding, and CIDR utilities.
 """
 
 import ipaddress
+import re
 import subprocess
+from dataclasses import dataclass
 
 from scalo.logger import logger
 
@@ -23,11 +25,16 @@ class FirewallError(RuntimeError):
     """A required iptables rule could not be installed."""
 
 
-def _add_rule(rule: str, purpose: str) -> None:
+def _iptables(*args: str, check: bool = True) -> None:
+    """Run iptables with args as its argv."""
+    run(["iptables", *args], check=check)
+
+
+def _add_rule(rule: list[str], purpose: str) -> None:
     """Install an iptables rule, refusing to continue if it does not land.
 
     These rules are not advisory. Routing control is what enforces client
-    isolation, the egress allow-list and the downstream-admin gate; the NAT
+    isolation, the egress allow-list and the downstream-admin gate, and the NAT
     rules are what let a client reach anything at all. A rule that fails to
     install silently removes the behaviour the operator asked for, so this
     raises: the container exits rather than serving clients while reporting a
@@ -37,12 +44,84 @@ def _add_rule(rule: str, purpose: str) -> None:
     present, rule not present) and stay tolerant.
     """
     try:
-        run(f"iptables {rule}")
+        _iptables(*rule)
     except subprocess.CalledProcessError as exc:
         raise FirewallError(
-            f"iptables {rule} failed (exit {exc.returncode}); this rule"
+            f"iptables {' '.join(rule)} failed (exit {exc.returncode}). This rule"
             f" implements {purpose}, so refusing to start without it."
         ) from exc
+
+
+# One allowed_destinations entry: a CIDR, optionally narrowed to PORT/PROTO.
+_DESTINATION = re.compile(
+    r"(?P<cidr>[^:/\s]+(?:/\d{1,2})?)(?::(?P<port>\d{1,5})/(?P<protocol>tcp|udp))?"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Destination:
+    """Where a client may initiate to: a CIDR, and optionally one port on it.
+
+    Attributes:
+        cidr: The IPv4 network, normalised.
+        port: The destination port, or None for every port and protocol.
+        protocol: tcp or udp when port is set, else None.
+
+    """
+
+    cidr: str
+    port: int | None = None
+    protocol: str | None = None
+
+    def match(self) -> list[str]:
+        """Return the iptables match arguments for this destination."""
+        args = ["-d", self.cidr]
+        if self.port is not None and self.protocol is not None:
+            args += ["-p", self.protocol, "--dport", str(self.port)]
+        return args
+
+
+def parse_destination(entry: str) -> Destination:
+    """Parse one allowed_destinations entry: CIDR, or CIDR:PORT/PROTO.
+
+    Raises:
+        ValueError: The entry is not one of those forms, the CIDR is not IPv4,
+            or the port is outside 1-65535.
+
+    """
+    text = entry.strip()
+    found = _DESTINATION.fullmatch(text)
+    if found is None:
+        raise ValueError(
+            f"'{text}' is not CIDR or CIDR:PORT/PROTO (e.g. 10.20.0.0/16:8080/tcp)"
+        )
+    try:
+        network = ipaddress.IPv4Network(found["cidr"], strict=False)
+    except ValueError as exc:
+        raise ValueError(f"'{text}' does not start with an IPv4 CIDR") from exc
+    if found["port"] is None:
+        return Destination(str(network))
+    port = int(found["port"])
+    if not 1 <= port <= 65535:
+        raise ValueError(f"'{text}' has port {port}, outside 1-65535")
+    return Destination(str(network), port, found["protocol"])
+
+
+def parse_destinations(raw: str) -> list[Destination]:
+    """Parse a comma-separated allowed_destinations value, empty entries dropped."""
+    return [parse_destination(entry) for entry in _csv_cidrs(raw)]
+
+
+def _outbound_interface(fallback: str = "eth0") -> str:
+    """Return the interface the default route leaves by, or fallback."""
+    try:
+        result = run(["ip", "route", "get", "1.1.1.1"], check=False, capture=True)
+    except FileNotFoundError:
+        return fallback
+    words = (result.stdout or "").split()
+    if "dev" in words[:-1]:
+        return words[words.index("dev") + 1]
+    return fallback
 
 
 def setup_network(cfg) -> None:
@@ -63,12 +142,7 @@ def setup_network(cfg) -> None:
             "Cannot enable IP forwarding - ensure host has net.ipv4.ip_forward=1"
         )
 
-    # Detect outbound interface
-    result = run(
-        "ip route get 1.1.1.1 | awk '{print $5; exit}'",
-        capture=True,
-    )
-    iface = result.stdout.strip() or "eth0"
+    iface = _outbound_interface()
 
     # NAT rules - prefix length derived from the configured netmask so the
     # masqueraded range always matches what OpenVPN hands out.
@@ -82,7 +156,8 @@ def setup_network(cfg) -> None:
             continue
         prefix = _prefixlen(network, netmask)
         _add_rule(
-            f"-t nat -A POSTROUTING -s {network}/{prefix} -o {iface} -j MASQUERADE",
+            ["-t", "nat", "-A", "POSTROUTING", "-s", f"{network}/{prefix}"]
+            + ["-o", iface, "-j", "MASQUERADE"],
             f"NAT for the {name} tunnel subnet",
         )
         logger.info(f"{name} NAT rule added")
@@ -93,7 +168,8 @@ def setup_network(cfg) -> None:
     # off the server, which looks like a client problem and is not.
     if cfg.protocol in ("wireguard", "both"):
         _add_rule(
-            f"-t nat -A POSTROUTING -s {cfg.wg_network} -o {iface} -j MASQUERADE",
+            ["-t", "nat", "-A", "POSTROUTING", "-s", cfg.wg_network]
+            + ["-o", iface, "-j", "MASQUERADE"],
             "NAT for the WireGuard subnet",
         )
         logger.info("WireGuard NAT rule added")
@@ -103,8 +179,8 @@ def setup_network(cfg) -> None:
     # can carry. Oversized segments are dropped rather than fragmented, so the
     # connection establishes and then stalls on its first full-size packet.
     _add_rule(
-        "-t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN"
-        " -j TCPMSS --clamp-mss-to-pmtu",
+        ["-t", "mangle", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST"]
+        + ["SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"],
         "MSS clamping so forwarded TCP fits the tunnel MTU",
     )
     logger.info("TCP MSS clamping rule added")
@@ -131,13 +207,13 @@ def setup_routing_control(cfg) -> None:
 
     Semantics when CULVERT_ROUTING_CONTROL_ENABLED=true:
     - replies to established flows always pass (conntrack), so a client
-      reaching out still gets its answers;
+      reaching out still gets its answers.
     - client-to-client traffic is dropped unless client_isolation is
-      switched off;
+      switched off.
     - nothing outside may INITIATE into the tunnels except sources in
-      downstream_admin_cidrs (the edge-fleet reverse-admin path);
+      downstream_admin_cidrs (the edge-fleet reverse-admin path).
     - when allowed_destinations is set, clients may only initiate to
-      those CIDRs.
+      those CIDRs, or to the one port an entry names on its CIDR.
 
     All rules live in a dedicated chain rebuilt on each start, so
     restarts do not stack duplicates.
@@ -156,25 +232,25 @@ def setup_routing_control(cfg) -> None:
     # falls straight through to the FORWARD policy - so a failure part-way
     # through the rebuild below would leave traffic unfiltered. Detached first,
     # a failure leaves nothing in the forwarding path at all.
-    run("iptables -D FORWARD -j CULVERT_FWD", check=False)
+    _iptables("-D", "FORWARD", "-j", "CULVERT_FWD", check=False)
 
     # Build CULVERT_FWD fully, then jump FORWARD at it LAST - so there is never
     # a window where the chain is jumped-but-empty (packets escaping to the
     # FORWARD policy). IPv4 only: the tunnels carry only IPv4, and the server
     # enables only net.ipv4.ip_forward, so ip6tables is deliberately not set up.
-    run("iptables -N CULVERT_FWD", check=False)
-    run("iptables -F CULVERT_FWD", check=False)
+    _iptables("-N", "CULVERT_FWD", check=False)
+    _iptables("-F", "CULVERT_FWD", check=False)
 
     # Client-to-client FIRST, above the conntrack accept, so cross-tunnel
     # traffic is decided by state-independent rules (a RELATED packet from a
-    # conntrack helper cannot slip between clients). Denied by default;
+    # conntrack helper cannot slip between clients). Denied by default, and
     # CULVERT_CLIENT_ISOLATION=false permits it - the explicit ACCEPT is needed
     # so the default-deny into tunnels below does not drop it anyway.
     verdict = "DROP" if cfg.client_isolation else "ACCEPT"
     for in_if in ifaces:
         for out_if in ifaces:
             _add_rule(
-                f"-A CULVERT_FWD -i {in_if} -o {out_if} -j {verdict}",
+                ["-A", "CULVERT_FWD", "-i", in_if, "-o", out_if, "-j", verdict],
                 "client isolation",
             )
     if cfg.client_isolation:
@@ -183,8 +259,9 @@ def setup_routing_control(cfg) -> None:
         logger.info("Client-to-client permitted (isolation disabled)")
 
     # Replies to established flows pass.
+    established = ["-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED"]
     _add_rule(
-        "-A CULVERT_FWD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+        ["-A", "CULVERT_FWD", *established, "-j", "ACCEPT"],
         "replies to established flows",
     )
 
@@ -193,7 +270,7 @@ def setup_routing_control(cfg) -> None:
     for cidr in admin_cidrs:
         for out_if in ifaces:
             _add_rule(
-                f"-A CULVERT_FWD -o {out_if} -s {cidr} -j ACCEPT",
+                ["-A", "CULVERT_FWD", "-o", out_if, "-s", cidr, "-j", "ACCEPT"],
                 "the downstream-admin gate",
             )
         # setup_network MASQUERADEs all VPN-subnet egress. That would rewrite a
@@ -203,15 +280,15 @@ def setup_routing_control(cfg) -> None:
         # the client's real tunnel address is kept. Scoped to ESTABLISHED,
         # RELATED: a client INITIATING to the admin CIDR is still masqueraded,
         # so its tunnel IP is not exposed.
-        ct = "-m conntrack --ctstate ESTABLISHED,RELATED"
-        run(f"iptables -t nat -D POSTROUTING {ct} -d {cidr} -j RETURN", check=False)
+        nat_return = [*established, "-d", cidr, "-j", "RETURN"]
+        _iptables("-t", "nat", "-D", "POSTROUTING", *nat_return, check=False)
         _add_rule(
-            f"-t nat -I POSTROUTING 1 {ct} -d {cidr} -j RETURN",
+            ["-t", "nat", "-I", "POSTROUTING", "1", *nat_return],
             "keeping the real tunnel source on reverse-admin replies",
         )
     for out_if in ifaces:
         _add_rule(
-            f"-A CULVERT_FWD -o {out_if} -j DROP",
+            ["-A", "CULVERT_FWD", "-o", out_if, "-j", "DROP"],
             "default-deny of unsolicited traffic into the tunnels",
         )
     if admin_cidrs:
@@ -220,23 +297,24 @@ def setup_routing_control(cfg) -> None:
         logger.info("Unsolicited inbound to tunnels: denied (no admin CIDRs)")
 
     # Egress allow-list (unrestricted when empty)
-    allowed = _csv_cidrs(cfg.allowed_destinations)
+    allowed = parse_destinations(cfg.allowed_destinations)
     if allowed:
-        for cidr in allowed:
+        for destination in allowed:
             for in_if in ifaces:
                 _add_rule(
-                    f"-A CULVERT_FWD -i {in_if} -d {cidr} -j ACCEPT",
+                    ["-A", "CULVERT_FWD", "-i", in_if, *destination.match()]
+                    + ["-j", "ACCEPT"],
                     "the egress allow-list",
                 )
         for in_if in ifaces:
             _add_rule(
-                f"-A CULVERT_FWD -i {in_if} -j DROP",
+                ["-A", "CULVERT_FWD", "-i", in_if, "-j", "DROP"],
                 "the egress allow-list's terminal deny",
             )
-        logger.info(f"Client egress restricted to {len(allowed)} CIDR(s)")
+        logger.info(f"Client egress restricted to {len(allowed)} destination(s)")
 
     # Chain is fully populated - now point FORWARD at it.
-    _add_rule("-I FORWARD 1 -j CULVERT_FWD", "routing control itself")
+    _add_rule(["-I", "FORWARD", "1", "-j", "CULVERT_FWD"], "routing control itself")
     logger.info("Routing control configured")
 
 
@@ -272,15 +350,15 @@ def setup_forward_guards(cfg) -> None:
     if not ifaces:
         return
 
-    run("iptables -D FORWARD -j CULVERT_GUARD", check=False)
-    run("iptables -N CULVERT_GUARD", check=False)
-    run("iptables -F CULVERT_GUARD", check=False)
+    _iptables("-D", "FORWARD", "-j", "CULVERT_GUARD", check=False)
+    _iptables("-N", "CULVERT_GUARD", check=False)
+    _iptables("-F", "CULVERT_GUARD", check=False)
     for in_if in ifaces:
         _add_rule(
-            f"-A CULVERT_GUARD -i {in_if} -d {LINK_LOCAL} -j DROP",
+            ["-A", "CULVERT_GUARD", "-i", in_if, "-d", LINK_LOCAL, "-j", "DROP"],
             "the link-local guard, which stops clients reaching cloud metadata",
         )
-    _add_rule("-I FORWARD 1 -j CULVERT_GUARD", "the link-local guard")
+    _add_rule(["-I", "FORWARD", "1", "-j", "CULVERT_GUARD"], "the link-local guard")
     logger.info(f"Link-local guard installed ({LINK_LOCAL} unreachable by clients)")
 
 

@@ -33,6 +33,19 @@ class TestShippedServerTemplates:
     """Assertions against the templates that actually ship in the image."""
 
     @pytest.mark.parametrize("name", SERVER_TEMPLATES)
+    def test_hybrid_ml_kem_groups_come_first(self, name):
+        """Hybrid ML-KEM leads, and the classical groups stay for older clients."""
+        text = (REPO_ROOT / "config" / name).read_text(encoding="utf-8")
+        groups = [
+            line.split(None, 1)[1].split(":")
+            for line in text.splitlines()
+            if line.startswith("tls-groups ")
+        ]
+        assert groups == [
+            ["SecP384r1MLKEM1024", "X25519MLKEM768", "secp384r1", "X25519"]
+        ]
+
+    @pytest.mark.parametrize("name", SERVER_TEMPLATES)
     def test_no_windows_only_option_is_pushed(self, name):
         """block-outside-dns is fatal to a non-Windows OpenVPN 2.7 client.
 
@@ -51,7 +64,7 @@ class TestShippedServerTemplates:
 
     @pytest.mark.parametrize("name", SERVER_TEMPLATES)
     def test_external_scripts_are_not_permitted(self, name):
-        """script-security 2 lets OpenVPN run scripts; nothing here needs it.
+        """script-security 2 lets OpenVPN run scripts, and nothing here needs it.
 
         Culvert ships no client-connect hooks, so enabling it by default only
         widens what the server process is allowed to execute. An operator who

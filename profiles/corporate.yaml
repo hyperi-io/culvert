@@ -9,6 +9,9 @@ tcp_enabled: true
 
 oauth2_enabled: true
 oauth2_validate_groups: "vpn-users"
+# The IdP's preferred_username must be the certificate's CN: issue with generate-client --name <username>.
+# A login without that claim is refused. A token refresh keeps the session it was bound to.
+oauth2_validate_expression: "auth.mode == 'non-interactive' || (has(token.claims.preferred_username) && openvpn.commonName == user.username)"
 
 full_tunnel: true
 

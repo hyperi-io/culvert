@@ -73,7 +73,7 @@ def manager():
 def easyrsa(tmp_path, monkeypatch):
     """A stand-in Easy-RSA install that lib.pki runs in place of the real one.
 
-    Easy-RSA is not on a CI runner; the container tier covers the real one.
+    Easy-RSA is not on a CI runner. The container tier covers the real one.
     """
     import lib.pki
 
