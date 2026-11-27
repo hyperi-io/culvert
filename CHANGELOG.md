@@ -3,6 +3,13 @@
 Rendered by CI and committed back at the end of a release -- do not edit by
 hand. Release notes also appear on the GitHub Releases page, one per tag.
 
+## [2.1.32](https://github.com/hyperi-io/culvert/compare/v2.1.31...v2.1.32) (2026-11-27)
+
+### Bug Fixes
+
+* bind OIDC logins to the cert, drop sh -c ([ce6bb92](https://github.com/hyperi-io/culvert/commit/ce6bb92803f8b1e47429613b1e9eb584cc3100ce))
+* update openvpn-auth-oauth2 to 2.3.3 ([ccc1a2b](https://github.com/hyperi-io/culvert/commit/ccc1a2b0acb7ca6f5540d7304207828ce9dbae5a))
+
 ## [2.1.31](https://github.com/hyperi-io/culvert/compare/v2.1.30...v2.1.31) (2026-11-25)
 
 ### Bug Fixes
